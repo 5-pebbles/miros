@@ -1,23 +1,25 @@
-use std::sync::OnceLock;
+use std::mem::MaybeUninit;
 
-pub static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
+static mut PAGE_SIZE: MaybeUninit<usize> = MaybeUninit::uninit();
 
-pub(crate) fn set_page_size(page_size: usize) {
-    let _ = PAGE_SIZE.set(page_size);
+pub unsafe fn set_page_size(page_size: usize) {
+    #[allow(static_mut_refs)]
+    PAGE_SIZE.write(page_size);
 }
 
-pub(crate) fn get_page_size() -> usize {
-    *PAGE_SIZE.get().expect("Page size not initialized")
+pub unsafe fn get_page_size() -> usize {
+    #[allow(static_mut_refs)]
+    PAGE_SIZE.assume_init_read()
 }
 
-pub(crate) fn get_page_start(address: usize) -> usize {
+pub unsafe fn get_page_start(address: usize) -> usize {
     address & !(get_page_size() - 1)
 }
 
-pub(crate) fn get_page_offset(address: usize) -> usize {
+pub unsafe fn get_page_offset(address: usize) -> usize {
     address & (get_page_size() - 1)
 }
 
-pub(crate) fn get_page_end(address: usize) -> usize {
+pub unsafe fn get_page_end(address: usize) -> usize {
     get_page_start(address + get_page_size() - 1)
 }

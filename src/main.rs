@@ -18,7 +18,7 @@ mod arch;
 mod elf;
 mod io_macros;
 mod linux;
-mod shared_object;
+// mod shared_object;
 mod static_pie;
 mod utils;
 
@@ -32,7 +32,7 @@ use linux::{
     environment_variables::EnvironmentIter,
     page_size,
 };
-use shared_object::SharedObject;
+// use shared_object::SharedObject;
 use static_pie::StaticPie;
 
 // This is where the magic happens, it's called by the architecture specific _start and returns the entry address when everything is set up:
@@ -67,6 +67,9 @@ pub unsafe fn rust_main(stack_pointer: *mut usize) -> usize {
             _ => (),
         }
     }
+    syscall_debug_assert!(page_size.is_power_of_two());
+    syscall_debug_assert!(base.addr() & (page_size - 1) == 0);
+    page_size::set_page_size(page_size);
 
     let program_header_table =
         slice::from_raw_parts(program_header_pointer, program_header_count as usize);
@@ -78,7 +81,7 @@ pub unsafe fn rust_main(stack_pointer: *mut usize) -> usize {
     } else {
         StaticPie::from_base(base)
     };
-    miros.relocate().allocate_tls(pseudorandom_bytes);
+    miros.relocate().allocate_tls(&*pseudorandom_bytes);
     // NOTE: We can now use the Rust standard library.
 
     if base == null() {

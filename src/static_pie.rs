@@ -181,7 +181,7 @@ impl StaticPie<Ingredients> {
 
 impl StaticPie<Baked> {
     #[inline(always)]
-    pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) {
+    pub unsafe fn allocate_tls(self, pseudorandom_bytes: &[u8; 16]) {
         // Static Thread Local Storage [before Thread Pointer]:
         //                                         ┌---------------------┐
         //      ┌----------------------------┐  <- |    tls-offset[1]    |
