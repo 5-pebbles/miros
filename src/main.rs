@@ -15,12 +15,12 @@ use std::{collections::HashMap, fs::File, path::Path};
 #[cfg_attr(target_arch = "x86_64", path = "arch/x86_64/mod.rs")]
 mod arch;
 
-mod cli;
 mod elf;
 mod io_macros;
 mod linux;
 mod shared_object;
 mod static_pie;
+mod utils;
 
 use elf::program_header::ProgramHeader;
 use io_macros::*;
@@ -74,25 +74,19 @@ pub unsafe fn rust_main(stack_pointer: *mut usize) -> usize {
     // We are a static pie (position-independent-executable).
     // Relocate ourselves and initialize thread local storage:
     let miros = if base.is_null() {
-        StaticPie::from_program_headers(&program_header_table, pseudorandom_bytes)
+        StaticPie::from_program_headers(&program_header_table)
     } else {
-        StaticPie::from_base(base, pseudorandom_bytes)
+        StaticPie::from_base(base)
     };
-    miros.relocate_to_oven().allocate_tls_in_stomach();
+    miros.relocate().allocate_tls(pseudorandom_bytes);
     // NOTE: We can now use the Rust standard library.
-
-    syscall_debug_assert!(page_size.is_power_of_two());
-    syscall_debug_assert!(base.addr() & (page_size - 1) == 0);
-    page_size::set_page_size(page_size);
 
     if base == null() {
         // TODO: Cli
         arch::exit::exit(1);
     }
 
-    let shared_object = SharedObject::from_headers(&program_header_table, pseudorandom_bytes);
-
-    
+    // let shared_object = SharedObject::from_headers(&program_header_table, pseudorandom_bytes);
 
     // let linked_shared_objects: HashMap<&'static str, SharedObject> = HashMap::new();
     // for library in shared_object.libraries() {
