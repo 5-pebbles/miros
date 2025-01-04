@@ -1,6 +1,6 @@
 use std::arch::asm;
 
-use crate::syscall_debug_assert;
+use crate::io_macros::syscall_debug_assert;
 
 pub const STD_IN: i32 = 0;
 pub const STD_OUT: i32 = 1;

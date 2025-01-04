@@ -6,12 +6,6 @@ use std::{
 };
 
 use crate::{
-    arch::{
-        exit::{self},
-        io,
-        mmap::{mmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
-        thread_pointer::set_thread_pointer,
-    },
     elf::{
         dynamic_array::{DynamicArrayItem, DynamicArrayIter, DT_RELA, DT_RELAENT, DT_RELASZ},
         header::{ElfHeader, ET_DYN},
@@ -19,8 +13,13 @@ use crate::{
         relocate::{Rela, RelocationSlices},
         thread_local_storage::ThreadControlBlock,
     },
-    linux::page_size,
-    syscall_debug_assert,
+    io_macros::syscall_debug_assert,
+    page_size,
+    syscall::{
+        io,
+        mmap::{mmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
+        thread_pointer::set_thread_pointer,
+    },
     utils::round_up_to_boundary,
 };
 
@@ -167,7 +166,7 @@ impl StaticPie<Ingredients> {
                 }
                 _ => {
                     io::write(io::STD_ERR, "Unsupported Relocation");
-                    exit::exit(3233);
+                    crate::syscall::exit::exit(32);
                 }
             }
         }

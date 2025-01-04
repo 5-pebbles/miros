@@ -1,6 +1,6 @@
 use std::arch::asm;
 
-use crate::{elf::relocate::Relocatable, syscall_assert};
+use crate::{elf::relocate::Relocatable, io_macros::syscall_assert};
 
 pub unsafe fn relocate(object: &impl Relocatable) {
     let relocation_slices = object.relocation_slices();

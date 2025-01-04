@@ -1,6 +1,6 @@
 use std::arch::asm;
 
-use crate::syscall_debug_assert;
+use crate::io_macros::syscall_debug_assert;
 
 // Protection flags:
 pub const PROT_NONE: usize = 0x0;
@@ -24,7 +24,7 @@ pub unsafe fn mmap(
     protection_flags: usize,
     map_flags: usize,
     file_descriptor: isize,
-    offset: usize,
+    file_offset: usize,
 ) -> *mut u8 {
     const MMAP: usize = 9; // I am like 80% sure this is the right system call... :)
 
@@ -38,7 +38,7 @@ pub unsafe fn mmap(
             in("rdx") protection_flags,
             in("r10") map_flags,
             in("r8") file_descriptor,
-            in("r9") offset,
+            in("r9") file_offset,
             out("rcx") _,
             out("r11") _,
             options(nostack)

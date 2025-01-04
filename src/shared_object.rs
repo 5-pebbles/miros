@@ -15,7 +15,6 @@ use crate::elf::relocate::RelocationSlices;
 use crate::elf::symbol::SymbolTable;
 use crate::linux::page_size;
 use crate::{
-    arch::{io, mmap, exit},
     elf::{
         dynamic_array::{
             DynamicArrayIter, DT_RELA, DT_RELAENT, DT_RELASZ, DT_STRTAB, DT_SYMENT, DT_SYMTAB,
@@ -26,6 +25,7 @@ use crate::{
         string_table::StringTable,
         symbol::Symbol,
     },
+    syscall::{exit, io, mmap},
     syscall_assert, syscall_debug_assert,
 };
 
@@ -99,10 +99,7 @@ impl SharedObject {
             size_of::<ElfHeader>(),
         );
         if let Err(error) = file.read_exact(as_bytes) {
-            io::write(
-                io::STD_ERR,
-                "Error: could not read ElfHeader from file",
-            );
+            io::write(io::STD_ERR, "Error: could not read ElfHeader from file");
             exit::exit(1);
         }
         let header = uninit_header.assume_init();

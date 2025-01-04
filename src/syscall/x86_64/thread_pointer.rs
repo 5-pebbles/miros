@@ -1,6 +1,6 @@
 use std::arch::asm;
 
-use crate::syscall_debug_assert;
+use crate::io_macros::syscall_debug_assert;
 
 #[inline(always)]
 pub unsafe fn set_thread_pointer(new_pointer: *mut ()) {
