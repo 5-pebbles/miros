@@ -104,6 +104,8 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     /// The execuatable we are linking for:
     let base_object = if base == null() {
         // TODO: Cli
+        let _ = File::open("/home/ghostbird/git/miros/README.md");
+
         crate::syscall::exit::exit(0);
     } else {
         // SharedObject::from_headers(program_header_table, pseudorandom_bytes);

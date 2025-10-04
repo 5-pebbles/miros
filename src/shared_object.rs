@@ -25,8 +25,8 @@ use crate::{
         string_table::StringTable,
         symbol::Symbol,
     },
-    syscall::{exit, io, mmap},
-    syscall_assert, syscall_debug_assert,
+    io_macros::{syscall_assert, syscall_debug_assert},
+    syscall::{exit, mmap, write},
 };
 
 fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (usize, usize) {
@@ -47,10 +47,12 @@ fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (
     }
 
     // Align bounds to page boundaries
-    (
-        page_size::get_page_start(min_addr),
-        page_size::get_page_end(max_addr),
-    )
+    unsafe {
+        (
+            page_size::get_page_start(min_addr),
+            page_size::get_page_end(max_addr),
+        )
+    }
 }
 
 /// A struct repersenting a shared object in memory.
@@ -86,7 +88,6 @@ impl SharedObject {
             }
         }
         syscall_debug_assert!(dynamic_header.is_some());
-        syscall_debug_assert!(tls_program_header.is_some());
 
         Self::build(base, dynamic_header.unwrap_unchecked(), Some(1))
     }
@@ -99,7 +100,7 @@ impl SharedObject {
             size_of::<ElfHeader>(),
         );
         if let Err(error) = file.read_exact(as_bytes) {
-            io::write(io::STD_ERR, "Error: could not read ElfHeader from file");
+            write::write(write::STD_ERR, "Error: could not read ElfHeader from file");
             exit::exit(1);
         }
         let header = uninit_header.assume_init();
@@ -112,8 +113,8 @@ impl SharedObject {
             header.e_phnum as usize * size_of::<ProgramHeader>(),
         );
         if let Err(error) = file.read_exact_at(as_bytes, header.e_phoff as u64) {
-            io::write(
-                io::STD_ERR,
+            write::write(
+                write::STD_ERR,
                 "Error: could not read &[ProgramHeader] from file",
             );
             exit::exit(1);

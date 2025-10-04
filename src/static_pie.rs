@@ -16,9 +16,9 @@ use crate::{
     io_macros::syscall_debug_assert,
     page_size,
     syscall::{
-        io,
         mmap::{mmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
         thread_pointer::set_thread_pointer,
+        write,
     },
     utils::round_up_to_boundary,
 };
@@ -165,7 +165,7 @@ impl StaticPie<Ingredients> {
                     );
                 }
                 _ => {
-                    io::write(io::STD_ERR, "Unsupported Relocation");
+                    eprintln!("Unsupported Relocation");
                     crate::syscall::exit::exit(32);
                 }
             }

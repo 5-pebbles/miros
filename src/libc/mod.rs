@@ -1,4 +1,6 @@
+// TODO: Add error handling for these things:
 mod open;
+mod write;
 
 /// A macro for ensuring that the `libc` crate signature for a function matches
 /// the signature that our implementation of it is using.
