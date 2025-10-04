@@ -1,5 +1,5 @@
 #![feature(impl_trait_in_assoc_type)]
-#![feature(naked_functions)]
+#![feature(c_variadic)]
 #![feature(ptr_as_ref_unchecked)]
 #![feature(type_changing_struct_update)]
 #![no_main]
@@ -10,6 +10,7 @@ mod syscall;
 
 mod elf;
 mod io_macros;
+mod libc;
 mod page_size;
 mod start;
 // mod shared_object;

@@ -11,6 +11,7 @@ use crate::{
 };
 use std::{
     arch::naked_asm,
+    fs::File,
     ptr::{null, null_mut},
     slice,
 };
@@ -18,7 +19,7 @@ use std::{
 pub mod auxiliary_vector;
 pub mod environment_variables;
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 pub unsafe extern "C" fn _start() -> ! {
     naked_asm!("mov rdi, rsp",
@@ -31,6 +32,28 @@ pub unsafe extern "C" fn _start() -> ! {
 }
 
 pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut usize) -> usize {
+    // Inital Stack Layout:
+    // + Newly Pushed Vaules      Examples:               |-----------------|
+    // |-------------------|    |----------------|  |---> | "/bin/git", 0x0 |
+    // | Arg Count         |    | 2              |  |     |-----------------|
+    // |-------------------|    |----------------|  |
+    // | Arg Pointers...   |    | Pointer,       | -|   |---------------|
+    // |                   |    | Other Pointer  | ---> | "commit", 0x0 |
+    // |-------------------|    |----------------|      |---------------|
+    // | Null              |    | 0x0            |
+    // |-------------------|    |----------------|       |-----------------------------|
+    // | Env Pointers...   |    | Pointer,       | ----> | "HOME=/home/ghostbird", 0x0 |
+    // |                   |    | Other Pointer  | ---|  |-----------------------------|
+    // |-------------------|    |----------------|    |
+    // | Null              |    | 0x0            |    |   |---------------------------|
+    // |-------------------|    |----------------|    |-> | "PATH=/bin:/usr/bin", 0x0 |
+    // | Auxv Type...      |    | AT_RANDOM      |        |---------------------------|
+    // | Auxv Vaule...     |    | Union->Pointer | -|
+    // |-------------------|    |----------------|  |   |---------------------------|
+    // | AT_NULL Auxv Pair |    | AT_NULL (0x0)  |  |-> | [16-bytes of random data] |
+    // |-------------------|    | Undefined      |      |---------------------------|
+    //                          |----------------|
+
     // Check that `stack_pointer` is where we expect it to be.
     syscall_debug_assert!(stack_pointer != core::ptr::null_mut());
     syscall_debug_assert!(stack_pointer.addr() & 0b1111 == 0);
@@ -78,12 +101,15 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     miros.relocate().allocate_tls(&*pseudorandom_bytes);
     // NOTE: We can now use the Rust standard library.
 
-    if base == null() {
+    /// The execuatable we are linking for:
+    let base_object = if base == null() {
         // TODO: Cli
-        crate::syscall::exit::exit(1);
-    } else {
         crate::syscall::exit::exit(0);
-    }
+    } else {
+        // SharedObject::from_headers(program_header_table, pseudorandom_bytes);
+        let _ = File::open("/home/ghostbird/git/miros/README.md");
+        crate::syscall::exit::exit(1);
+    };
 
-    entry.addr()
+    // entry.addr()
 }

@@ -13,7 +13,7 @@ use crate::elf::dynamic_array::{DynamicArrayItem, DT_NEEDED, DT_NULL};
 use crate::elf::program_header::PT_LOAD;
 use crate::elf::relocate::RelocationSlices;
 use crate::elf::symbol::SymbolTable;
-use crate::linux::page_size;
+use crate::page_size;
 use crate::{
     elf::{
         dynamic_array::{
