@@ -1,4 +1,5 @@
 // TODO: Add error handling for these things:
+mod close;
 mod open;
 mod write;
 
