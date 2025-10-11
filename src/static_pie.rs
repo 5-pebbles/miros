@@ -1,5 +1,6 @@
 use std::{
     arch::asm,
+    cmp::max,
     marker::PhantomData,
     ptr::{null, null_mut},
     slice,
@@ -7,24 +8,26 @@ use std::{
 
 use crate::{
     elf::{
-        dynamic_array::{DynamicArrayItem, DynamicArrayIter, DT_RELA, DT_RELAENT, DT_RELASZ},
+        dynamic_array::{
+            DynamicArrayItem, DynamicArrayIter, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_RELA,
+            DT_RELAENT, DT_RELASZ,
+        },
         header::{ElfHeader, ET_DYN},
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
-        relocate::{Rela, RelocationSlices},
+        relocate::Rela,
         thread_local_storage::ThreadControlBlock,
     },
     io_macros::syscall_debug_assert,
-    page_size,
     syscall::{
         mmap::{mmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
         thread_pointer::set_thread_pointer,
-        write,
     },
     utils::round_up_to_boundary,
 };
 
 pub struct Ingredients;
 pub struct Baked;
+pub struct Burnt;
 
 /// A struct representing a statically relocatable Position Independent Executable (PIE). 🥧
 ///
@@ -180,7 +183,8 @@ impl StaticPie<Ingredients> {
 
 impl StaticPie<Baked> {
     #[inline(always)]
-    pub unsafe fn allocate_tls(self, pseudorandom_bytes: &[u8; 16]) {
+    #[must_use]
+    pub unsafe fn allocate_tls(self, pseudorandom_bytes: &[u8; 16]) -> StaticPie<Burnt> {
         // Static Thread Local Storage [before Thread Pointer]:
         //                                         ┌---------------------┐
         //      ┌----------------------------┐  <- |    tls-offset[1]    |
@@ -194,15 +198,19 @@ impl StaticPie<Baked> {
         //     └------------------┘
         // NOTE: I am not bothering with alignment at the first address because it's already page aligned...
         if self.tls_program_header.is_null() {
-            return;
+            return StaticPie::<Burnt> {
+                phantom_data: PhantomData::<Burnt>,
+                ..self
+            };
         }
         let tls_program_header = *self.tls_program_header;
 
+        let max_required_align = max(align_of::<ThreadControlBlock>(), tls_program_header.p_align);
         let tls_blocks_size_and_align =
             round_up_to_boundary(tls_program_header.p_memsz, tls_program_header.p_align);
-        let tcb_size = size_of::<ThreadControlBlock>();
+        let tcb_size_and_align = size_of::<ThreadControlBlock>() + max_required_align;
 
-        let required_size = tls_blocks_size_and_align + tcb_size;
+        let required_size = tls_blocks_size_and_align + tcb_size_and_align;
         let tls_block_pointer = mmap(
             null_mut(),
             required_size,
@@ -211,22 +219,23 @@ impl StaticPie<Baked> {
             -1, // file descriptor (-1 for anonymous mapping)
             0,  // offset
         );
+        syscall_debug_assert!(tls_block_pointer.addr() % max_required_align == 0);
 
-        // Initialize the TLS data from template image:
+        // Initialize the TLS data from template image
         slice::from_raw_parts_mut(tls_block_pointer as *mut u8, tls_program_header.p_filesz)
             .copy_from_slice(slice::from_raw_parts(
                 self.base_address.byte_add(tls_program_header.p_offset) as *mut u8,
                 tls_program_header.p_filesz,
             ));
 
-        // Zero out TLS data beyond `p_filesz`:
+        // Zero out TLS data beyond `p_filesz`
         slice::from_raw_parts_mut(
             tls_block_pointer.byte_add(tls_program_header.p_filesz) as *mut u8,
             tls_program_header.p_memsz - tls_program_header.p_filesz,
         )
         .fill(0);
 
-        // Initialize the Thread Control Block (TCB):
+        // Initialize the Thread Control Block (TCB)
         let thread_control_block =
             tls_block_pointer.byte_add(tls_blocks_size_and_align) as *mut ThreadControlBlock;
 
@@ -245,7 +254,54 @@ impl StaticPie<Baked> {
             ),
         };
 
-        // Make the thread pointer (which is fs on x86_64) point to the TCB:
+        // Make the thread pointer (which is fs on x86_64) point to the new TCB
         set_thread_pointer(thread_pointer_register);
+
+        StaticPie::<Burnt> {
+            phantom_data: PhantomData::<Burnt>,
+            ..self
+        }
+    }
+}
+
+impl StaticPie<Burnt> {
+    pub unsafe fn init_array(
+        self,
+        arg_count: usize,
+        arg_pointer: *const *const u8,
+        env_pointer: *const *const u8,
+    ) {
+        type InitArrayFunction = extern "C" fn(usize, *const *const u8, *const *const u8);
+        let mut init_array_pointer: *const InitArrayFunction = null();
+        let mut init_array_size = 0;
+
+        // Find the .init_array section in the dynamic array
+        for item in DynamicArrayIter::new(self.dynamic_array) {
+            match item.d_tag {
+                DT_INIT_ARRAY => {
+                    init_array_pointer = self.base_address.byte_add(item.d_un.d_ptr.addr())
+                        as *const InitArrayFunction;
+                }
+                DT_INIT_ARRAYSZ => {
+                    init_array_size = item.d_un.d_val / size_of::<usize>();
+                }
+                _ => (),
+            }
+        }
+
+        // If there's no init array, just return
+        if init_array_pointer.is_null() || init_array_size == 0 {
+            return;
+        }
+
+        // Create a slice of function pointers
+        let init_functions: &[InitArrayFunction] =
+            slice::from_raw_parts(init_array_pointer, init_array_size);
+
+        // Call each initialization function in order
+        init_functions
+            .iter()
+            .filter(|init_fn| **init_fn as *const () != null())
+            .for_each(|init_fn| init_fn(arg_count, arg_pointer, env_pointer));
     }
 }
