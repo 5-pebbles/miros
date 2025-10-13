@@ -25,6 +25,8 @@ use crate::{
     utils::round_up_to_boundary,
 };
 
+pub type InitArrayFunction = extern "C" fn(usize, *const *const u8, *const *const u8);
+
 pub struct Ingredients;
 pub struct Baked;
 pub struct Burnt;
@@ -271,7 +273,6 @@ impl StaticPie<Burnt> {
         arg_pointer: *const *const u8,
         env_pointer: *const *const u8,
     ) {
-        type InitArrayFunction = extern "C" fn(usize, *const *const u8, *const *const u8);
         let mut init_array_pointer: *const InitArrayFunction = null();
         let mut init_array_size = 0;
 

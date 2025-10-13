@@ -1,17 +1,19 @@
 use auxiliary_vector::{
     AuxiliaryVectorIter, AT_BASE, AT_ENTRY, AT_PAGE_SIZE, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM,
 };
-use environment_variables::EnvironmentIter;
 
 use crate::{
     elf::program_header::ProgramHeader,
+    // global_allocator,
     io_macros::{syscall_assert, syscall_debug_assert},
+    libc::environ::set_environ_pointer,
     page_size,
     static_pie::StaticPie,
 };
 use std::{
     arch::naked_asm,
-    fs::File,
+    env,
+    fs::{read_to_string, File},
     ptr::{null, null_mut},
     slice,
 };
@@ -58,12 +60,13 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     syscall_debug_assert!(stack_pointer != core::ptr::null_mut());
     syscall_debug_assert!(stack_pointer.addr() & 0b1111 == 0);
 
-    let argument_count = *stack_pointer as usize;
-    let argument_pointer = stack_pointer.add(1) as *const *const u8;
-    syscall_debug_assert!((*argument_pointer.add(argument_count)).is_null());
+    let arg_count = *stack_pointer as usize;
+    let arg_pointer = stack_pointer.add(1) as *const *const u8;
+    syscall_debug_assert!((*arg_pointer.add(arg_count)).is_null());
 
-    let environment_vector = EnvironmentIter::from_stack_pointer(stack_pointer);
-    let auxiliary_vector = AuxiliaryVectorIter::from_environment_iter(environment_vector);
+    let env_pointer = arg_pointer.add(arg_count + 1);
+
+    let auxiliary_vector = AuxiliaryVectorIter::from_env_pointer(env_pointer);
 
     // Auxilary Vector:
     let (mut base, mut entry, mut page_size) = (null(), null(), 0);
@@ -101,11 +104,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     miros
         .relocate()
         .allocate_tls(&*pseudorandom_bytes)
-        .init_array(
-            argument_count,
-            argument_pointer,
-            argument_pointer.add(argument_count + 1),
-        );
+        .init_array(arg_count, arg_pointer, arg_pointer.add(arg_count + 1));
+
+    set_environ_pointer(arg_pointer.add(arg_count + 1));
     // NOTE: We can now use the Rust standard library.
 
     // unsafe {
@@ -113,17 +114,26 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     //     let locale = std::ffi::CString::new("C").unwrap();
     //     libc::setlocale(libc::LC_ALL, locale.as_ptr());
     // }
-    println!("{:?}", env::args());
+    // unsafe {
+    //     extern "C" {
+    //         fn ptmalloc_init();
+    //     }
+    //     ptmalloc_init()
+    // }
+    println!("{:?}", env::vars());
 
     /// The execuatable we are linking for:
     let base_object = if base == null() {
         // TODO: Cli
-        let _ = File::open("/home/ghostbird/git/miros/README.md");
 
         crate::syscall::exit::exit(0);
     } else {
         // SharedObject::from_headers(program_header_table, pseudorandom_bytes);
-        let _ = File::open("/home/ghostbird/git/miros/README.md");
+
+        println!(
+            "{}",
+            read_to_string("/home/ghostbird/git/miros/README2.md").unwrap()
+        );
         crate::syscall::exit::exit(1);
     };
 
