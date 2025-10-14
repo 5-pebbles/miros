@@ -14,6 +14,7 @@ mod libc;
 // mod linking;
 mod page_size;
 // mod shared_object;
+mod global_allocator;
 mod start;
 mod static_pie;
 mod utils;

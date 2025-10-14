@@ -1,5 +1,6 @@
 // TODO: Add error handling for these things:
 mod close;
+pub mod environ;
 mod open;
 mod write;
 

@@ -58,20 +58,20 @@ pub struct AuxiliaryVectorIter(*const AuxiliaryVectorItem);
 
 impl AuxiliaryVectorIter {
     /// Initializes a new `AuxiliaryVectorIter` from a 16-byte aligned and pre-offset `*const AuxiliaryVectorItem` pointer.
-    pub fn new(auxiliary_vector_pointer: *const AuxiliaryVectorItem) -> Self {
+    pub unsafe fn new(auxiliary_vector_pointer: *const AuxiliaryVectorItem) -> Self {
         Self(auxiliary_vector_pointer)
     }
 
     /// Calculates and initializes a new `AuxiliaryVectorIter` from an `EnvironmentIter`.
-    pub fn from_environment_iter(environment_iterator: EnvironmentIter) -> Self {
-        let mut environment_pointer = environment_iterator.into_inner();
+    pub unsafe fn from_env_pointer(env_pointer: impl Into<*const *const u8>) -> Self {
+        let mut env_pointer = env_pointer.into();
 
         unsafe {
-            while !(*environment_pointer).is_null() {
-                environment_pointer = environment_pointer.add(1);
+            while !(*env_pointer).is_null() {
+                env_pointer = env_pointer.add(1);
             }
 
-            Self::new(environment_pointer.add(1) as *const AuxiliaryVectorItem)
+            Self::new(env_pointer.add(1) as *const AuxiliaryVectorItem)
         }
     }
 
