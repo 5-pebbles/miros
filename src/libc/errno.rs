@@ -17,3 +17,8 @@ pub fn set_errno(new_errno: Errno) {
 impl Errno {
     pub const BADF: Self = Self(linux_raw_sys::errno::EBADF);
 }
+
+// #[no_mangle]
+// unsafe extern "C" fn __xpg_strerror_r(errnum: Errno, buf: *mut c_char, buflen: usize) -> u32 {
+//     0
+// }

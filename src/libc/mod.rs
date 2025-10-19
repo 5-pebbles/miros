@@ -1,8 +1,7 @@
-// TODO: Add error handling for these things:
-mod close;
 pub mod environ;
-mod open;
-mod write;
+// TODO: Check error handling for these things:
+mod fs;
+mod errno;
 
 /// A macro for ensuring that the `libc` crate signature for a function matches
 /// the signature that our implementation of it is using.

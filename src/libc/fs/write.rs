@@ -4,6 +4,7 @@ use crate::syscall::write::write as syscall_write;
 
 use crate::signature_matches_libc;
 
+#[no_mangle]
 unsafe extern "C" fn write(
     file_descriptor: i32,
     buffer_pointer: *const c_void,

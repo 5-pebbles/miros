@@ -16,3 +16,4 @@ bitbybit = "1.4.0"
 
 # We need a refrence to confirm our function signatures match, this method is from sunfishcode's c-ward.
 libc = { version = "0.2.148", default-features = false }
+linux-raw-sys = "0.11.0"

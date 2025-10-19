@@ -1,11 +1,19 @@
-use std::arch::asm;
+use std::{arch::asm, os::fd::RawFd};
+
+use crate::libc::errno::{set_errno, Errno};
 
 #[no_mangle]
-unsafe extern "C" fn close(file_descriptor: i32) -> i32 {
+unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
+    let result: isize;
+
+    if file_descriptor == -1 {
+        set_errno(Errno::BADF);
+        return -1;
+    }
+
     #[cfg(target_arch = "x86_64")]
     {
         const CLOSE: usize = 3;
-        let result: isize;
         asm!(
             "syscall",
             inlateout("rax") CLOSE => result,
@@ -14,6 +22,7 @@ unsafe extern "C" fn close(file_descriptor: i32) -> i32 {
             lateout("r11") _,
             options(nostack, preserves_flags, readonly)
         );
-        result as i32
     }
+
+    result as i32
 }
