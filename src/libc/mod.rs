@@ -6,6 +6,7 @@ mod fs;
 mod mem;
 mod process;
 mod str;
+mod threads;
 
 mod errno;
 
