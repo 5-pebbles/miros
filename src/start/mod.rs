@@ -106,7 +106,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .allocate_tls(&*pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, arg_pointer.add(arg_count + 1));
 
-    set_environ_pointer(arg_pointer.add(arg_count + 1));
+    set_environ_pointer(arg_pointer.add(arg_count + 1) as *mut *mut u8);
     // NOTE: We can now use the Rust standard library.
 
     // unsafe {
