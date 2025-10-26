@@ -4,6 +4,7 @@ pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
 mod mem;
+mod process;
 mod str;
 
 mod errno;
