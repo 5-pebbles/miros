@@ -8,7 +8,9 @@ for i in "$@" ; do
         continue
     elif [[ "$at_crate_name" == "true" ]] ; then
         if [[ "$i" == "miros" ]] ; then
-            set -- "$@" -C target-feature=+crt-static -C link-arg=-nostartfiles
+            set -- "$@" -C link-arg=-nostartfiles
+
+
         fi
         break
     fi

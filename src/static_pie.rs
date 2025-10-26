@@ -169,10 +169,10 @@ impl StaticPie<Ingredients> {
                         options(nostack, preserves_flags),
                     );
                 }
-                _ => {
-                    eprintln!("Unsupported Relocation");
-                    crate::syscall::exit::exit(32);
-                }
+                _ => (), // _ => {
+                         //     eprintln!("Unsupported Relocation");
+                         //     crate::syscall::exit::exit(32);
+                         // }
             }
         }
 

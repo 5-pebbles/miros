@@ -3,6 +3,8 @@
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
+mod mem;
+
 mod errno;
 
 /// A macro for ensuring that the `libc` crate signature for a function matches
