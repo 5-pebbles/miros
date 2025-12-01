@@ -1,6 +1,8 @@
 use crate::signature_matches_libc;
 use std::arch::asm;
 
+mod key;
+
 #[no_mangle]
 unsafe extern "C" fn gettid() -> i32 {
     signature_matches_libc!(std::mem::transmute(libc::gettid()));
