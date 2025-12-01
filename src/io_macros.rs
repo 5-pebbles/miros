@@ -1,22 +1,13 @@
 macro_rules! syscall_assert {
     ($condition:expr $(, $message:expr)? $(,)?) => {
         if !$condition {
-            fn write_str(s: &str) {
-                let bytes = s.as_bytes();
-                $crate::syscall::write::write(
-                    $crate::syscall::write::STD_ERR,
-                    bytes.as_ptr() as *const std::ffi::c_void,
-                    bytes.len()
-                );
-            }
-
-            write_str("assertion ");
+            print!("assertion ");
             $(
-                write_str("`");
-                write_str($message);
-                write_str("` ");
+                print!("`");
+                print!($message);
+                print!("` ");
             )?
-            write_str(concat!(
+            print!(concat!(
                 "failed: ", stringify!($condition), "\n",
                 "  --> ", file!(), ":", line!(), ":", column!(), "\n",
             ));
