@@ -8,6 +8,7 @@ use std::ptr::copy_nonoverlapping;
 
 use crate::{
     io_macros::syscall_debug_assert,
+    page_size::get_page_size,
     start::auxiliary_vector::{AuxiliaryVectorIter, AT_PAGE_SIZE},
     static_pie::InitArrayFunction,
     syscall::mmap::{mmap, munmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
@@ -30,8 +31,15 @@ extern "C" fn init_allocator(
             .a_un
             .a_val;
 
+        #[allow(static_mut_refs)]
         ALLOCATOR.initialize(page_size);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn free(_ptr: *mut core::ffi::c_void) {
+    // TODO This is actually a really bad way of handling free...
+    return;
 }
 
 #[global_allocator]

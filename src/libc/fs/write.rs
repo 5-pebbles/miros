@@ -1,15 +1,23 @@
 use std::{arch::asm, ffi::c_void};
 
+use crate::signature_matches_libc;
+
 pub const STD_IN: i32 = 0;
 pub const STD_OUT: i32 = 1;
 pub const STD_ERR: i32 = 2;
 
-#[inline(always)]
-pub fn write(
+#[no_mangle]
+unsafe extern "C" fn write(
     file_descriptor: i32,
     buffer_pointer: *const c_void,
     buffer_length_in_bytes: usize,
-) -> i32 {
+) -> isize {
+    signature_matches_libc!(libc::write(
+        file_descriptor,
+        buffer_pointer.cast(),
+        buffer_length_in_bytes
+    ));
+
     const WRITE: usize = 1;
 
     let result: isize;
@@ -25,5 +33,5 @@ pub fn write(
             options(nostack)
         )
     };
-    result as i32
+    result
 }

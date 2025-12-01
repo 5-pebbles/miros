@@ -1,8 +1,14 @@
-// TODO: Add error handling for these things:
-mod close;
+// TODO: Kill the creators of this API... ヾ(๑╹◡╹)ﾉ🔪
+
 pub mod environ;
-mod open;
-mod write;
+// TODO: Add error handling for these things:
+mod fs;
+mod mem;
+mod process;
+mod str;
+mod threads;
+
+mod errno;
 
 /// A macro for ensuring that the `libc` crate signature for a function matches
 /// the signature that our implementation of it is using.
@@ -23,7 +29,7 @@ macro_rules! signature_matches_libc {
     ($e:expr) => {
         #[allow(unreachable_code)]
         #[allow(clippy::diverging_sub_expression)]
-        if false {
+        if false { // NOTE: I usually just use core::mem::transmute and check that the sizes are the same...
             #[allow(unused_imports)]
             use crate::libc::*;
             return $e;

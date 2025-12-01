@@ -1,6 +1,54 @@
-use std::{arch::asm, ffi::c_char};
+use crate::libc::errno::{set_errno, Errno};
+use crate::signature_matches_libc;
+use std::ffi::VaList;
+
+use std::arch::asm;
 
 use bitbybit::{bitenum, bitfield};
+
+const AT_FDCWD: isize = -100;
+pub const S_IFMT: u32 = 1111 << 12;
+
+#[no_mangle]
+unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
+    signature_matches_libc!(libc::open64(
+        core::mem::transmute(pathname),
+        core::mem::transmute(flags),
+        args,
+    ));
+
+    let mode = if flags.create() || flags.create_unnamed_temporary_file() {
+        args.arg::<u32>() & !S_IFMT
+    } else {
+        0
+    };
+
+    let result: isize;
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        const OPENAT: usize = 257;
+        asm!(
+            "syscall",
+            inlateout("rax") OPENAT => result,
+            in("rdi") 0, // directory_file_descriptor
+            in("rsi") pathname,
+            in("rdx") flags.raw_value(),
+            in("r10") mode,
+            lateout("rcx") _,
+            lateout("r11") _,
+            options(nostack, preserves_flags)
+        );
+    }
+
+    if result < 0 {
+        // The kernel returns the inverse of our errno...
+        set_errno(Errno(result.abs() as u32));
+        -1
+    } else {
+        result as i32
+    }
+}
 
 #[no_mangle]
 pub static O_RDONLY: AccessMode = AccessMode::ReadOnly;
@@ -70,27 +118,4 @@ pub struct OFlags {
     do_not_follow_symbolic_link: bool,
     #[bit(22, rw)]
     create_unnamed_temporary_file: bool,
-}
-
-pub unsafe fn openat(
-    directory_file_descriptor: Option<isize>,
-    pathname: *const c_char,
-    flags: OFlags,
-    mode: u32,
-) -> i32 {
-    const OPENAT: usize = 257;
-
-    let result: isize;
-    asm!(
-        "syscall",
-        inlateout("rax") OPENAT => result,
-        in("rdi") directory_file_descriptor.unwrap_or_default(),
-        in("rsi") pathname,
-        in("rdx") flags.raw_value(),
-        in("r10") mode,
-        lateout("rcx") _,
-        lateout("r11") _,
-        options(nostack, preserves_flags)
-    );
-    result as i32
 }

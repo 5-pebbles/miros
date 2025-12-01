@@ -2,6 +2,8 @@
 #![feature(c_variadic)]
 #![feature(ptr_as_ref_unchecked)]
 #![feature(type_changing_struct_update)]
+#![feature(thread_id_value)]
+#![feature(thread_local)]
 #![no_main]
 #![allow(dead_code)]
 
