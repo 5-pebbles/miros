@@ -1,5 +1,6 @@
+use std::ffi::c_void;
 use std::os::fd::AsRawFd;
-use std::{arch::asm, ffi::c_void, os::fd::BorrowedFd};
+use std::{arch::asm, os::fd::BorrowedFd};
 
 use crate::signature_matches_libc;
 
@@ -11,7 +12,7 @@ unsafe extern "C" fn read(
 ) -> isize {
     signature_matches_libc!(libc::read(
         std::mem::transmute(file_descriptor),
-        buffer_pointer,
+        buffer_pointer.cast(),
         buffer_length_in_bytes
     ));
 
