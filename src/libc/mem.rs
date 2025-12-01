@@ -13,6 +13,7 @@ unsafe extern "C" fn memcpy(
         core::mem::transmute(source),
         core::mem::transmute(number_of_bytes_to_copy)
     )));
+
     asm!(
         "rep movsb",
         inout("rdi") destination => _,
@@ -29,6 +30,12 @@ unsafe extern "C" fn memset(
     single_byte_thats_32_bits_for_some_fucking_reason: u32, // I hate this stupid fucking API... Like why?
     number_of_bytes_to_set: usize,
 ) -> *mut u8 {
+    signature_matches_libc!(core::mem::transmute(libc::memset(
+        destination.cast(),
+        single_byte_thats_32_bits_for_some_fucking_reason as i32,
+        number_of_bytes_to_set
+    )));
+
     // SAFETY: Yes, I know...
     let byte = single_byte_thats_32_bits_for_some_fucking_reason as u8;
     asm!(
@@ -48,6 +55,12 @@ unsafe extern "C" fn memcmp(
     right_pointer: *const u8,
     length_of_comparison: usize,
 ) -> i32 {
+    signature_matches_libc!(libc::memcmp(
+        left_pointer.cast(),
+        right_pointer.cast(),
+        length_of_comparison
+    ));
+
     let ordering: i32;
     asm!(
         "repe cmpsb",
