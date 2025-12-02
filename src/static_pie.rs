@@ -1,6 +1,7 @@
 use std::{
     arch::asm,
     cmp::max,
+    ffi::c_void,
     marker::PhantomData,
     ptr::{null, null_mut},
     slice,
@@ -35,7 +36,7 @@ pub struct Burnt;
 ///
 /// WARN: This struct is used before the relocations are preformed, if its size exceeds 8 bytes the compiler will call `memcpy` and cause a segfault.
 pub struct StaticPie<T> {
-    base_address: *const (),
+    base_address: *const c_void,
     dynamic_array: *const DynamicArrayItem,
     tls_program_header: *const ProgramHeader,
     phantom_data: PhantomData<T>,
@@ -43,7 +44,7 @@ pub struct StaticPie<T> {
 
 impl StaticPie<Ingredients> {
     #[inline(always)]
-    pub unsafe fn from_base(base: *const ()) -> StaticPie<Ingredients> {
+    pub unsafe fn from_base(base: *const c_void) -> StaticPie<Ingredients> {
         // ELf Header:
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_type == ET_DYN);
@@ -76,7 +77,7 @@ impl StaticPie<Ingredients> {
         for header in program_header_table {
             match header.p_type {
                 PT_PHDR => {
-                    base = program_header_table.as_ptr().byte_sub(header.p_vaddr) as *const ();
+                    base = program_header_table.as_ptr().byte_sub(header.p_vaddr) as *const c_void;
                 }
                 PT_DYNAMIC => dynamic_program_header = header,
                 PT_TLS => tls_program_header = header,
@@ -90,7 +91,7 @@ impl StaticPie<Ingredients> {
     #[inline(always)]
     #[must_use]
     unsafe fn build(
-        base: *const (),
+        base: *const c_void,
         dynamic_program_header: *const ProgramHeader,
         tls_program_header: *const ProgramHeader,
     ) -> StaticPie<Ingredients> {
@@ -241,7 +242,7 @@ impl StaticPie<Baked> {
         let thread_control_block =
             tls_block_pointer.byte_add(tls_blocks_size_and_align) as *mut ThreadControlBlock;
 
-        let thread_pointer_register: *mut () =
+        let thread_pointer_register: *mut c_void =
             (*thread_control_block).thread_pointee.as_mut_ptr().cast();
 
         *thread_control_block = ThreadControlBlock {
@@ -302,7 +303,7 @@ impl StaticPie<Burnt> {
         // Call each initialization function in order
         init_functions
             .iter()
-            .filter(|init_fn| **init_fn as *const () != null())
+            .filter(|init_fn| **init_fn as *const c_void != null())
             .for_each(|init_fn| init_fn(arg_count, arg_pointer, env_pointer));
     }
 }

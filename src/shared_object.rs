@@ -63,7 +63,7 @@ fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (
 ///
 /// 2. From a file descriptor:
 pub struct SharedObject {
-    pub base: *const (),
+    pub base: *const c_void,
     pub relocations: RelocationSlices,
     pub needed_libraries: Vec<usize>, // Indexs into the string table...
     pub symbol_table: SymbolTable,

@@ -1,9 +1,9 @@
-use std::arch::asm;
+use std::{arch::asm, ffi::c_void};
 
 use crate::io_macros::syscall_debug_assert;
 
 #[inline(always)]
-pub unsafe fn set_thread_pointer(new_pointer: *mut ()) {
+pub unsafe fn set_thread_pointer(new_pointer: *mut c_void) {
     const ARCH_PRCTL: usize = 158;
     const ARCH_SET_FS: usize = 4098;
 
@@ -16,12 +16,12 @@ pub unsafe fn set_thread_pointer(new_pointer: *mut ()) {
         out("r11") _,
         options(nostack)
     );
-    syscall_debug_assert!(*new_pointer.cast::<*mut ()>() == new_pointer);
+    syscall_debug_assert!(*new_pointer.cast::<*mut c_void>() == new_pointer);
     syscall_debug_assert!(get_thread_pointer() == new_pointer);
 }
 
 #[inline(always)]
-pub unsafe fn get_thread_pointer() -> *mut () {
+pub unsafe fn get_thread_pointer() -> *mut c_void {
     let pointer;
     asm!(
         "mov {}, fs:0",

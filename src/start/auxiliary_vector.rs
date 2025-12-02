@@ -1,6 +1,4 @@
-use core::ffi::c_void;
-
-use super::environment_variables::EnvironmentIter;
+use std::ffi::c_void;
 
 pub const AT_NULL: usize = 0;
 pub const AT_PHDR: usize = 3;
@@ -16,7 +14,7 @@ pub const AT_RANDOM: usize = 25;
 #[derive(Clone, Copy)]
 pub union AuxiliaryVectorUnion {
     pub a_val: usize,
-    pub a_ptr: *mut (),
+    pub a_ptr: *mut c_void,
 }
 
 /// An item in the auxiliary vector.
