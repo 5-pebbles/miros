@@ -65,11 +65,11 @@ unsafe extern "C" fn abort() -> ! {
 
     unsafe {
         raise(libc::SIGABRT);
+        // SAFETY: POSIX states that we should unregister the sigabort handler and try again...
+        // But why the fuck would you return normally from a sigabort?!?
+        // Anyway, if this doesn't work you have an invalid instruction coming your way. ┗(▀̿ĺ̯▀̿ ̿)┓  ●~*
+        raise(libc::SIGKILL);
     }
-
-    // SAFETY: POSIX states that we should unregister the sigabort handler and try again...
-    // But why the fuck would you return normally from a sigabort?!?
-    // If you do, you're fucking retarded and have an invalid instruction coming your way. ┗(▀̿ĺ̯▀̿ ̿)┓  ●~*
 
     asm!("ud2", options(noreturn, nostack));
 }
