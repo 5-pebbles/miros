@@ -4,11 +4,10 @@ use auxiliary_vector::{
 
 use crate::{
     elf::program_header::ProgramHeader,
-    // global_allocator,
     io_macros::{syscall_assert, syscall_debug_assert},
     libc::environ::set_environ_pointer,
+    objects::Miros,
     page_size,
-    static_pie::StaticPie,
 };
 use std::{
     arch::naked_asm,
@@ -97,16 +96,13 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     // We are a static pie (position-independent-executable).
     // Relocate ourselves and initialize thread local storage:
     let miros = if base.is_null() {
-        StaticPie::from_program_headers(&program_header_table)
+        Miros::from_program_headers(&program_header_table)
     } else {
-        StaticPie::from_base(base)
+        Miros::from_base(base)
     };
-    miros
-        .relocate()
-        .allocate_tls(&*pseudorandom_bytes)
-        .init_array(arg_count, arg_pointer, arg_pointer.add(arg_count + 1));
-
-    set_environ_pointer(arg_pointer.add(arg_count + 1) as *mut *mut u8);
+    miros.early_relocate().load_dependencies(
+        arg_pointer.add(arg_count + 1) as *mut *mut u8, /* environ_pointer */
+    );
     // NOTE: We can now use the Rust standard library.
 
     // unsafe {

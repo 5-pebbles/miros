@@ -1,6 +1,6 @@
 /// An ELF relocation entry with an addend.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rela {
     pub r_offset: usize,
     pub r_info: usize,

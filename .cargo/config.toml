@@ -1,2 +1,4 @@
 [build]
+# If target isn't manually specified, `-nostartfiles` will be passed to proc-macos, which are run at compile time.
+# My solution is to wrap rustc and only pass -nostartfiles to miros itself.
 rustc = "./rustc_wrapper_script.sh"

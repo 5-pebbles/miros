@@ -4,6 +4,8 @@
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]
 #![feature(thread_local)]
+#![feature(associated_type_defaults)]
+#![feature(anonymous_lifetime_in_impl_trait)]
 #![no_main]
 #![allow(dead_code)]
 
@@ -13,10 +15,11 @@ mod syscall;
 mod elf;
 mod io_macros;
 mod libc;
+mod objects;
 // mod linking;
 mod page_size;
 // mod shared_object;
 mod global_allocator;
 mod start;
-mod static_pie;
+// mod static_pie;
 mod utils;
