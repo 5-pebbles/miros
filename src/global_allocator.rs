@@ -8,9 +8,8 @@ use std::ptr::copy_nonoverlapping;
 
 use crate::{
     io_macros::syscall_debug_assert,
-    libc::mem::mmap,
+    libc::mem::{mmap, munmap, MapFlags, ProtectionFlags},
     objects::InitArrayFunction,
-    page_size::get_page_size,
     start::auxiliary_vector::{AuxiliaryVectorIter, AT_PAGE_SIZE},
 };
 

@@ -30,3 +30,5 @@ fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (
         )
     }
 }
+
+pub struct Dependency {}

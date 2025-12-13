@@ -1,42 +1,40 @@
-use std::{ffi::c_void, marker::PhantomData, ptr::null, slice};
-
-#[cfg(debug_assertions)]
-use crate::elf::dynamic_array::{DT_RELAENT, DT_SYMENT};
 use crate::{
     elf::{
-        dynamic_array::{
-            DynamicArrayItem, DynamicArrayIter, DT_NEEDED, DT_RELA, DT_RELASZ, DT_STRTAB, DT_SYMTAB,
-        },
         header::{ElfHeader, ET_DYN},
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
-        relocate::Rela,
-        string_table::StringTable,
-        symbol::{Symbol, SymbolTable},
+        thread_local_storage::ThreadControlBlock,
     },
-    io_macros::{syscall_assert, syscall_debug_assert},
-    libc::environ::set_environ_pointer,
-    objects::relocate::RelaRelocatable,
+    io_macros::syscall_debug_assert,
+    libc::mem::{mmap, MapFlags, ProtectionFlags},
+    objects::{
+        object_base::{NonDynamic, ObjectBase},
+        relocate::RelaRelocatable,
+    },
+    syscall::thread_pointer::set_thread_pointer,
+    utils::round_up_to_boundary,
+};
+use std::{
+    cmp::max,
+    ffi::c_void,
+    marker::PhantomData,
+    ptr::{null, null_mut},
+    slice,
 };
 
-pub struct EarlyRelocate;
-pub struct Dependencies;
+pub type InitArrayFunction = extern "C" fn(usize, *const *const u8, *const *const u8);
+
 pub struct Relocate;
 pub struct AllocateTLS;
 pub struct InitArray;
 
 pub struct Miros<T> {
-    base_address: *const c_void,
-    dynamic_array: *const DynamicArrayItem,
-    string_table: StringTable,
-    symbol_table: SymbolTable,
-    rela_slice: &'static [Rela],
-    tls_program_header: *const ProgramHeader,
+    object_base: ObjectBase<NonDynamic>,
     phantom_data: PhantomData<T>,
 }
 
-impl Miros<EarlyRelocate> {
+impl Miros<Relocate> {
     #[inline(always)]
-    pub unsafe fn from_base(base: *const c_void) -> Miros<EarlyRelocate> {
+    pub unsafe fn from_base(base: *const c_void) -> Miros<Relocate> {
         // ELf Header:
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_type == ET_DYN);
@@ -57,13 +55,18 @@ impl Miros<EarlyRelocate> {
             }
         }
 
-        Self::build(base, dynamic_program_header, tls_program_header)
+        let object_base = ObjectBase::build(base, dynamic_program_header, tls_program_header);
+
+        Self {
+            object_base,
+            phantom_data: PhantomData,
+        }
     }
 
     #[inline(always)]
     pub unsafe fn from_program_headers(
         program_header_table: &'static [ProgramHeader],
-    ) -> Miros<EarlyRelocate> {
+    ) -> Miros<Relocate> {
         let (mut base, mut dynamic_program_header, mut tls_program_header) =
             (null(), null(), null());
         for header in program_header_table {
@@ -77,113 +80,144 @@ impl Miros<EarlyRelocate> {
             }
         }
 
-        Self::build(base, dynamic_program_header, tls_program_header)
-    }
+        let object_base = ObjectBase::build(base, dynamic_program_header, tls_program_header);
 
-    #[inline(always)]
-    #[must_use]
-    unsafe fn build(
-        base: *const c_void,
-        dynamic_program_header: *const ProgramHeader,
-        tls_program_header: *const ProgramHeader,
-    ) -> Miros<EarlyRelocate> {
-        syscall_debug_assert!(dynamic_program_header != null());
-
-        // Dynamic Arrary:
-        let dynamic_array =
-            base.byte_add((*dynamic_program_header).p_vaddr) as *const DynamicArrayItem;
-
-        let mut string_table_pointer: *const u8 = null();
-        let mut symbol_table_pointer: *const Symbol = null();
-
-        let mut rela_pointer: *const Rela = null();
-        let mut rela_count = 0;
-        for item in DynamicArrayIter::new(dynamic_array) {
-            match item.d_tag {
-                DT_RELA => {
-                    rela_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const Rela;
-                }
-                DT_RELASZ => {
-                    rela_count = item.d_un.d_val / core::mem::size_of::<Rela>();
-                }
-                #[cfg(debug_assertions)]
-                DT_RELAENT => {
-                    syscall_assert!(item.d_un.d_val == size_of::<Rela>())
-                }
-                DT_STRTAB => {
-                    string_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const u8
-                }
-                DT_SYMTAB => {
-                    symbol_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol
-                }
-                #[cfg(debug_assertions)]
-                DT_SYMENT => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
-                _ => (),
-            }
-        }
-
-        let string_table = StringTable::new(string_table_pointer);
-        let symbol_table = SymbolTable::new(symbol_table_pointer);
-
-        syscall_debug_assert!(rela_pointer != null());
-        let rela_slice = slice::from_raw_parts(rela_pointer, rela_count);
-
-        Miros::<EarlyRelocate> {
-            base_address: base,
-            dynamic_array,
-            string_table,
-            symbol_table,
-            rela_slice,
-            tls_program_header,
+        Self {
+            object_base,
             phantom_data: PhantomData,
         }
     }
 }
 
-impl RelaRelocatable for Miros<EarlyRelocate> {
+impl RelaRelocatable for Miros<Relocate> {
     fn base(&self) -> Result<*const c_void, Self::RelaError> {
-        Ok(self.base_address)
+        Ok(self.object_base.base)
     }
 }
 
-impl Miros<EarlyRelocate> {
-    pub fn early_relocate(self) -> Miros<Dependencies> {
+impl Miros<Relocate> {
+    #[must_use]
+    pub fn relocate(self) -> Miros<AllocateTLS> {
         unsafe {
             use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE};
             self.rela_relocate(
-                self.rela_slice
+                self.object_base
+                    .rela_slice
                     .into_iter()
                     .filter(|rela| matches!(rela.r_type(), R_X86_64_RELATIVE | R_X86_64_IRELATIVE)),
             )
             .unwrap();
         }
 
-        Miros::<Dependencies> {
+        Miros::<AllocateTLS> {
             phantom_data: PhantomData,
             ..self
         }
     }
 }
 
-impl Miros<Dependencies> {
-    pub unsafe fn load_dependencies(self, environ_pointer: *mut *mut u8) -> Miros<Relocate> {
-        unsafe { set_environ_pointer(environ_pointer) };
-
-        let mut needed_libraries: Vec<usize> = Vec::new(); // Indexs into the string table...
-        for item in DynamicArrayIter::new(self.dynamic_array) {
-            match item.d_tag {
-                DT_NEEDED => needed_libraries.push(unsafe { item.d_un.d_val }),
-                _ => (),
-            }
+impl Miros<AllocateTLS> {
+    #[must_use]
+    pub unsafe fn allocate_tls(self, pseudorandom_bytes: &[u8; 16]) -> Miros<InitArray> {
+        // Static Thread Local Storage [before Thread Pointer]:
+        //                                         ┌---------------------┐
+        //      ┌----------------------------┐ <-- |    tls-offset[1]    |
+        //      |      Static TLS Block      |     |---------------------|
+        //      |----------------------------| <-- | Thread Pointer (TP) |
+        // ┌--- | Thread Control Block (TCB) |     └---------------------┘
+        // |    └----------------------------┘
+        // |
+        // |   ┌------------------┐
+        // └-> | Null Dtv Pointer |
+        //     └------------------┘
+        // NOTE: I am not bothering with alignment at the first address because it's already page aligned...
+        if self.object_base.tls_program_header.is_null() {
+            return Miros::<InitArray> {
+                phantom_data: PhantomData,
+                ..self
+            };
         }
+        let tls_program_header = *self.object_base.tls_program_header;
 
-        for library in needed_libraries {
-            unsafe { self.string_table.get(library) };
-        }
+        let max_required_align = max(align_of::<ThreadControlBlock>(), tls_program_header.p_align);
+        let tls_blocks_size_and_align =
+            round_up_to_boundary(tls_program_header.p_memsz, tls_program_header.p_align);
+        let tcb_size_and_align = size_of::<ThreadControlBlock>() + max_required_align;
 
-        Miros::<Relocate> {
+        let required_size = tls_blocks_size_and_align + tcb_size_and_align;
+
+        let protection_flags = ProtectionFlags::ZERO
+            .with_readable(true)
+            .with_writable(true);
+
+        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
+
+        let tls_block_pointer = mmap(
+            null_mut(),
+            required_size,
+            protection_flags,
+            map_flags,
+            -1, // file descriptor (-1 for anonymous mapping)
+            0,  // offset
+        );
+        syscall_debug_assert!(tls_block_pointer.addr() % max_required_align == 0);
+
+        // Initialize the TLS data from template image
+        slice::from_raw_parts_mut(tls_block_pointer as *mut u8, tls_program_header.p_filesz)
+            .copy_from_slice(slice::from_raw_parts(
+                self.object_base.base.byte_add(tls_program_header.p_offset) as *mut u8,
+                tls_program_header.p_filesz,
+            ));
+
+        // Zero out TLS data beyond `p_filesz`
+        slice::from_raw_parts_mut(
+            tls_block_pointer.byte_add(tls_program_header.p_filesz) as *mut u8,
+            tls_program_header.p_memsz - tls_program_header.p_filesz,
+        )
+        .fill(0);
+
+        // Initialize the Thread Control Block (TCB)
+        let thread_control_block =
+            tls_block_pointer.byte_add(tls_blocks_size_and_align) as *mut ThreadControlBlock;
+
+        let thread_pointer_register: *mut c_void =
+            (*thread_control_block).thread_pointee.as_mut_ptr().cast();
+
+        *thread_control_block = ThreadControlBlock {
+            thread_pointee: [],
+            thread_pointer_register,
+            dynamic_thread_vector: null_mut(),
+            _padding: [0; 3],
+            canary: usize::from_ne_bytes(
+                (*pseudorandom_bytes)[..size_of::<usize>()]
+                    .try_into()
+                    .unwrap(),
+            ),
+        };
+
+        // Make the thread pointer (which is fs on x86_64) point to the new TCB
+        set_thread_pointer(thread_pointer_register);
+
+        Miros::<InitArray> {
             phantom_data: PhantomData,
             ..self
+        }
+    }
+}
+
+impl Miros<InitArray> {
+    pub unsafe fn init_array(
+        self,
+        arg_count: usize,
+        arg_pointer: *const *const u8,
+        env_pointer: *const *const u8,
+    ) {
+        if let Some(init_functions) = self.object_base.init_array {
+            // Call each initialization function in order
+            init_functions
+                .iter()
+                .filter(|init_fn| **init_fn as *const c_void != null())
+                .for_each(|init_fn| init_fn(arg_count, arg_pointer, env_pointer));
         }
     }
 }
