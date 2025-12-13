@@ -3,7 +3,7 @@
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
-mod mem;
+pub mod mem;
 mod process;
 mod str;
 mod threads;

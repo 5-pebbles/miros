@@ -1,6 +1,68 @@
+// TODO: extract functions into files
+use bitbybit::{bitenum, bitfield};
 use std::arch::asm;
 
-use crate::signature_matches_libc;
+use crate::{io_macros::syscall_debug_assert, signature_matches_libc};
+
+mod mmap;
+pub use mmap::mmap;
+
+// Protection flags:
+#[bitenum(u2, exhaustive = true)]
+pub enum GrowthDirection {
+    FixedSize = 0b00,
+    GrowsDown = 0b01,
+    GrowsUp = 0b10,
+    Invalid = 0b11,
+}
+
+#[bitfield(u32)]
+pub struct ProtectionFlags {
+    #[bit(0, rw)]
+    readable: bool,
+    #[bit(1, rw)]
+    writable: bool,
+    #[bit(2, rw)]
+    executable: bool,
+    #[bits(24..=25, rw)]
+    growth_direction: GrowthDirection,
+}
+
+// MAP flags:
+#[bitfield(u32)]
+pub struct MapFlags {
+    #[bit(0, rw)]
+    shared: bool,
+    #[bit(1, rw)]
+    private: bool,
+    #[bit(4, rw)]
+    fixed: bool,
+    #[bit(5, rw)]
+    anonymous: bool,
+}
+
+// TODO: add error handling
+#[no_mangle]
+pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
+    signature_matches_libc!(libc::munmap(pointer.cast(), size));
+
+    const MUNMAP: usize = 11;
+
+    let mut result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            inlateout("rax") MUNMAP => result,
+            in("rdi") pointer,
+            in("rsi") size,
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        )
+    };
+    syscall_debug_assert!(result >= 0);
+    0
+}
 
 #[no_mangle]
 unsafe extern "C" fn memcpy(

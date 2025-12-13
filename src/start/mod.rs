@@ -100,10 +100,11 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     } else {
         Miros::from_base(base)
     };
-    miros.early_relocate().load_dependencies(
-        arg_pointer.add(arg_count + 1) as *mut *mut u8, /* environ_pointer */
-    );
-    // NOTE: We can now use the Rust standard library.
+    miros
+        .relocate()
+        .allocate_tls(&*pseudorandom_bytes)
+        .init_array(arg_count, arg_pointer, env_pointer); // NOTE: We can now use the Rust standard library.
+    set_environ_pointer(env_pointer as *mut *mut u8);
 
     // unsafe {
     //     // Set locale to "C"
@@ -126,10 +127,6 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     } else {
         // SharedObject::from_headers(program_header_table, pseudorandom_bytes);
 
-        println!(
-            "{}",
-            read_to_string("/home/ghostbird/git/miros/README2.md").unwrap()
-        );
         crate::syscall::exit::exit(1);
     };
 

@@ -1,6 +1,7 @@
-mod dependency;
 mod miros;
+pub use miros::{InitArrayFunction, Miros};
 
-pub use miros::Miros;
+mod dependency;
+pub use dependency::Dependency;
 
 mod relocate;

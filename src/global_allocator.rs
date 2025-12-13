@@ -8,10 +8,10 @@ use std::ptr::copy_nonoverlapping;
 
 use crate::{
     io_macros::syscall_debug_assert,
+    libc::mem::mmap,
+    objects::InitArrayFunction,
     page_size::get_page_size,
     start::auxiliary_vector::{AuxiliaryVectorIter, AT_PAGE_SIZE},
-    static_pie::InitArrayFunction,
-    syscall::mmap::{mmap, munmap, MAP_ANONYMOUS, MAP_PRIVATE, PROT_READ, PROT_WRITE},
 };
 
 #[link_section = ".init_array"]
@@ -88,12 +88,18 @@ unsafe impl GlobalAlloc for Allocator {
 
         let size = layout.pad_to_align().size();
 
+        let protection_flags = ProtectionFlags::ZERO
+            .with_readable(true)
+            .with_writable(true);
+
+        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
+
         match size {
             _ => mmap(
                 null_mut(),
                 self.align_layout_to_page_size(layout).pad_to_align().size(),
-                PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANONYMOUS,
+                protection_flags,
+                map_flags,
                 -1, // file descriptor (-1 for anonymous mapping)
                 0,  // offset
             ),
