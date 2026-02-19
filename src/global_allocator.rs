@@ -9,8 +9,8 @@ use std::ptr::copy_nonoverlapping;
 use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{mmap, munmap, MapFlags, ProtectionFlags},
-    objects::InitArrayFunction,
-    start::auxiliary_vector::{AuxiliaryVectorIter, AT_PAGE_SIZE},
+    objects::object_data::InitArrayFunction,
+    start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
 
 #[link_section = ".init_array"]
@@ -19,19 +19,14 @@ pub(crate) static INIT_ALLOCATOR: InitArrayFunction = init_allocator;
 extern "C" fn init_allocator(
     _arg_count: usize,
     _arg_pointer: *const *const u8,
-    env_pointer: *const *const u8,
+    _env_pointer: *const *const u8,
+    auxv_pointer: *const AuxiliaryVectorItem,
 ) {
     unsafe {
-        let mut auxiliary_vector = AuxiliaryVectorIter::from_env_pointer(env_pointer);
-
-        let page_size = auxiliary_vector
-            .find(|item| item.a_type == AT_PAGE_SIZE)
-            .unwrap()
-            .a_un
-            .a_val;
+        let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
 
         #[allow(static_mut_refs)]
-        ALLOCATOR.initialize(page_size);
+        ALLOCATOR.initialize(auxv_info.page_size);
     }
 }
 

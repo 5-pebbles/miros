@@ -1,89 +1,57 @@
 use crate::{
-    elf::{
-        header::{ElfHeader, ET_DYN},
-        program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
-        thread_local_storage::ThreadControlBlock,
-    },
+    elf::{program_header::ProgramHeader, thread_local_storage::ThreadControlBlock},
     io_macros::syscall_debug_assert,
     libc::mem::{mmap, MapFlags, ProtectionFlags},
-    objects::{
-        object_base::{NonDynamic, ObjectBase},
-        relocate::RelaRelocatable,
-    },
+    objects::object_data::{NonDynamic, ObjectData},
+    start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
     utils::round_up_to_boundary,
 };
 use std::{
     cmp::max,
     ffi::c_void,
+    fs::File,
     marker::PhantomData,
     ptr::{null, null_mut},
     slice,
 };
 
-pub type InitArrayFunction = extern "C" fn(usize, *const *const u8, *const *const u8);
+pub type InitArrayFunction =
+    extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
 
 pub struct Relocate;
 pub struct AllocateTLS;
 pub struct InitArray;
 
 pub struct Miros<T> {
-    object_base: ObjectBase<NonDynamic>,
+    object_data: ObjectData<NonDynamic>,
     phantom_data: PhantomData<T>,
 }
 
 impl Miros<Relocate> {
-    #[inline(always)]
-    pub unsafe fn from_base(base: *const c_void) -> Miros<Relocate> {
-        // ELf Header:
-        let header = &*(base as *const ElfHeader);
-        syscall_debug_assert!(header.e_type == ET_DYN);
-        syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
-
-        // Program Headers:
-        let program_header_table = slice::from_raw_parts(
-            base.byte_add(header.e_phoff) as *const ProgramHeader,
-            header.e_phnum as usize,
-        );
-
-        let (mut dynamic_program_header, mut tls_program_header) = (null(), null());
-        for header in program_header_table {
-            match header.p_type {
-                PT_DYNAMIC => dynamic_program_header = header,
-                PT_TLS => tls_program_header = header,
-                _ => (),
-            }
-        }
-
-        let object_base = ObjectBase::build(base, dynamic_program_header, tls_program_header);
+    pub unsafe fn from_base(base: *const c_void) -> Self {
+        let object_data = ObjectData::from_base(base);
 
         Self {
-            object_base,
+            object_data,
             phantom_data: PhantomData,
         }
     }
 
-    #[inline(always)]
-    pub unsafe fn from_program_headers(
-        program_header_table: &'static [ProgramHeader],
-    ) -> Miros<Relocate> {
-        let (mut base, mut dynamic_program_header, mut tls_program_header) =
-            (null(), null(), null());
-        for header in program_header_table {
-            match header.p_type {
-                PT_PHDR => {
-                    base = program_header_table.as_ptr().byte_sub(header.p_vaddr) as *const c_void;
-                }
-                PT_DYNAMIC => dynamic_program_header = header,
-                PT_TLS => tls_program_header = header,
-                _ => (),
-            }
-        }
-
-        let object_base = ObjectBase::build(base, dynamic_program_header, tls_program_header);
+    pub unsafe fn from_program_headers(program_header_table: &'static [ProgramHeader]) -> Self {
+        let object_data = ObjectData::from_program_headers(program_header_table);
 
         Self {
-            object_base,
+            object_data,
+            phantom_data: PhantomData,
+        }
+    }
+
+    pub unsafe fn map_from_file(file: File) -> Self {
+        let object_data = ObjectData::map_from_file(file);
+
+        Self {
+            object_data,
             phantom_data: PhantomData,
         }
     }
@@ -91,7 +59,7 @@ impl Miros<Relocate> {
 
 impl RelaRelocatable for Miros<Relocate> {
     fn base(&self) -> Result<*const c_void, Self::RelaError> {
-        Ok(self.object_base.base)
+        Ok(self.object_data.base)
     }
 }
 
@@ -101,7 +69,7 @@ impl Miros<Relocate> {
         unsafe {
             use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE};
             self.rela_relocate(
-                self.object_base
+                self.object_data
                     .rela_slice
                     .into_iter()
                     .filter(|rela| matches!(rela.r_type(), R_X86_64_RELATIVE | R_X86_64_IRELATIVE)),
@@ -131,13 +99,13 @@ impl Miros<AllocateTLS> {
         // └-> | Null Dtv Pointer |
         //     └------------------┘
         // NOTE: I am not bothering with alignment at the first address because it's already page aligned...
-        if self.object_base.tls_program_header.is_null() {
+        if self.object_data.tls_program_header.is_null() {
             return Miros::<InitArray> {
                 phantom_data: PhantomData,
                 ..self
             };
         }
-        let tls_program_header = *self.object_base.tls_program_header;
+        let tls_program_header = *self.object_data.tls_program_header;
 
         let max_required_align = max(align_of::<ThreadControlBlock>(), tls_program_header.p_align);
         let tls_blocks_size_and_align =
@@ -165,7 +133,7 @@ impl Miros<AllocateTLS> {
         // Initialize the TLS data from template image
         slice::from_raw_parts_mut(tls_block_pointer as *mut u8, tls_program_header.p_filesz)
             .copy_from_slice(slice::from_raw_parts(
-                self.object_base.base.byte_add(tls_program_header.p_offset) as *mut u8,
+                self.object_data.base.byte_add(tls_program_header.p_offset) as *mut u8,
                 tls_program_header.p_filesz,
             ));
 
@@ -212,7 +180,7 @@ impl Miros<InitArray> {
         arg_pointer: *const *const u8,
         env_pointer: *const *const u8,
     ) {
-        if let Some(init_functions) = self.object_base.init_array {
+        if let Some(init_functions) = self.object_data.init_array {
             // Call each initialization function in order
             init_functions
                 .iter()

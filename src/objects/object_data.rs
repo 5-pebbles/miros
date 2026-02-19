@@ -2,7 +2,10 @@ use std::ops::{Deref, DerefMut};
 use std::slice;
 use std::{ffi::c_void, ptr::null};
 
-use crate::elf::dynamic_array::{DynamicArrayUnion, DT_NEEDED};
+use crate::elf::dynamic_array::{DynamicArrayUnion, DT_NEEDED, DT_PLTGOT};
+use crate::elf::header::ElfHeader;
+use crate::elf::program_header::{PT_DYNAMIC, PT_PHDR, PT_TLS};
+use crate::start::auxiliary_vector::AuxiliaryVectorItem;
 #[cfg(debug_assertions)]
 use crate::{
     elf::dynamic_array::{DT_RELAENT, DT_SYMENT},
@@ -20,8 +23,11 @@ use crate::{
         symbol::{Symbol, SymbolTable},
     },
     io_macros::syscall_debug_assert,
-    objects::InitArrayFunction,
 };
+
+// TODO: This file is stupid, split up into it's own module... someday [^TM]
+pub type InitArrayFunction =
+    extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
 
 mod private {
     use super::{Dynamic, NonDynamic};
@@ -65,43 +71,100 @@ impl DerefMut for Dynamic {
     }
 }
 
-pub struct ObjectBase<T: DynamicObject + Default> {
+pub trait AnyDynamic = DynamicObject + Default;
+
+pub struct ThreadLocalAllocation {
+    block_id: usize,
+    block_offset: usize,
+    // This enables lazy per-thread allocation when thread.generation < self.generation & modules are dlopen'd after threads are created
+    generation: usize,
+}
+
+impl ThreadLocalAllocation {
+    pub fn new(block_id: usize, block_offset: usize) -> Self {
+        // TODO: This should probably get and increment the global generation counter... someday, but not today.
+        Self {
+            block_id,
+            block_offset,
+            generation: 0,
+        }
+    }
+}
+
+pub struct ThreadLocalData {
+    pub tls_program_header: ProgramHeader,
+    pub thread_local_allocation: Option<ThreadLocalAllocation>,
+}
+
+pub struct ObjectData<T: AnyDynamic> {
     pub base: *const c_void,
     pub dynamic_array: *const DynamicArrayItem,
+    pub global_offset_table: *const usize,
     pub string_table: StringTable,
     pub symbol_table: SymbolTable,
     pub rela_slice: &'static [Rela],
-    pub tls_program_header: *const ProgramHeader,
+    pub tls_data: Option<ThreadLocalData>,
     pub init_array: Option<&'static [InitArrayFunction]>,
 
     pub needed_libraries: T,
 }
 
-impl ObjectBase<NonDynamic> {
-    pub unsafe fn build(
-        base: *const c_void,
-        dynamic_program_header: *const ProgramHeader,
-        tls_program_header: *const ProgramHeader,
-    ) -> Self {
-        Self::build_internal(base, dynamic_program_header, tls_program_header)
+impl ObjectData<Dynamic> {
+    pub fn dependency_names(&self) -> impl Iterator<Item = &str> {
+        self.needed_libraries
+            .iter()
+            .map(|needed_library_index| unsafe { self.string_table.get(*needed_library_index) })
     }
 }
 
-impl ObjectBase<Dynamic> {
-    pub unsafe fn build_dynamic(
-        base: *const c_void,
-        dynamic_program_header: *const ProgramHeader,
-        tls_program_header: *const ProgramHeader,
-    ) -> Self {
+impl<T: AnyDynamic> ObjectData<T> {
+    pub unsafe fn from_base(base: *const c_void) -> Self {
+        // ELf Header:
+        let header = &*(base as *const ElfHeader);
+        syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
+
+        // Program Headers:
+        let program_header_table = slice::from_raw_parts(
+            base.byte_add(header.e_phoff) as *const ProgramHeader,
+            header.e_phnum as usize,
+        );
+
+        let mut dynamic_program_header = null();
+        let mut tls_program_header = None;
+        for header in program_header_table {
+            match header.p_type {
+                PT_DYNAMIC => dynamic_program_header = header,
+                PT_TLS => tls_program_header = Some(header.to_owned()),
+                _ => (),
+            }
+        }
+
         Self::build_internal(base, dynamic_program_header, tls_program_header)
     }
-}
 
-impl<T: DynamicObject + Default> ObjectBase<T> {
+    pub unsafe fn from_program_headers(
+        program_header_table: &'static [ProgramHeader],
+    ) -> ObjectData<T> {
+        let (mut base, mut dynamic_program_header) = (null(), null());
+        let mut tls_program_header = None;
+        for header in program_header_table {
+            match header.p_type {
+                PT_PHDR => {
+                    base = program_header_table.as_ptr().byte_sub(header.p_vaddr) as *const c_void;
+                }
+                PT_DYNAMIC => dynamic_program_header = header,
+                PT_TLS => tls_program_header = Some(header.to_owned()),
+                _ => (),
+            }
+        }
+
+        Self::build_internal(base, dynamic_program_header, tls_program_header)
+    }
+
     unsafe fn build_internal(
         base: *const c_void,
         dynamic_program_header: *const ProgramHeader,
-        tls_program_header: *const ProgramHeader,
+        tls_program_header: Option<ProgramHeader>,
     ) -> Self {
         syscall_debug_assert!(dynamic_program_header != null());
 
@@ -109,6 +172,7 @@ impl<T: DynamicObject + Default> ObjectBase<T> {
         let dynamic_array =
             base.byte_add((*dynamic_program_header).p_vaddr) as *const DynamicArrayItem;
 
+        let mut global_offset_table_pointer: *const usize = null();
         let mut string_table_pointer: *const u8 = null();
         let mut symbol_table_pointer: *const Symbol = null();
 
@@ -121,6 +185,10 @@ impl<T: DynamicObject + Default> ObjectBase<T> {
         let mut needed_libraries = T::default();
         for item in DynamicArrayIter::new(dynamic_array) {
             match item.d_tag {
+                DT_PLTGOT => {
+                    global_offset_table_pointer =
+                        base.byte_add(item.d_un.d_ptr.addr()) as *const usize
+                }
                 DT_STRTAB => {
                     string_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const u8
                 }
@@ -171,10 +239,14 @@ impl<T: DynamicObject + Default> ObjectBase<T> {
         Self {
             base,
             dynamic_array,
+            global_offset_table: global_offset_table_pointer,
             string_table,
             symbol_table,
             rela_slice,
-            tls_program_header,
+            tls_data: tls_program_header.map(|tls_program_header| ThreadLocalData {
+                tls_program_header,
+                thread_local_allocation: None,
+            }),
             init_array,
             needed_libraries,
         }

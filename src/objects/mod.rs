@@ -1,8 +1,3 @@
-mod miros;
-pub use miros::{InitArrayFunction, Miros};
-
-mod dependency;
-pub use dependency::Dependency;
-
-mod object_base;
-mod relocate;
+pub mod object_data;
+pub mod object_pipeline;
+pub mod strategies;

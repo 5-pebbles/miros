@@ -6,6 +6,8 @@
 #![feature(thread_local)]
 #![feature(associated_type_defaults)]
 #![feature(anonymous_lifetime_in_impl_trait)]
+#![feature(trait_alias)]
+#![feature(type_alias_impl_trait)]
 #![no_main]
 #![allow(dead_code)]
 
@@ -18,6 +20,7 @@ mod libc;
 mod objects;
 mod page_size;
 // mod shared_object;
+mod error;
 mod global_allocator;
 mod start;
 mod utils;
