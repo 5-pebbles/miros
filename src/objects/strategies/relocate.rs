@@ -70,7 +70,7 @@ impl Relocate {
                     options(nostack, preserves_flags),
                 );
             }
-            _ => todo!(),
+            _ => (),
         }
 
         Ok(())

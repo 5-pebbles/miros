@@ -2,11 +2,11 @@ use crate::{
     io_macros::syscall_debug_assert,
     libc::environ::set_environ_pointer,
     objects::{
-        object_data::{NonDynamic, ObjectData},
+        object_data::{Dynamic, NonDynamic, ObjectData},
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, relocate::Relocate, thread_local_storage::ThreadLocalStorage,
-            ObjectDataSingle, Stratagem,
+            ObjectDataSingle, ObjectDataVector, Stratagem,
         },
     },
     page_size,
@@ -87,7 +87,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     );
 
     // Relocate ourselves and initialize thread local storage:
-    let miros = if auxv_info.base.is_null() {
+    let mut miros = if auxv_info.base.is_null() {
         ObjectData::<NonDynamic>::from_program_headers(&program_header_table)
     } else {
         ObjectData::from_base(auxv_info.base)
@@ -98,11 +98,12 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         ThreadLocalStorage::new(auxv_info.pseudorandom_bytes.as_ref().unwrap_unchecked());
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
-    let stratagems: &[&dyn Stratagem<ObjectDataSingle>] =
-        &[&relocate, &thread_local_storage, &init_array];
+    let stratagems: &[&dyn Stratagem<ObjectDataSingle>] = &[&thread_local_storage, &init_array];
 
     let pipeline = ObjectPipeline::new(stratagems);
-    let _ = pipeline.run_pipeline(miros);
+    let _ = relocate
+        .run(&mut miros)
+        .and_then(|_| pipeline.run_pipeline(&mut miros));
 
     println!("test");
 
@@ -110,5 +111,16 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     println!("{:?}", env::vars());
 
-    crate::syscall::exit::exit(0);
+    let executable = if auxv_info.base.is_null() {
+        todo!()
+    } else {
+        ObjectData::<Dynamic>::from_program_headers(&program_header_table)
+    };
+    let mut executable_and_dependencies = Vec::from([executable]);
+
+    let executable_stratagems: &[&dyn Stratagem<ObjectDataVector>] = &[&relocate, &init_array];
+    let executable_pipeline = ObjectPipeline::new(executable_stratagems);
+    let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
+
+    auxv_info.entry.addr()
 }
