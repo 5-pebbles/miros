@@ -8,8 +8,13 @@
 #![feature(anonymous_lifetime_in_impl_trait)]
 #![feature(trait_alias)]
 #![feature(type_alias_impl_trait)]
-#![no_main]
 #![allow(dead_code)]
+// NOTE: The entry point is defined in /src/start/mod.rs. o7
+#![no_main]
+// SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
+// (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
+// Avoiding infinite recursion → UB → ud2 in optimized builds.
+#![no_builtins]
 
 #[cfg_attr(target_arch = "x86_64", path = "syscall/x86_64/mod.rs")]
 mod syscall;
