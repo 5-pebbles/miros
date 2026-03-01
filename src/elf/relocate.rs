@@ -1,21 +1,6 @@
-use core::ffi::c_void;
-
-use crate::elf::symbol::Symbol;
-
-pub trait Relocatable {
-    fn base(&self) -> *const ();
-    fn symbol(&self, symbol_index: usize) -> Symbol;
-    fn relocation_slices(&self) -> RelocationSlices;
-}
-
-#[derive(Clone, Copy)]
-pub struct RelocationSlices {
-    pub rela_slice: &'static [Rela],
-}
-
 /// An ELF relocation entry with an addend.
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rela {
     pub r_offset: usize,
     pub r_info: usize,

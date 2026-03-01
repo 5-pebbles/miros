@@ -1,13 +1,12 @@
 use std::{
-    env,
-    ffi::{CStr, CString, OsStr},
+    ffi::CStr,
     mem::MaybeUninit,
 };
 
 use crate::{
     io_macros::syscall_debug_assert,
     signature_matches_libc,
-    start::environment_variables::{self, EnvironmentIter},
+    start::environment_variables::EnvironmentIter,
 };
 
 #[no_mangle]

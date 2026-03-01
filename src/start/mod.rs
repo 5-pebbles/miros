@@ -1,19 +1,20 @@
-use auxiliary_vector::{
-    AuxiliaryVectorIter, AT_BASE, AT_ENTRY, AT_PAGE_SIZE, AT_PHDR, AT_PHENT, AT_PHNUM, AT_RANDOM,
-};
-
 use crate::{
-    elf::program_header::ProgramHeader,
-    // global_allocator,
-    io_macros::{syscall_assert, syscall_debug_assert},
+    io_macros::syscall_debug_assert,
     libc::environ::set_environ_pointer,
+    objects::{
+        object_data::{Dynamic, NonDynamic, ObjectData},
+        object_pipeline::ObjectPipeline,
+        strategies::{
+            init_array::InitArray, relocate::Relocate, thread_local_storage::ThreadLocalStorage,
+            ObjectDataSingle, ObjectDataVector, Stratagem,
+        },
+    },
     page_size,
-    static_pie::StaticPie,
+    start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
 use std::{
     arch::naked_asm,
     env,
-    fs::{read_to_string, File},
     ptr::{null, null_mut},
     slice,
 };
@@ -22,7 +23,7 @@ pub mod auxiliary_vector;
 pub mod environment_variables;
 
 #[unsafe(naked)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
     naked_asm!("mov rdi, rsp",
         "and rsp, -16", // !0b1111
@@ -34,108 +35,92 @@ pub unsafe extern "C" fn _start() -> ! {
 }
 
 pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut usize) -> usize {
-    // Inital Stack Layout:
-    // + Newly Pushed Vaules      Examples:               |-----------------|
-    // |-------------------|    |----------------|  |---> | "/bin/git", 0x0 |
-    // | Arg Count         |    | 2              |  |     |-----------------|
+    // + Newly Pushed Values      Example:                ┌-----------------┐
+    // ┌-------------------┐    ┌----------------┐  ┌---> | "/bin/git", 0x0 |
+    // | Arg Count         |    | 2              |  |     └-----------------┘
     // |-------------------|    |----------------|  |
-    // | Arg Pointers...   |    | Pointer,       | -|   |---------------|
+    // | Arg Pointers...   |    | Pointer,       | -┘   ┌---------------┐
     // |                   |    | Other Pointer  | ---> | "commit", 0x0 |
-    // |-------------------|    |----------------|      |---------------|
+    // |-------------------|    |----------------|      └---------------┘
     // | Null              |    | 0x0            |
-    // |-------------------|    |----------------|       |-----------------------------|
+    // |-------------------|    |----------------|       ┌-----------------------------┐
     // | Env Pointers...   |    | Pointer,       | ----> | "HOME=/home/ghostbird", 0x0 |
-    // |                   |    | Other Pointer  | ---|  |-----------------------------|
+    // |                   |    | Other Pointer  | ---┐  └-----------------------------┘
     // |-------------------|    |----------------|    |
-    // | Null              |    | 0x0            |    |   |---------------------------|
-    // |-------------------|    |----------------|    |-> | "PATH=/bin:/usr/bin", 0x0 |
-    // | Auxv Type...      |    | AT_RANDOM      |        |---------------------------|
-    // | Auxv Vaule...     |    | Union->Pointer | -|
-    // |-------------------|    |----------------|  |   |---------------------------|
-    // | AT_NULL Auxv Pair |    | AT_NULL (0x0)  |  |-> | [16-bytes of random data] |
-    // |-------------------|    | Undefined      |      |---------------------------|
-    //                          |----------------|
+    // | Null              |    | 0x0            |    |   ┌---------------------------┐
+    // |-------------------|    |----------------|    └-> | "PATH=/bin:/usr/bin", 0x0 |
+    // | Auxv Type...      |    | AT_RANDOM      |        └---------------------------┘
+    // | Auxv Value...     |    | Union->Pointer | -┐
+    // |-------------------|    |----------------|  |   ┌---------------------------┐
+    // | AT_NULL Auxv Pair |    | AT_NULL (0x0)  |  └-> | [16-bytes of random data] |
+    // └-------------------┘    | Undefined      |      └---------------------------┘
+    //                          └----------------┘
 
-    // Check that `stack_pointer` is where we expect it to be.
-    syscall_debug_assert!(stack_pointer != core::ptr::null_mut());
-    syscall_debug_assert!(stack_pointer.addr() & 0b1111 == 0);
+    // Check that `stack_pointer` is where (and what) we expect it to be.
+    debug_assert_ne!(stack_pointer, null_mut());
+    debug_assert_eq!(stack_pointer.addr() & 0b1111, 0); // 16-bit aligned
 
-    let arg_count = *stack_pointer as usize;
-    let arg_pointer = stack_pointer.add(1) as *const *const u8;
-    syscall_debug_assert!((*arg_pointer.add(arg_count)).is_null());
+    let arg_count = *stack_pointer;
+    let arg_pointer = stack_pointer.add(1).cast::<*const u8>();
+
+    debug_assert_eq!((*arg_pointer.add(arg_count)), null()); // args are null-terminated
 
     let env_pointer = arg_pointer.add(arg_count + 1);
 
-    let auxiliary_vector = AuxiliaryVectorIter::from_env_pointer(env_pointer);
-
+    // Find the end of the environment variables + null-terminator + 1
     // Auxilary Vector:
-    let (mut base, mut entry, mut page_size) = (null(), null(), 0);
-    let mut pseudorandom_bytes: *const [u8; 16] = null_mut();
-    // NOTE: The program headers in the auxiliary vector belong to the executable, not us.
-    let (mut program_header_pointer, mut program_header_count) = (null(), 0);
-    for value in auxiliary_vector {
-        match value.a_type {
-            AT_BASE => base = value.a_un.a_ptr,
-            AT_ENTRY => entry = value.a_un.a_ptr,
-            AT_PAGE_SIZE => page_size = value.a_un.a_val,
-            AT_RANDOM => pseudorandom_bytes = value.a_un.a_ptr as *const [u8; 16],
-            // Executable Stuff:
-            AT_PHDR => program_header_pointer = value.a_un.a_ptr as *const ProgramHeader,
-            AT_PHNUM => program_header_count = value.a_un.a_val,
-            #[cfg(debug_assertions)]
-            AT_PHENT => syscall_assert!(value.a_un.a_val == size_of::<ProgramHeader>()),
-            _ => (),
-        }
-    }
-    syscall_debug_assert!(page_size.is_power_of_two());
-    syscall_debug_assert!(base.addr() & (page_size - 1) == 0);
-    page_size::set_page_size(page_size);
+    let auxv_pointer = (0..)
+        .map(|i| env_pointer.add(i))
+        .find(|&ptr| (*ptr).is_null())
+        .unwrap_unchecked() // SAFETY: I mean, it's an infinite loop, then segfaults before it's None...
+        .add(1)
+        .cast::<AuxiliaryVectorItem>();
 
-    let program_header_table =
-        slice::from_raw_parts(program_header_pointer, program_header_count as usize);
+    let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
+    syscall_debug_assert!(auxv_info.page_size.is_power_of_two());
+    syscall_debug_assert!(auxv_info.base.addr() & (auxv_info.page_size - 1) == 0);
+    page_size::set_page_size(auxv_info.page_size);
 
-    // We are a static pie (position-independent-executable).
+    let program_header_table = slice::from_raw_parts(
+        auxv_info.program_header_pointer,
+        auxv_info.program_header_count,
+    );
+
     // Relocate ourselves and initialize thread local storage:
-    let miros = if base.is_null() {
-        StaticPie::from_program_headers(&program_header_table)
+    let mut miros = if auxv_info.base.is_null() {
+        ObjectData::<NonDynamic>::from_program_headers(&program_header_table)
     } else {
-        StaticPie::from_base(base)
+        ObjectData::from_base(auxv_info.base)
     };
-    miros
-        .relocate()
-        .allocate_tls(&*pseudorandom_bytes)
-        .init_array(arg_count, arg_pointer, arg_pointer.add(arg_count + 1));
 
-    set_environ_pointer(arg_pointer.add(arg_count + 1) as *mut *mut u8);
-    // NOTE: We can now use the Rust standard library.
+    let relocate = Relocate::new();
+    let thread_local_storage =
+        ThreadLocalStorage::new(auxv_info.pseudorandom_bytes.as_ref().unwrap_unchecked());
+    let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
-    // unsafe {
-    //     // Set locale to "C"
-    //     let locale = std::ffi::CString::new("C").unwrap();
-    //     libc::setlocale(libc::LC_ALL, locale.as_ptr());
-    // }
-    // unsafe {
-    //     extern "C" {
-    //         fn ptmalloc_init();
-    //     }
-    //     ptmalloc_init()
-    // }
+    let stratagems: &[&dyn Stratagem<ObjectDataSingle>] = &[&thread_local_storage, &init_array];
+
+    let pipeline = ObjectPipeline::new(stratagems);
+    let _ = relocate
+        .run(&mut miros)
+        .and_then(|_| pipeline.run_pipeline(&mut miros));
+
+    println!("test");
+
+    set_environ_pointer(env_pointer as *mut *mut u8);
+
     println!("{:?}", env::vars());
 
-    /// The execuatable we are linking for:
-    let base_object = if base == null() {
-        // TODO: Cli
-
-        crate::syscall::exit::exit(0);
+    let executable = if auxv_info.base.is_null() {
+        todo!()
     } else {
-        // SharedObject::from_headers(program_header_table, pseudorandom_bytes);
-
-        println!(
-            "{}",
-            read_to_string("/home/ghostbird/git/miros/README2.md").unwrap()
-        );
-        crate::syscall::exit::exit(1);
+        ObjectData::<Dynamic>::from_program_headers(&program_header_table)
     };
+    let mut executable_and_dependencies = Vec::from([executable]);
 
-    // entry.addr()
+    let executable_stratagems: &[&dyn Stratagem<ObjectDataVector>] = &[&relocate, &init_array];
+    let executable_pipeline = ObjectPipeline::new(executable_stratagems);
+    let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
+
+    auxv_info.entry.addr()
 }

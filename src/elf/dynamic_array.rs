@@ -1,4 +1,4 @@
-use core::ffi::c_void;
+use std::ffi::c_void;
 
 pub const DT_NULL: usize = 0;
 pub const DT_NEEDED: usize = 1;
