@@ -24,7 +24,6 @@ mod io_macros;
 mod libc;
 mod objects;
 mod page_size;
-// mod shared_object;
 mod error;
 mod global_allocator;
 mod start;
