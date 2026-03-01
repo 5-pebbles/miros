@@ -4,12 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "A modern ELF interpreter (dynamic linker/loader) written in Rust"
 
-# [profile.dev]
-# panic = "abort"
-
-# [profile.release]
-# panic = "abort"
-
 [dependencies]
 arbitrary-int = "2.0.0"
 bitbybit = "1.4.0"

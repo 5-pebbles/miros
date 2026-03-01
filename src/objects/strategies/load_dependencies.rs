@@ -49,14 +49,14 @@ fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (
 }
 
 unsafe fn load_segment(
-    in_memeory_base: *const c_void,
+    in_memory_base: *const c_void,
     file: &File,
     segment_program_header: &ProgramHeader,
 ) {
     debug_assert!(segment_program_header.p_type == PT_LOAD);
 
     let segment_start = page_size::get_page_start(
-        in_memeory_base.byte_add(segment_program_header.p_vaddr) as usize,
+        in_memory_base.byte_add(segment_program_header.p_vaddr) as usize,
     );
 
     let file_start = page_size::get_page_start(segment_program_header.p_offset);
@@ -77,7 +77,7 @@ unsafe fn load_segment(
 
     if segment_program_header.p_memsz > segment_program_header.p_filesz {
         slice::from_raw_parts_mut(
-            in_memeory_base
+            in_memory_base
                 .byte_add(segment_program_header.p_vaddr)
                 .byte_add(segment_program_header.p_filesz) as *mut u8,
             segment_program_header.p_memsz - segment_program_header.p_filesz as usize,
