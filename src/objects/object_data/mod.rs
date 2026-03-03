@@ -1,8 +1,13 @@
-use std::ops::{Deref, DerefMut};
+mod dynamic_trait_objects;
+mod thread_local;
+
+pub use dynamic_trait_objects::{AnyDynamic, Dynamic, DynamicObject, NonDynamic};
+pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
+
 use std::slice;
 use std::{ffi::c_void, ptr::null};
 
-use crate::elf::dynamic_array::{DynamicArrayUnion, DT_NEEDED, DT_PLTGOT};
+use crate::elf::dynamic_array::{DT_NEEDED, DT_PLTGOT};
 use crate::elf::header::ElfHeader;
 use crate::elf::program_header::{PT_DYNAMIC, PT_PHDR, PT_TLS};
 use crate::start::auxiliary_vector::AuxiliaryVectorItem;
@@ -25,76 +30,8 @@ use crate::{
     io_macros::syscall_debug_assert,
 };
 
-// TODO: This file is stupid, split up into it's own module... someday [^TM]
 pub type InitArrayFunction =
     extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
-
-mod private {
-    use super::{Dynamic, NonDynamic};
-
-    pub trait Sealed {}
-    impl Sealed for NonDynamic {}
-    impl Sealed for Dynamic {}
-}
-
-pub trait DynamicObject: private::Sealed {
-    fn handle_needed(&mut self, dynamic_item: DynamicArrayUnion);
-}
-
-#[derive(Default)]
-pub struct NonDynamic;
-
-impl DynamicObject for NonDynamic {
-    #[inline(always)]
-    fn handle_needed(&mut self, _dynamic_item: DynamicArrayUnion) {}
-}
-
-#[derive(Default)]
-pub struct Dynamic(Vec<usize>);
-
-impl DynamicObject for Dynamic {
-    fn handle_needed(&mut self, dynamic_item: DynamicArrayUnion) {
-        self.0.push(unsafe { dynamic_item.d_val });
-    }
-}
-
-impl Deref for Dynamic {
-    type Target = Vec<usize>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Dynamic {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-pub trait AnyDynamic = DynamicObject + Default;
-
-pub struct ThreadLocalAllocation {
-    block_id: usize,
-    block_offset: usize,
-    // This enables lazy per-thread allocation when thread.generation < self.generation & modules are dlopen'd after threads are created
-    generation: usize,
-}
-
-impl ThreadLocalAllocation {
-    pub fn new(block_id: usize, block_offset: usize) -> Self {
-        // TODO: This should probably get and increment the global generation counter... someday, but not today.
-        Self {
-            block_id,
-            block_offset,
-            generation: 0,
-        }
-    }
-}
-
-pub struct ThreadLocalData {
-    pub tls_program_header: ProgramHeader,
-    pub thread_local_allocation: Option<ThreadLocalAllocation>,
-}
 
 pub struct ObjectData<T: AnyDynamic> {
     pub base: *const c_void,
