@@ -1,6 +1,8 @@
 mod dynamic_trait_objects;
+mod thread_local;
 
 pub use dynamic_trait_objects::{AnyDynamic, Dynamic, DynamicObject, NonDynamic};
+pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
 use std::slice;
 use std::{ffi::c_void, ptr::null};
@@ -30,29 +32,6 @@ use crate::{
 
 pub type InitArrayFunction =
     extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
-
-pub struct ThreadLocalAllocation {
-    block_id: usize,
-    block_offset: usize,
-    // This enables lazy per-thread allocation when thread.generation < self.generation & modules are dlopen'd after threads are created
-    generation: usize,
-}
-
-impl ThreadLocalAllocation {
-    pub fn new(block_id: usize, block_offset: usize) -> Self {
-        // TODO: This should probably get and increment the global generation counter... someday, but not today.
-        Self {
-            block_id,
-            block_offset,
-            generation: 0,
-        }
-    }
-}
-
-pub struct ThreadLocalData {
-    pub tls_program_header: ProgramHeader,
-    pub thread_local_allocation: Option<ThreadLocalAllocation>,
-}
 
 pub struct ObjectData<T: AnyDynamic> {
     pub base: *const c_void,
