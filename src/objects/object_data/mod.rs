@@ -1,13 +1,15 @@
 mod dynamic_trait_objects;
+mod hash_tables;
 mod thread_local;
 
 pub use dynamic_trait_objects::{AnyDynamic, Dynamic, DynamicObject, NonDynamic};
+pub use hash_tables::HashTable;
 pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
 use std::slice;
 use std::{ffi::c_void, ptr::null};
 
-use crate::elf::dynamic_array::{DT_NEEDED, DT_PLTGOT};
+use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT};
 use crate::elf::header::ElfHeader;
 use crate::elf::program_header::{PT_DYNAMIC, PT_PHDR, PT_TLS};
 use crate::start::auxiliary_vector::AuxiliaryVectorItem;
@@ -42,6 +44,7 @@ pub struct ObjectData<T: AnyDynamic> {
     pub rela_slice: &'static [Rela],
     pub tls_data: Option<ThreadLocalData>,
     pub init_array: Option<&'static [InitArrayFunction]>,
+    pub hash_table: Option<HashTable>,
 
     pub needed_libraries: T,
 }
@@ -119,6 +122,8 @@ impl<T: AnyDynamic> ObjectData<T> {
         let mut init_array_pointer: *const InitArrayFunction = null();
         let mut init_array_size = 0;
 
+        let mut hash_table: Option<HashTable> = None;
+
         let mut needed_libraries = T::default();
         for item in DynamicArrayIter::new(dynamic_array) {
             match item.d_tag {
@@ -154,6 +159,11 @@ impl<T: AnyDynamic> ObjectData<T> {
                     init_array_size = item.d_un.d_val / size_of::<usize>();
                 }
 
+                DT_HASH => {
+                    hash_table.get_or_insert(HashTable::from_sysv(base, item.d_un.d_ptr));
+                }
+                DT_GNU_HASH => hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr)),
+
                 DT_NEEDED => {
                     needed_libraries.handle_needed(item.d_un);
                 }
@@ -185,6 +195,7 @@ impl<T: AnyDynamic> ObjectData<T> {
                 thread_local_allocation: None,
             }),
             init_array,
+            hash_table,
             needed_libraries,
         }
     }
