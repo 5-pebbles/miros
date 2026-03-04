@@ -22,6 +22,8 @@ pub const DT_FINI_ARRAYSZ: usize = 28;
 pub const DT_RELRSZ: usize = 35;
 pub const DT_RELR: usize = 36;
 
+pub const DT_GNU_HASH: usize = 0x6ffffef5;
+
 /// A union resolved by the d_tag field of the parent dynamic array item.
 #[repr(C)]
 #[derive(Copy, Clone)]
