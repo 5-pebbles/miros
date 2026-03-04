@@ -19,6 +19,14 @@ pub enum HashTable {
 
 impl HashTable {
     pub unsafe fn from_sysv(base: *const c_void, hash_table_pointer: *const c_void) -> Self {
+        // ┌────────────────────┐
+        // │ bucket_count (u32) │
+        // │ chain_count  (u32) │
+        // ├────────────────────┤
+        // │ buckets   [u32; …] │
+        // ├────────────────────┤
+        // │ chain     [u32; …] │
+        // └────────────────────┘
         let header = base.byte_add(hash_table_pointer.addr()) as *const u32;
         let bucket_count = *header as usize;
         let chain_count = *header.add(1) as usize;
@@ -33,6 +41,18 @@ impl HashTable {
     }
 
     pub unsafe fn from_gnu(base: *const c_void, hash_table_pointer: *const c_void) -> Self {
+        // ┌────────────────────┐
+        // │ bucket_count (u32) │
+        // │ symoffset    (u32) │
+        // │ bloom_count  (u32) │
+        // │ bloom_shift  (u32) │
+        // ├────────────────────┤
+        // │ bloom     [u64; …] │
+        // ├────────────────────┤
+        // │ buckets   [u32; …] │
+        // ├────────────────────┤
+        // │ chain     [u32; …] │
+        // └────────────────────┘
         let header = base.byte_add(hash_table_pointer.addr()) as *const u32;
         let bucket_count = *header as usize;
         let symbol_offset = *header.add(1);
@@ -66,7 +86,9 @@ impl HashTable {
 
                 let mut symbol_index = buckets[hash as usize % buckets.len()] as usize;
                 while symbol_index != 0 {
-                    if let Some(symbol) = resolve_symbol(symbol_index, name, symbol_table, string_table) {
+                    if let Some(symbol) =
+                        resolve_symbol(symbol_index, name, symbol_table, string_table)
+                    {
                         return Some(symbol);
                     }
                     symbol_index = chain[symbol_index] as usize;
