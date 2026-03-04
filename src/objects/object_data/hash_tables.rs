@@ -141,7 +141,8 @@ fn elf_hash(name: &str) -> u32 {
 }
 
 fn gnu_hash(name: &str) -> u32 {
-    name.bytes().fold(5381u32, |hash, byte| {
+    const HASH_SEED: u32 = 5381;
+    name.bytes().fold(HASH_SEED, |hash, byte| {
         hash.wrapping_mul(33).wrapping_add(byte as u32)
     })
 }
