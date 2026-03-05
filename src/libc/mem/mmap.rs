@@ -4,6 +4,7 @@ use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{MapFlags, ProtectionFlags},
     signature_matches_libc,
+    syscall::Syscall,
 };
 
 // TODO: add error handling
@@ -25,13 +26,11 @@ pub unsafe extern "C" fn mmap(
         file_offset as i64,
     ))
     .cast());
-    const MMAP: usize = 9; // I am like 80% sure this is the right system call... :)
-
     let mut result: isize;
     unsafe {
         asm!(
             "syscall",
-            inlateout("rax") MMAP => result,
+            inlateout("rax") Syscall::Mmap as usize => result,
             in("rdi") pointer,
             in("rsi") size,
             in("rdx") protection_flags.raw_value(),

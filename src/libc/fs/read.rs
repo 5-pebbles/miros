@@ -2,7 +2,7 @@ use std::ffi::c_void;
 use std::os::fd::AsRawFd;
 use std::{arch::asm, os::fd::BorrowedFd};
 
-use crate::signature_matches_libc;
+use crate::{signature_matches_libc, syscall::Syscall};
 
 #[no_mangle]
 unsafe extern "C" fn read(
@@ -18,13 +18,11 @@ unsafe extern "C" fn read(
 
     #[cfg(target_arch = "x86_64")]
     {
-        const READ: usize = 0;
-
         let result: isize;
         unsafe {
             asm!(
                 "syscall",
-                inlateout("rax") READ => result,
+                inlateout("rax") Syscall::Read as usize => result,
                 in("rdi") file_descriptor.as_raw_fd(),
                 in("rsi") buffer_pointer,
                 in("rdx") buffer_length_in_bytes,

@@ -1,5 +1,6 @@
 use crate::libc::errno::{set_errno, Errno};
 use crate::signature_matches_libc;
+use crate::syscall::Syscall;
 use std::ffi::VaList;
 
 use std::arch::asm;
@@ -27,10 +28,9 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
 
     #[cfg(target_arch = "x86_64")]
     {
-        const OPENAT: usize = 257;
         asm!(
             "syscall",
-            inlateout("rax") OPENAT => result,
+            inlateout("rax") Syscall::OpenAt as usize => result,
             in("rdi") 0, // directory_file_descriptor
             in("rsi") pathname,
             in("rdx") flags.raw_value(),

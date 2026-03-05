@@ -1,4 +1,4 @@
-use crate::signature_matches_libc;
+use crate::{signature_matches_libc, syscall::Syscall};
 use std::arch::asm;
 use std::cell::Cell;
 use std::io::Write;
@@ -11,10 +11,9 @@ unsafe extern "C" fn getpid() -> i32 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        const GETPID: usize = 39;
         asm!(
             "syscall",
-            inlateout("rax") GETPID => result,
+            inlateout("rax") Syscall::GetPid as usize => result,
             out("rcx") _,
             out("r11") _,
             options(nostack),
@@ -33,10 +32,9 @@ unsafe extern "C" fn raise(signal_number: i32) -> i32 {
     let result: isize;
     #[cfg(target_arch = "x86_64")]
     {
-        const TGKILL: usize = 234;
         asm!(
             "syscall",
-            inlateout("rax") TGKILL => result,
+            inlateout("rax") Syscall::TgKill as usize => result,
             in("rdi") process_id,
             in("rsi") thread_id.as_u64().get(),
             in("rdx") signal_number,

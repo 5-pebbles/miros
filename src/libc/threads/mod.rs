@@ -1,4 +1,4 @@
-use crate::signature_matches_libc;
+use crate::{signature_matches_libc, syscall::Syscall};
 use std::arch::asm;
 
 mod key;
@@ -10,10 +10,9 @@ unsafe extern "C" fn gettid() -> i32 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        const GETPID: usize = 186;
         asm!(
             "syscall",
-            inlateout("rax") GETPID => result,
+            inlateout("rax") Syscall::GetTid as usize => result,
             out("rcx") _,
             out("r11") _,
             options(nostack),

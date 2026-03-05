@@ -1,15 +1,15 @@
 use std::{arch::asm, ffi::c_void};
 
+use super::Syscall;
 use crate::io_macros::syscall_debug_assert;
 
 #[inline(always)]
 pub unsafe fn set_thread_pointer(new_pointer: *mut c_void) {
-    const ARCH_PRCTL: usize = 158;
     const ARCH_SET_FS: usize = 4098;
 
     asm!(
         "syscall",
-        in("rax") ARCH_PRCTL,
+        in("rax") Syscall::ArchPrctl as usize,
         in("rdi") ARCH_SET_FS,
         in("rsi") new_pointer,
         out("rcx") _,

@@ -2,7 +2,7 @@
 use bitbybit::{bitenum, bitfield};
 use std::arch::asm;
 
-use crate::{io_macros::syscall_debug_assert, signature_matches_libc};
+use crate::{io_macros::syscall_debug_assert, signature_matches_libc, syscall::Syscall};
 
 mod mmap;
 pub use mmap::mmap;
@@ -46,13 +46,11 @@ pub struct MapFlags {
 pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
     signature_matches_libc!(libc::munmap(pointer.cast(), size));
 
-    const MUNMAP: usize = 11;
-
     let mut result: isize;
     unsafe {
         asm!(
             "syscall",
-            inlateout("rax") MUNMAP => result,
+            inlateout("rax") Syscall::Munmap as usize => result,
             in("rdi") pointer,
             in("rsi") size,
             out("rcx") _,
