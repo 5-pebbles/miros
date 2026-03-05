@@ -1,15 +1,17 @@
 mod dynamic_trait_objects;
 mod hash_tables;
+mod path_resolver;
 mod thread_local;
 
 pub use dynamic_trait_objects::{AnyDynamic, Dynamic, DynamicObject, NonDynamic};
 pub use hash_tables::HashTable;
+pub use path_resolver::PathResolver;
 pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
 use std::slice;
 use std::{ffi::c_void, ptr::null};
 
-use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT};
+use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT, DT_RPATH, DT_RUNPATH};
 use crate::elf::header::ElfHeader;
 use crate::elf::program_header::{PT_DYNAMIC, PT_PHDR, PT_TLS};
 use crate::start::auxiliary_vector::AuxiliaryVectorItem;
@@ -45,6 +47,7 @@ pub struct ObjectData<T: AnyDynamic> {
     pub tls_data: Option<ThreadLocalData>,
     pub init_array: Option<&'static [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
+    pub path_resolver: PathResolver,
 
     pub needed_libraries: T,
 }
@@ -124,6 +127,9 @@ impl<T: AnyDynamic> ObjectData<T> {
 
         let mut hash_table: Option<HashTable> = None;
 
+        let mut rpath_string_table_index: Option<usize> = None;
+        let mut runpath_string_table_index: Option<usize> = None;
+
         let mut needed_libraries = T::default();
         for item in DynamicArrayIter::new(dynamic_array) {
             match item.d_tag {
@@ -164,6 +170,9 @@ impl<T: AnyDynamic> ObjectData<T> {
                 }
                 DT_GNU_HASH => hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr)),
 
+                DT_RPATH => rpath_string_table_index = Some(item.d_un.d_val),
+                DT_RUNPATH => runpath_string_table_index = Some(item.d_un.d_val),
+
                 DT_NEEDED => {
                     needed_libraries.handle_needed(item.d_un);
                 }
@@ -183,6 +192,11 @@ impl<T: AnyDynamic> ObjectData<T> {
             Some(slice::from_raw_parts(init_array_pointer, init_array_size))
         };
 
+        let path_resolver = runpath_string_table_index
+            .map(|index| PathResolver::Runpath(string_table.get(index)))
+            .or(rpath_string_table_index.map(|index| PathResolver::Rpath(string_table.get(index))))
+            .unwrap_or(PathResolver::None);
+
         Self {
             base,
             dynamic_array,
@@ -196,6 +210,7 @@ impl<T: AnyDynamic> ObjectData<T> {
             }),
             init_array,
             hash_table,
+            path_resolver,
             needed_libraries,
         }
     }

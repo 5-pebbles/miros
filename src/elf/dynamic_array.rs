@@ -13,12 +13,14 @@ pub const DT_RELAENT: usize = 9;
 pub const DT_SYMENT: usize = 11;
 pub const DT_INIT: usize = 12;
 pub const DT_FINI: usize = 13;
+pub const DT_RPATH: usize = 15;
 pub const DT_REL: usize = 17;
 pub const DT_TEXTREL: usize = 22;
 pub const DT_INIT_ARRAY: usize = 25;
 pub const DT_FINI_ARRAY: usize = 26;
 pub const DT_INIT_ARRAYSZ: usize = 27;
 pub const DT_FINI_ARRAYSZ: usize = 28;
+pub const DT_RUNPATH: usize = 29;
 pub const DT_RELRSZ: usize = 35;
 pub const DT_RELR: usize = 36;
 
