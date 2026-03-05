@@ -5,7 +5,6 @@ use std::{
     fs::File,
     io::Read,
     os::{fd::AsRawFd, unix::fs::FileExt},
-    path::PathBuf,
     ptr::null_mut,
 };
 
@@ -89,18 +88,15 @@ unsafe fn load_segment(
 pub struct LoadDependencies {}
 
 impl LoadDependencies {
-    fn resolve_dependency_path(self, dependency_name: &str) -> PathBuf {
-        todo!()
-    }
-
-    unsafe fn map_object_from_file(self, mut file: File) -> ObjectData<Dynamic> {
+    #[allow(dead_code)]
+    unsafe fn map_object_from_file(&self, mut file: File) -> ObjectData<Dynamic> {
         // Read the ELF header from file:
         let mut header_from_file: ElfHeader = unsafe { std::mem::zeroed() };
         let as_bytes = slice::from_raw_parts_mut(
             &mut header_from_file as *mut ElfHeader as *mut u8,
             size_of::<ElfHeader>(),
         );
-        if let Err(error) = file.read_exact(as_bytes) {
+        if let Err(_error) = file.read_exact(as_bytes) {
             todo!();
         }
 
@@ -111,7 +107,7 @@ impl LoadDependencies {
             program_headers_from_file.as_mut_ptr() as *mut u8,
             size_of::<ProgramHeader>() * header_from_file.e_phnum as usize,
         );
-        if let Err(error) = file.read_exact_at(as_bytes, header_from_file.e_phoff as u64) {
+        if let Err(_error) = file.read_exact_at(as_bytes, header_from_file.e_phoff as u64) {
             todo!()
         }
         program_headers_from_file.set_len(header_from_file.e_phnum as usize);
@@ -147,7 +143,7 @@ impl LoadDependencies {
 
 impl Stratagem<ObjectDataVector> for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataVector) -> Result<(), crate::error::MirosError> {
-        let object_names = object_data
+        let _object_names = object_data
             .iter()
             .flat_map(|object| object.dependency_names());
         Ok(())
