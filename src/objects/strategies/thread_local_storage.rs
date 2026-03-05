@@ -13,11 +13,11 @@ use crate::{
 };
 
 pub struct ThreadLocalStorage {
-    pseudorandom_bytes: &'static [u8; 16],
+    pseudorandom_bytes: *const [u8; 16],
 }
 
 impl ThreadLocalStorage {
-    pub fn new(pseudorandom_bytes: &'static [u8; 16]) -> Self {
+    pub fn new(pseudorandom_bytes: *const [u8; 16]) -> Self {
         Self { pseudorandom_bytes }
     }
 }
@@ -101,7 +101,7 @@ impl Stratagem<ObjectDataSingle> for ThreadLocalStorage {
                 dynamic_thread_vector: null_mut(),
                 _padding: [0; 3],
                 canary: usize::from_ne_bytes(
-                    (*self.pseudorandom_bytes)[..size_of::<usize>()]
+                    (&*self.pseudorandom_bytes)[..size_of::<usize>()]
                         .try_into()
                         .unwrap(),
                 ),

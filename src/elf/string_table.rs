@@ -34,7 +34,7 @@ impl StringTable {
     }
 
     /// Retrieves a string from the table at the specified byte offset.
-    pub unsafe fn get(&self, index: usize) -> &'static str {
+    pub unsafe fn get(&self, index: usize) -> &str {
         let string_start = self.0.add(index);
         let length = (0..).find(|&index| *string_start.add(index) == 0).unwrap();
         str::from_utf8_unchecked(slice::from_raw_parts(string_start, length))

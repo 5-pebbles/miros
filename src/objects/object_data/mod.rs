@@ -6,8 +6,7 @@ pub use dynamic_trait_objects::{AnyDynamic, Dynamic, DynamicObject, NonDynamic};
 pub use hash_tables::HashTable;
 pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
-use std::slice;
-use std::{ffi::c_void, ptr::null};
+use std::{ffi::c_void, ptr, ptr::null};
 
 use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT};
 use crate::elf::header::ElfHeader;
@@ -41,9 +40,9 @@ pub struct ObjectData<T: AnyDynamic> {
     pub global_offset_table: *const usize,
     pub string_table: StringTable,
     pub symbol_table: SymbolTable,
-    pub rela_slice: &'static [Rela],
+    rela_slice: *const [Rela],
     pub tls_data: Option<ThreadLocalData>,
-    pub init_array: Option<&'static [InitArrayFunction]>,
+    init_array: Option<*const [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
 
     pub needed_libraries: T,
@@ -58,20 +57,28 @@ impl ObjectData<Dynamic> {
 }
 
 impl<T: AnyDynamic> ObjectData<T> {
+    pub unsafe fn rela_slice(&self) -> &[Rela] {
+        &*self.rela_slice
+    }
+
+    pub unsafe fn init_functions(&self) -> Option<&[InitArrayFunction]> {
+        self.init_array.map(|pointer| &*pointer)
+    }
+
     pub unsafe fn from_base(base: *const c_void) -> Self {
         // ELf Header:
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
 
         // Program Headers:
-        let program_header_table = slice::from_raw_parts(
+        let program_header_table = ptr::slice_from_raw_parts(
             base.byte_add(header.e_phoff) as *const ProgramHeader,
             header.e_phnum as usize,
         );
 
         let mut dynamic_program_header = null();
         let mut tls_program_header = None;
-        for header in program_header_table {
+        for header in &*program_header_table {
             match header.p_type {
                 PT_DYNAMIC => dynamic_program_header = header,
                 PT_TLS => tls_program_header = Some(header.to_owned()),
@@ -83,14 +90,15 @@ impl<T: AnyDynamic> ObjectData<T> {
     }
 
     pub unsafe fn from_program_headers(
-        program_header_table: &'static [ProgramHeader],
+        program_header_table: *const [ProgramHeader],
     ) -> ObjectData<T> {
         let (mut base, mut dynamic_program_header) = (null(), null());
         let mut tls_program_header = None;
-        for header in program_header_table {
+        for header in &*program_header_table {
             match header.p_type {
                 PT_PHDR => {
-                    base = program_header_table.as_ptr().byte_sub(header.p_vaddr) as *const c_void;
+                    base = (*program_header_table).as_ptr().byte_sub(header.p_vaddr)
+                        as *const c_void;
                 }
                 PT_DYNAMIC => dynamic_program_header = header,
                 PT_TLS => tls_program_header = Some(header.to_owned()),
@@ -175,12 +183,12 @@ impl<T: AnyDynamic> ObjectData<T> {
         let symbol_table = SymbolTable::new(symbol_table_pointer);
 
         syscall_debug_assert!(rela_pointer != null());
-        let rela_slice = slice::from_raw_parts(rela_pointer, rela_count);
+        let rela_slice = ptr::slice_from_raw_parts(rela_pointer, rela_count);
 
         let init_array = if init_array_pointer.is_null() || init_array_size == 0 {
             None
         } else {
-            Some(slice::from_raw_parts(init_array_pointer, init_array_size))
+            Some(ptr::slice_from_raw_parts(init_array_pointer, init_array_size))
         };
 
         Self {
