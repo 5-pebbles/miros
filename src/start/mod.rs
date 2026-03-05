@@ -15,8 +15,7 @@ use crate::{
 use std::{
     arch::naked_asm,
     env,
-    ptr::{null, null_mut},
-    slice,
+    ptr::{self, null, null_mut},
 };
 
 pub mod auxiliary_vector;
@@ -81,21 +80,21 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     syscall_debug_assert!(auxv_info.base.addr() & (auxv_info.page_size - 1) == 0);
     page_size::set_page_size(auxv_info.page_size);
 
-    let program_header_table = slice::from_raw_parts(
+    let program_header_table = ptr::slice_from_raw_parts(
         auxv_info.program_header_pointer,
         auxv_info.program_header_count,
     );
 
     // Relocate ourselves and initialize thread local storage:
     let mut miros = if auxv_info.base.is_null() {
-        ObjectData::<NonDynamic>::from_program_headers(&program_header_table)
+        ObjectData::<NonDynamic>::from_program_headers(program_header_table)
     } else {
         ObjectData::from_base(auxv_info.base)
     };
 
     let relocate = Relocate::new();
     let thread_local_storage =
-        ThreadLocalStorage::new(auxv_info.pseudorandom_bytes.as_ref().unwrap_unchecked());
+        ThreadLocalStorage::new(auxv_info.pseudorandom_bytes);
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
     let stratagems: &[&dyn Stratagem<ObjectDataSingle>] = &[&thread_local_storage, &init_array];
@@ -114,7 +113,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     let executable = if auxv_info.base.is_null() {
         todo!()
     } else {
-        ObjectData::<Dynamic>::from_program_headers(&program_header_table)
+        ObjectData::<Dynamic>::from_program_headers(program_header_table)
     };
     let mut executable_and_dependencies = Vec::from([executable]);
 
