@@ -3,6 +3,7 @@ use std::{arch::asm, os::fd::RawFd};
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc,
+    syscall::Syscall,
 };
 
 #[no_mangle]
@@ -17,10 +18,9 @@ unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
     let result: isize;
     #[cfg(target_arch = "x86_64")]
     {
-        const CLOSE: usize = 3;
         asm!(
             "syscall",
-            inlateout("rax") CLOSE => result,
+            inlateout("rax") Syscall::Close as usize => result,
             in("rdi") file_descriptor,
             lateout("rcx") _,
             lateout("r11") _,
