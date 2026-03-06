@@ -145,7 +145,7 @@ impl Stratagem<ObjectDataVector> for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataVector) -> Result<(), crate::error::MirosError> {
         let _object_names = object_data
             .iter()
-            .flat_map(|object| object.dependency_names());
+            .flat_map(|object| object.dynamic.dependency_names());
         Ok(())
     }
 }

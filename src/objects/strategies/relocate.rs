@@ -88,7 +88,7 @@ where
             .as_object_slice_mut()
             .iter()
             .try_for_each(|object| {
-                unsafe { object.rela_slice() }
+                unsafe { object.dynamic.rela_slice() }
                     .iter()
                     .try_for_each(|rela| unsafe { self.rela(*rela, object) })
             })
