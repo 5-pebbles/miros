@@ -1,6 +1,12 @@
-use std::{ffi::c_void, ptr, ptr::null, ptr::NonNull};
+use std::{
+    ffi::c_void,
+    ptr,
+    ptr::{null, NonNull},
+};
 
-use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT, DT_RPATH, DT_RUNPATH};
+use super::{
+    hash_tables::HashTable, path_resolver::PathResolver, AnyDynamic, Dynamic, InitArrayFunction,
+};
 #[cfg(debug_assertions)]
 use crate::{
     elf::dynamic_array::{DT_RELAENT, DT_SYMENT},
@@ -9,7 +15,8 @@ use crate::{
 use crate::{
     elf::{
         dynamic_array::{
-            DynamicArrayItem, DynamicArrayIter, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_RELA, DT_RELASZ,
+            DynamicArrayItem, DynamicArrayIter, DT_GNU_HASH, DT_HASH, DT_INIT_ARRAY,
+            DT_INIT_ARRAYSZ, DT_NEEDED, DT_PLTGOT, DT_RELA, DT_RELASZ, DT_RPATH, DT_RUNPATH,
             DT_STRTAB, DT_SYMTAB,
         },
         relocate::Rela,
@@ -17,10 +24,6 @@ use crate::{
         symbol::{Symbol, SymbolTable},
     },
     io_macros::syscall_debug_assert,
-};
-
-use super::{
-    hash_tables::HashTable, path_resolver::PathResolver, AnyDynamic, Dynamic, InitArrayFunction,
 };
 
 pub struct DynamicFields<T: AnyDynamic> {

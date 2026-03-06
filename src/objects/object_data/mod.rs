@@ -4,17 +4,21 @@ mod hash_tables;
 mod path_resolver;
 mod thread_local;
 
+use std::{ffi::c_void, ptr, ptr::null};
+
 pub use dynamic_fields::DynamicFields;
 pub use dynamic_trait_objects::{AnyDynamic, Dynamic, NonDynamic};
 pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
-use std::{ffi::c_void, ptr, ptr::null};
-
-use crate::elf::dynamic_array::DynamicArrayItem;
-use crate::elf::header::ElfHeader;
-use crate::elf::program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS};
-use crate::io_macros::syscall_debug_assert;
-use crate::start::auxiliary_vector::AuxiliaryVectorItem;
+use crate::{
+    elf::{
+        dynamic_array::DynamicArrayItem,
+        header::ElfHeader,
+        program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
+    },
+    io_macros::syscall_debug_assert,
+    start::auxiliary_vector::AuxiliaryVectorItem,
+};
 
 pub type InitArrayFunction =
     extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);

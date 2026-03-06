@@ -1,8 +1,6 @@
+use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
+
 use crate::{signature_matches_libc, syscall::Syscall};
-use std::arch::asm;
-use std::cell::Cell;
-use std::io::Write;
-use std::{io, process, thread};
 
 #[no_mangle]
 unsafe extern "C" fn getpid() -> i32 {
