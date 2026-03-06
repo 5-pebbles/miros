@@ -1,8 +1,8 @@
-use std::io::Write;
-use std::{cell::Cell, fmt::Display};
+use std::{cell::Cell, fmt::Display, io::Write};
+
+use libc;
 
 use crate::signature_matches_libc;
-use libc;
 
 #[repr(transparent)]
 #[doc(alias = "errno")]

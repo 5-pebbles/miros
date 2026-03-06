@@ -1,3 +1,9 @@
+use std::{
+    arch::naked_asm,
+    env,
+    ptr::{self, null, null_mut},
+};
+
 use crate::{
     io_macros::syscall_debug_assert,
     libc::environ::set_environ_pointer,
@@ -11,11 +17,6 @@ use crate::{
     },
     page_size,
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
-};
-use std::{
-    arch::naked_asm,
-    env,
-    ptr::{self, null, null_mut},
 };
 
 pub mod auxiliary_vector;

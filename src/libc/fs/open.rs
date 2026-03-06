@@ -1,11 +1,12 @@
-use crate::libc::errno::{set_errno, Errno};
-use crate::signature_matches_libc;
-use crate::syscall::Syscall;
-use std::ffi::VaList;
-
-use std::arch::asm;
+use std::{arch::asm, ffi::VaList};
 
 use bitbybit::{bitenum, bitfield};
+
+use crate::{
+    libc::errno::{set_errno, Errno},
+    signature_matches_libc,
+    syscall::Syscall,
+};
 
 const AT_FDCWD: isize = -100;
 pub const S_IFMT: u32 = 1111 << 12;

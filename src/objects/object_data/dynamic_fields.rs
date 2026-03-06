@@ -1,5 +1,8 @@
 use std::{ffi::c_void, ptr};
 
+use super::{
+    hash_tables::HashTable, path_resolver::PathResolver, AnyDynamic, Dynamic, InitArrayFunction,
+};
 #[cfg(debug_assertions)]
 use crate::io_macros::syscall_assert;
 use crate::{
@@ -10,10 +13,6 @@ use crate::{
         symbol::{Symbol, SymbolTable},
     },
     error::MirosError,
-};
-
-use super::{
-    hash_tables::HashTable, path_resolver::PathResolver, AnyDynamic, Dynamic, InitArrayFunction,
 };
 
 pub struct DynamicFields<T: AnyDynamic> {
@@ -78,8 +77,7 @@ impl<T: AnyDynamic> DynamicFields<T> {
                         Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const usize)
                 }
                 Ok(DynamicTag::StrTab) => {
-                    string_table_pointer =
-                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const u8)
+                    string_table_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const u8)
                 }
                 Ok(DynamicTag::SymTab) => {
                     symbol_table_pointer =
