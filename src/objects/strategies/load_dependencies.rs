@@ -136,7 +136,7 @@ impl LoadDependencies {
             .filter(|program_header| program_header.p_type == PT_LOAD)
             .for_each(|program_header| load_segment(base, &file, program_header));
 
-        ObjectData::from_base(base)
+        ObjectData::from_base(base).unwrap()
     }
 }
 

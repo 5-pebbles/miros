@@ -1,22 +1,15 @@
-use std::{ffi::c_void, ptr, ptr::null, ptr::NonNull};
+use std::{ffi::c_void, ptr};
 
-use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT, DT_RPATH, DT_RUNPATH};
 #[cfg(debug_assertions)]
-use crate::{
-    elf::dynamic_array::{DT_RELAENT, DT_SYMENT},
-    io_macros::syscall_assert,
-};
+use crate::io_macros::syscall_assert;
 use crate::{
     elf::{
-        dynamic_array::{
-            DynamicArrayItem, DynamicArrayIter, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_RELA, DT_RELASZ,
-            DT_STRTAB, DT_SYMTAB,
-        },
+        dynamic_array::{DynamicArrayItem, DynamicTag},
         relocate::Rela,
         string_table::StringTable,
         symbol::{Symbol, SymbolTable},
     },
-    io_macros::syscall_debug_assert,
+    error::MirosError,
 };
 
 use super::{
@@ -54,15 +47,19 @@ impl<T: AnyDynamic> DynamicFields<T> {
     pub(super) unsafe fn from_dynamic_array(
         base: *const c_void,
         dynamic_array: *const DynamicArrayItem,
-    ) -> Self {
-        let mut global_offset_table_pointer: *const usize = null();
-        let mut string_table_pointer: *const u8 = null();
-        let mut symbol_table_pointer: *const Symbol = null();
+    ) -> Result<Self, MirosError> {
+        let mut global_offset_table_pointer: Result<*const usize, MirosError> =
+            Err(MirosError::MissingDynamicEntry(DynamicTag::PltGot));
+        let mut string_table_pointer: Result<*const u8, MirosError> =
+            Err(MirosError::MissingDynamicEntry(DynamicTag::StrTab));
+        let mut symbol_table_pointer: Result<*const Symbol, MirosError> =
+            Err(MirosError::MissingDynamicEntry(DynamicTag::SymTab));
 
-        let mut rela_pointer: *const Rela = null();
+        let mut rela_pointer: Result<*const Rela, MirosError> =
+            Err(MirosError::MissingDynamicEntry(DynamicTag::Rela));
         let mut rela_count = 0;
 
-        let mut init_array_pointer: *const InitArrayFunction = null();
+        let mut init_array_pointer: *const InitArrayFunction = ptr::null();
         let mut init_array_size = 0;
 
         let mut hash_table: Option<HashTable> = None;
@@ -71,59 +68,65 @@ impl<T: AnyDynamic> DynamicFields<T> {
         let mut runpath_string_table_index: Option<usize> = None;
 
         let mut needed_libraries = T::default();
-        for item in DynamicArrayIter::new(dynamic_array) {
-            match item.d_tag {
-                DT_PLTGOT => {
+
+        (0..)
+            .map(|index| *dynamic_array.add(index))
+            .take_while(|item| item.d_tag() != Ok(DynamicTag::Null))
+            .for_each(|item| match item.d_tag() {
+                Ok(DynamicTag::PltGot) => {
                     global_offset_table_pointer =
-                        base.byte_add(item.d_un.d_ptr.addr()) as *const usize
+                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const usize)
                 }
-                DT_STRTAB => {
-                    string_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const u8
+                Ok(DynamicTag::StrTab) => {
+                    string_table_pointer =
+                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const u8)
                 }
-                DT_SYMTAB => {
-                    symbol_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol
+                Ok(DynamicTag::SymTab) => {
+                    symbol_table_pointer =
+                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol)
                 }
                 #[cfg(debug_assertions)]
-                DT_SYMENT => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
+                Ok(DynamicTag::SymEnt) => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
 
-                DT_RELA => {
-                    rela_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const Rela;
+                Ok(DynamicTag::Rela) => {
+                    rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
                 }
-                DT_RELASZ => {
+                Ok(DynamicTag::RelaSz) => {
                     rela_count = item.d_un.d_val / core::mem::size_of::<Rela>();
                 }
                 #[cfg(debug_assertions)]
-                DT_RELAENT => {
+                Ok(DynamicTag::RelaEnt) => {
                     syscall_assert!(item.d_un.d_val == size_of::<Rela>())
                 }
 
-                DT_INIT_ARRAY => {
+                Ok(DynamicTag::InitArray) => {
                     init_array_pointer =
                         base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
                 }
-                DT_INIT_ARRAYSZ => {
+                Ok(DynamicTag::InitArraySz) => {
                     init_array_size = item.d_un.d_val / size_of::<usize>();
                 }
 
-                DT_HASH => {
+                Ok(DynamicTag::Hash) => {
                     hash_table.get_or_insert(HashTable::from_sysv(base, item.d_un.d_ptr));
                 }
-                DT_GNU_HASH => hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr)),
+                Ok(DynamicTag::GnuHash) => {
+                    hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr))
+                }
 
-                DT_RPATH => rpath_string_table_index = Some(item.d_un.d_val),
-                DT_RUNPATH => runpath_string_table_index = Some(item.d_un.d_val),
+                Ok(DynamicTag::Rpath) => rpath_string_table_index = Some(item.d_un.d_val),
+                Ok(DynamicTag::Runpath) => runpath_string_table_index = Some(item.d_un.d_val),
 
-                DT_NEEDED => {
+                Ok(DynamicTag::Needed) => {
                     needed_libraries.handle_needed(item.d_un);
                 }
                 _ => (),
-            }
-        }
+            });
 
-        let string_table = StringTable::new(string_table_pointer);
-        let symbol_table = SymbolTable::new(symbol_table_pointer);
+        let string_table = StringTable::new(string_table_pointer?);
+        let symbol_table = SymbolTable::new(symbol_table_pointer?);
 
-        let rela_slice = ptr::slice_from_raw_parts(rela_pointer, rela_count);
+        let rela_slice = ptr::slice_from_raw_parts(rela_pointer?, rela_count);
 
         let init_array = if init_array_pointer.is_null() || init_array_size == 0 {
             None
@@ -139,8 +142,8 @@ impl<T: AnyDynamic> DynamicFields<T> {
             .or(rpath_string_table_index.map(|index| PathResolver::Rpath(string_table.get(index))))
             .unwrap_or(PathResolver::None);
 
-        Self {
-            global_offset_table: global_offset_table_pointer,
+        Ok(Self {
+            global_offset_table: global_offset_table_pointer?,
             string_table,
             symbol_table,
             rela_slice,
@@ -148,6 +151,6 @@ impl<T: AnyDynamic> DynamicFields<T> {
             hash_table,
             path_resolver,
             needed_libraries,
-        }
+        })
     }
 }
