@@ -88,9 +88,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     // Relocate ourselves and initialize thread local storage:
     let mut miros = if auxv_info.base.is_null() {
-        ObjectData::<NonDynamic>::from_program_headers(program_header_table)
+        ObjectData::<NonDynamic>::from_program_headers(program_header_table).unwrap()
     } else {
-        ObjectData::from_base(auxv_info.base)
+        ObjectData::from_base(auxv_info.base).unwrap()
     };
 
     let relocate = Relocate::new();
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     let executable = if auxv_info.base.is_null() {
         todo!()
     } else {
-        ObjectData::<Dynamic>::from_program_headers(program_header_table)
+        ObjectData::<Dynamic>::from_program_headers(program_header_table).unwrap()
     };
     let mut executable_and_dependencies = Vec::from([executable]);
 

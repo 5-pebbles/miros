@@ -16,6 +16,7 @@ use crate::{
         header::ElfHeader,
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
     },
+    error::MirosError,
     io_macros::syscall_debug_assert,
     start::auxiliary_vector::AuxiliaryVectorItem,
 };
@@ -30,7 +31,7 @@ pub struct ObjectData<T: AnyDynamic> {
 }
 
 impl<T: AnyDynamic> ObjectData<T> {
-    pub unsafe fn from_base(base: *const c_void) -> Self {
+    pub unsafe fn from_base(base: *const c_void) -> Result<Self, MirosError> {
         // ELf Header:
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
@@ -56,7 +57,7 @@ impl<T: AnyDynamic> ObjectData<T> {
 
     pub unsafe fn from_program_headers(
         program_header_table: *const [ProgramHeader],
-    ) -> ObjectData<T> {
+    ) -> Result<Self, MirosError> {
         let (mut base, mut dynamic_program_header) = (null(), null());
         let mut tls_program_header = None;
         for header in &*program_header_table {
@@ -78,19 +79,19 @@ impl<T: AnyDynamic> ObjectData<T> {
         base: *const c_void,
         dynamic_program_header: *const ProgramHeader,
         tls_program_header: Option<ProgramHeader>,
-    ) -> Self {
+    ) -> Result<Self, MirosError> {
         syscall_debug_assert!(dynamic_program_header != null());
 
         let dynamic_array =
             base.byte_add((*dynamic_program_header).p_vaddr) as *const DynamicArrayItem;
 
-        Self {
+        Ok(Self {
             base,
-            dynamic_fields: DynamicFields::from_dynamic_array(base, dynamic_array),
+            dynamic_fields: DynamicFields::from_dynamic_array(base, dynamic_array)?,
             tls_data: tls_program_header.map(|tls_program_header| ThreadLocalData {
                 tls_program_header,
                 thread_local_allocation: None,
             }),
-        }
+        })
     }
 }
