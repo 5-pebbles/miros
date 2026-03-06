@@ -21,8 +21,7 @@ pub type InitArrayFunction =
 
 pub struct ObjectData<T: AnyDynamic> {
     pub base: *const c_void,
-    pub dynamic_array: *const DynamicArrayItem,
-    pub dynamic: DynamicFields<T>,
+    pub dynamic_fields: DynamicFields<T>,
     pub tls_data: Option<ThreadLocalData>,
 }
 
@@ -59,8 +58,8 @@ impl<T: AnyDynamic> ObjectData<T> {
         for header in &*program_header_table {
             match header.p_type {
                 PT_PHDR => {
-                    base = (*program_header_table).as_ptr().byte_sub(header.p_vaddr)
-                        as *const c_void;
+                    base =
+                        (*program_header_table).as_ptr().byte_sub(header.p_vaddr) as *const c_void;
                 }
                 PT_DYNAMIC => dynamic_program_header = header,
                 PT_TLS => tls_program_header = Some(header.to_owned()),
@@ -83,8 +82,7 @@ impl<T: AnyDynamic> ObjectData<T> {
 
         Self {
             base,
-            dynamic_array,
-            dynamic: DynamicFields::from_dynamic_array(base, dynamic_array),
+            dynamic_fields: DynamicFields::from_dynamic_array(base, dynamic_array),
             tls_data: tls_program_header.map(|tls_program_header| ThreadLocalData {
                 tls_program_header,
                 thread_local_allocation: None,

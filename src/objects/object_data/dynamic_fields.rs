@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr, ptr::null};
+use std::{ffi::c_void, ptr, ptr::null, ptr::NonNull};
 
 use crate::elf::dynamic_array::{DT_GNU_HASH, DT_HASH, DT_NEEDED, DT_PLTGOT, DT_RPATH, DT_RUNPATH};
 #[cfg(debug_assertions)]
@@ -9,8 +9,8 @@ use crate::{
 use crate::{
     elf::{
         dynamic_array::{
-            DynamicArrayItem, DynamicArrayIter, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_RELA,
-            DT_RELASZ, DT_STRTAB, DT_SYMTAB,
+            DynamicArrayItem, DynamicArrayIter, DT_INIT_ARRAY, DT_INIT_ARRAYSZ, DT_RELA, DT_RELASZ,
+            DT_STRTAB, DT_SYMTAB,
         },
         relocate::Rela,
         string_table::StringTable,
@@ -19,9 +19,9 @@ use crate::{
     io_macros::syscall_debug_assert,
 };
 
-use super::hash_tables::HashTable;
-use super::path_resolver::PathResolver;
-use super::{AnyDynamic, Dynamic, InitArrayFunction};
+use super::{
+    hash_tables::HashTable, path_resolver::PathResolver, AnyDynamic, Dynamic, InitArrayFunction,
+};
 
 pub struct DynamicFields<T: AnyDynamic> {
     pub global_offset_table: *const usize,
@@ -81,8 +81,7 @@ impl<T: AnyDynamic> DynamicFields<T> {
                     string_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const u8
                 }
                 DT_SYMTAB => {
-                    symbol_table_pointer =
-                        base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol
+                    symbol_table_pointer = base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol
                 }
                 #[cfg(debug_assertions)]
                 DT_SYMENT => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
@@ -124,13 +123,15 @@ impl<T: AnyDynamic> DynamicFields<T> {
         let string_table = StringTable::new(string_table_pointer);
         let symbol_table = SymbolTable::new(symbol_table_pointer);
 
-        syscall_debug_assert!(rela_pointer != null());
         let rela_slice = ptr::slice_from_raw_parts(rela_pointer, rela_count);
 
         let init_array = if init_array_pointer.is_null() || init_array_size == 0 {
             None
         } else {
-            Some(ptr::slice_from_raw_parts(init_array_pointer, init_array_size))
+            Some(ptr::slice_from_raw_parts(
+                init_array_pointer,
+                init_array_size,
+            ))
         };
 
         let path_resolver = runpath_string_table_index

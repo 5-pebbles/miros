@@ -54,9 +54,8 @@ unsafe fn load_segment(
 ) {
     debug_assert!(segment_program_header.p_type == PT_LOAD);
 
-    let segment_start = page_size::get_page_start(
-        in_memory_base.byte_add(segment_program_header.p_vaddr) as usize,
-    );
+    let segment_start =
+        page_size::get_page_start(in_memory_base.byte_add(segment_program_header.p_vaddr) as usize);
 
     let file_start = page_size::get_page_start(segment_program_header.p_offset);
     let file_length =
@@ -145,7 +144,7 @@ impl Stratagem<ObjectDataVector> for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataVector) -> Result<(), crate::error::MirosError> {
         let _object_names = object_data
             .iter()
-            .flat_map(|object| object.dynamic.dependency_names());
+            .flat_map(|object| object.dynamic_fields.dependency_names());
         Ok(())
     }
 }

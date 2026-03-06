@@ -1,11 +1,7 @@
-use std::{
-    ffi::CStr,
-    mem::MaybeUninit,
-};
+use std::{ffi::CStr, mem::MaybeUninit};
 
 use crate::{
-    io_macros::syscall_debug_assert,
-    signature_matches_libc,
+    io_macros::syscall_debug_assert, signature_matches_libc,
     start::environment_variables::EnvironmentIter,
 };
 

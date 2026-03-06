@@ -93,8 +93,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     };
 
     let relocate = Relocate::new();
-    let thread_local_storage =
-        ThreadLocalStorage::new(auxv_info.pseudorandom_bytes);
+    let thread_local_storage = ThreadLocalStorage::new(auxv_info.pseudorandom_bytes);
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
     let stratagems: &[&dyn Stratagem<ObjectDataSingle>] = &[&thread_local_storage, &init_array];

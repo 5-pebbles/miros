@@ -20,11 +20,11 @@
 mod syscall;
 
 mod elf;
+mod error;
+mod global_allocator;
 mod io_macros;
 mod libc;
 mod objects;
 mod page_size;
-mod error;
-mod global_allocator;
 mod start;
 mod utils;
