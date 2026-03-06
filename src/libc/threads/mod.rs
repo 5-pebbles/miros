@@ -1,5 +1,6 @@
-use crate::{signature_matches_libc, syscall::Syscall};
 use std::arch::asm;
+
+use crate::{signature_matches_libc, syscall::Syscall};
 
 mod key;
 

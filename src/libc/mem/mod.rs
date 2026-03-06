@@ -1,6 +1,7 @@
 // TODO: extract functions into files
-use bitbybit::{bitenum, bitfield};
 use std::arch::asm;
+
+use bitbybit::{bitenum, bitfield};
 
 use crate::{io_macros::syscall_debug_assert, signature_matches_libc, syscall::Syscall};
 

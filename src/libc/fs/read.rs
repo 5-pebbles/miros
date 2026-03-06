@@ -1,6 +1,8 @@
-use std::ffi::c_void;
-use std::os::fd::AsRawFd;
-use std::{arch::asm, os::fd::BorrowedFd};
+use std::{
+    arch::asm,
+    ffi::c_void,
+    os::fd::{AsRawFd, BorrowedFd},
+};
 
 use crate::{signature_matches_libc, syscall::Syscall};
 

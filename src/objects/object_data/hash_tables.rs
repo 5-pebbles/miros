@@ -1,7 +1,9 @@
 use std::{ffi::c_void, ptr};
 
-use crate::elf::string_table::StringTable;
-use crate::elf::symbol::{Symbol, SymbolTable};
+use crate::elf::{
+    string_table::StringTable,
+    symbol::{Symbol, SymbolTable},
+};
 
 pub enum HashTable {
     SystemV {
