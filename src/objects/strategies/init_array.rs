@@ -32,7 +32,7 @@ impl InitArray {
 impl<T: AsObjectDataSlice> Stratagem<T> for InitArray {
     fn run(&self, object_data: &mut T) -> Result<(), MirosError> {
         object_data.as_object_slice_mut().iter().for_each(|object| {
-            if let Some(init_functions) = unsafe { object.init_functions() } {
+            if let Some(init_functions) = unsafe { object.dynamic_fields.init_functions() } {
                 init_functions
                     .iter()
                     .filter(|init_fn| **init_fn as *const c_void != null())
