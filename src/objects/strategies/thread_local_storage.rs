@@ -5,8 +5,8 @@ use crate::{
     error::MirosError,
     libc::mem::{mmap, MapFlags, ProtectionFlags},
     objects::{
-        object_data::ThreadLocalAllocation,
-        strategies::{ObjectDataSingle, Stratagem},
+        object_data::{NonDynamic, ObjectData, ThreadLocalAllocation},
+        strategies::Stratagem,
     },
     syscall::thread_pointer::set_thread_pointer,
     utils::round_up_to_boundary,
@@ -22,8 +22,8 @@ impl ThreadLocalStorage {
     }
 }
 
-impl Stratagem<ObjectDataSingle> for ThreadLocalStorage {
-    fn run(&self, object_data: &mut ObjectDataSingle) -> Result<(), MirosError> {
+impl Stratagem<ObjectData<NonDynamic>> for ThreadLocalStorage {
+    fn run(&self, object_data: &mut ObjectData<NonDynamic>) -> Result<(), MirosError> {
         unsafe {
             // Static Thread Local Storage [before Thread Pointer]:
             //                                         ┌---------------------┐

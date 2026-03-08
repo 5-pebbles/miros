@@ -2,7 +2,7 @@ use std::{ffi::c_void, ptr::null};
 
 use crate::{
     error::MirosError,
-    objects::strategies::{AsObjectDataSlice, Stratagem},
+    objects::strategies::{ObjectDataCollection, Stratagem},
     start::auxiliary_vector::AuxiliaryVectorItem,
 };
 
@@ -29,9 +29,9 @@ impl InitArray {
     }
 }
 
-impl<T: AsObjectDataSlice> Stratagem<T> for InitArray {
+impl<T: ObjectDataCollection> Stratagem<T> for InitArray {
     fn run(&self, object_data: &mut T) -> Result<(), MirosError> {
-        object_data.as_object_slice_mut().iter().for_each(|object| {
+        object_data.iter_objects().for_each(|object| {
             if let Some(init_functions) = unsafe { object.dynamic_fields.init_functions() } {
                 init_functions
                     .iter()

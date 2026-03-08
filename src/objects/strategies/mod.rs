@@ -1,6 +1,9 @@
 use crate::{
     error::MirosError,
-    objects::object_data::{AnyDynamic, Dynamic, NonDynamic, ObjectData},
+    objects::{
+        object_data::{AnyDynamic, Dynamic, NonDynamic, ObjectData},
+        object_data_map::ObjectDataMap,
+    },
 };
 
 pub mod init_array;
@@ -8,25 +11,22 @@ pub mod load_dependencies;
 pub mod relocate;
 pub mod thread_local_storage;
 
-pub type ObjectDataVector = Vec<ObjectData<Dynamic>>;
-pub type ObjectDataSingle = ObjectData<NonDynamic>;
-
-pub trait AsObjectDataSlice {
+pub trait ObjectDataCollection {
     type Item: AnyDynamic;
-    fn as_object_slice_mut(&mut self) -> &mut [ObjectData<Self::Item>];
+    fn iter_objects(&self) -> impl Iterator<Item = &ObjectData<Self::Item>>;
 }
 
-impl AsObjectDataSlice for ObjectData<NonDynamic> {
+impl ObjectDataCollection for ObjectData<NonDynamic> {
     type Item = NonDynamic;
-    fn as_object_slice_mut(&mut self) -> &mut [ObjectData<NonDynamic>] {
-        std::slice::from_mut(self)
+    fn iter_objects(&self) -> impl Iterator<Item = &ObjectData<NonDynamic>> {
+        std::iter::once(self)
     }
 }
 
-impl AsObjectDataSlice for Vec<ObjectData<Dynamic>> {
+impl ObjectDataCollection for ObjectDataMap {
     type Item = Dynamic;
-    fn as_object_slice_mut(&mut self) -> &mut [ObjectData<Dynamic>] {
-        self.as_mut_slice()
+    fn iter_objects(&self) -> impl Iterator<Item = &ObjectData<Dynamic>> {
+        std::iter::once(&self.program).chain(self.dependencies.values())
     }
 }
 

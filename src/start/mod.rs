@@ -9,10 +9,11 @@ use crate::{
     libc::environ::set_environ_pointer,
     objects::{
         object_data::{Dynamic, NonDynamic, ObjectData},
+        object_data_map::ObjectDataMap,
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, relocate::Relocate, thread_local_storage::ThreadLocalStorage,
-            ObjectDataSingle, ObjectDataVector, Stratagem,
+            Stratagem,
         },
     },
     page_size,
@@ -97,7 +98,8 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     let thread_local_storage = ThreadLocalStorage::new(auxv_info.pseudorandom_bytes);
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
-    let stratagems: &[&dyn Stratagem<ObjectDataSingle>] = &[&thread_local_storage, &init_array];
+    let stratagems: &[&dyn Stratagem<ObjectData<NonDynamic>>] =
+        &[&thread_local_storage, &init_array];
 
     let pipeline = ObjectPipeline::new(stratagems);
     let _ = relocate
@@ -115,9 +117,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     } else {
         ObjectData::<Dynamic>::from_program_headers(program_header_table).unwrap()
     };
-    let mut executable_and_dependencies = Vec::from([executable]);
+    let mut executable_and_dependencies = ObjectDataMap::new(executable);
 
-    let executable_stratagems: &[&dyn Stratagem<ObjectDataVector>] = &[&relocate, &init_array];
+    let executable_stratagems: &[&dyn Stratagem<ObjectDataMap>] = &[&relocate, &init_array];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
     let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
 
