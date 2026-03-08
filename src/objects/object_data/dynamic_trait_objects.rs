@@ -1,7 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
-use crate::elf::dynamic_array::DynamicArrayUnion;
-
 mod private {
     use super::{Dynamic, NonDynamic};
 
@@ -11,7 +7,8 @@ mod private {
 }
 
 pub trait DynamicObject: private::Sealed {
-    fn handle_needed(&mut self, dynamic_item: DynamicArrayUnion);
+    fn only_if_dynamic(f: impl FnOnce());
+    fn only_if_nondynamic(f: impl FnOnce());
 }
 
 #[derive(Default)]
@@ -19,29 +16,21 @@ pub struct NonDynamic;
 
 impl DynamicObject for NonDynamic {
     #[inline(always)]
-    fn handle_needed(&mut self, _dynamic_item: DynamicArrayUnion) {}
+    fn only_if_dynamic(_f: impl FnOnce()) {}
+    fn only_if_nondynamic(f: impl FnOnce()) {
+        f()
+    }
 }
 
 #[derive(Default)]
-pub struct Dynamic(Vec<usize>);
+pub struct Dynamic;
 
 impl DynamicObject for Dynamic {
-    fn handle_needed(&mut self, dynamic_item: DynamicArrayUnion) {
-        self.0.push(unsafe { dynamic_item.d_val });
+    fn only_if_dynamic(f: impl FnOnce()) {
+        f()
     }
-}
-
-impl Deref for Dynamic {
-    type Target = Vec<usize>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Dynamic {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+    #[inline(always)]
+    fn only_if_nondynamic(_f: impl FnOnce()) {}
 }
 
 pub trait AnyDynamic = DynamicObject + Default;
