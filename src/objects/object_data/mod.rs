@@ -1,4 +1,4 @@
-mod dynamic_fields;
+pub mod dynamic_fields;
 mod dynamic_trait_objects;
 mod hash_tables;
 mod path_resolver;

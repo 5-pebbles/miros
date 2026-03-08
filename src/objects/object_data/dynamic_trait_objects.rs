@@ -17,6 +17,7 @@ pub struct NonDynamic;
 impl DynamicObject for NonDynamic {
     #[inline(always)]
     fn only_if_dynamic(_f: impl FnOnce()) {}
+    #[inline(always)]
     fn only_if_nondynamic(f: impl FnOnce()) {
         f()
     }
@@ -26,6 +27,7 @@ impl DynamicObject for NonDynamic {
 pub struct Dynamic;
 
 impl DynamicObject for Dynamic {
+    #[inline(always)]
     fn only_if_dynamic(f: impl FnOnce()) {
         f()
     }

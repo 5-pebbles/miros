@@ -13,13 +13,7 @@ use crate::{
         symbol::{Symbol, SymbolTable},
     },
     error::MirosError,
-    objects::object_data_map::LibraryNameHash,
 };
-
-pub struct NeededLibrary {
-    pub string_table_offset: usize,
-    pub hash: LibraryNameHash,
-}
 
 pub struct DynamicFields<T: AnyDynamic> {
     pub global_offset_table: *const usize,
@@ -29,15 +23,15 @@ pub struct DynamicFields<T: AnyDynamic> {
     init_array: Option<*const [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
     pub path_resolver: PathResolver,
-    pub needed_libraries: Vec<NeededLibrary>,
+    needed_libraries_string_table_offsets: Vec<usize>,
     _marker: PhantomData<T>,
 }
 
 impl DynamicFields<Dynamic> {
-    pub fn dependency_names(&self) -> impl Iterator<Item = &str> {
-        self.needed_libraries
+    pub fn dependencies(&self) -> impl Iterator<Item = &str> {
+        self.needed_libraries_string_table_offsets
             .iter()
-            .map(|library| unsafe { self.string_table.get(library.string_table_offset) })
+            .map(|offset| unsafe { self.string_table.get(*offset) })
     }
 }
 
@@ -73,7 +67,7 @@ impl<T: AnyDynamic> DynamicFields<T> {
         let mut rpath_string_table_index: Option<usize> = None;
         let mut runpath_string_table_index: Option<usize> = None;
 
-        let mut needed_offsets: Vec<usize> = Vec::new();
+        let mut needed_libraries_string_table_offsets: Vec<usize> = Vec::new();
 
         (0..)
             .map(|index| *dynamic_array.add(index))
@@ -123,7 +117,9 @@ impl<T: AnyDynamic> DynamicFields<T> {
                 Ok(DynamicTag::Runpath) => runpath_string_table_index = Some(item.d_un.d_val),
 
                 Ok(DynamicTag::Needed) => {
-                    T::only_if_dynamic(|| needed_offsets.push(item.d_un.d_val));
+                    T::only_if_dynamic(|| {
+                        needed_libraries_string_table_offsets.push(item.d_un.d_val)
+                    });
                 }
                 _ => (),
             });
@@ -147,14 +143,6 @@ impl<T: AnyDynamic> DynamicFields<T> {
             .or(rpath_string_table_index.map(|index| PathResolver::Rpath(string_table.get(index))))
             .unwrap_or(PathResolver::None);
 
-        let needed_libraries = needed_offsets
-            .into_iter()
-            .map(|offset| NeededLibrary {
-                string_table_offset: offset,
-                hash: LibraryNameHash::new(string_table.get(offset)),
-            })
-            .collect();
-
         Ok(Self {
             global_offset_table: global_offset_table_pointer?,
             string_table,
@@ -163,7 +151,7 @@ impl<T: AnyDynamic> DynamicFields<T> {
             init_array,
             hash_table,
             path_resolver,
-            needed_libraries,
+            needed_libraries_string_table_offsets,
             _marker: PhantomData,
         })
     }
