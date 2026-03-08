@@ -84,12 +84,10 @@ where
     for<'a> &'a ObjectData<<T as ObjectDataCollection>::Item>: Relocatable,
 {
     fn run(&self, object_data: &mut T) -> Result<(), MirosError> {
-        object_data
-            .iter_objects()
-            .try_for_each(|object| {
-                unsafe { object.dynamic_fields.rela_slice() }
-                    .iter()
-                    .try_for_each(|rela| unsafe { self.rela(*rela, object) })
-            })
+        object_data.iter_objects().try_for_each(|object| {
+            unsafe { object.dynamic_fields.rela_slice() }
+                .iter()
+                .try_for_each(|rela| unsafe { self.rela(*rela, object) })
+        })
     }
 }
