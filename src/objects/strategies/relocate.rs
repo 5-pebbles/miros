@@ -5,7 +5,7 @@ use crate::{
     error::MirosError,
     objects::{
         object_data::{Dynamic, NonDynamic, ObjectData},
-        strategies::{AsObjectDataSlice, Stratagem},
+        strategies::{ObjectDataCollection, Stratagem},
     },
 };
 
@@ -77,16 +77,15 @@ impl Relocate {
     }
 }
 
-impl<T: AsObjectDataSlice> Stratagem<T> for Relocate
+impl<T: ObjectDataCollection> Stratagem<T> for Relocate
 // SAFETY: DynamicObject is a sealed trait — its only implementors are NonDynamic and Dynamic, so this bound is satisfied for all possible ObjectData variants.
 // plus this is checked at compile time... ┌(▀Ĺ̯▀)┐
 where
-    for<'a> &'a ObjectData<<T as AsObjectDataSlice>::Item>: Relocatable,
+    for<'a> &'a ObjectData<<T as ObjectDataCollection>::Item>: Relocatable,
 {
     fn run(&self, object_data: &mut T) -> Result<(), MirosError> {
         object_data
-            .as_object_slice_mut()
-            .iter()
+            .iter_objects()
             .try_for_each(|object| {
                 unsafe { object.dynamic_fields.rela_slice() }
                     .iter()

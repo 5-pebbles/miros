@@ -16,7 +16,8 @@ use crate::{
     libc::mem::{mmap, MapFlags, ProtectionFlags},
     objects::{
         object_data::{Dynamic, ObjectData},
-        strategies::{ObjectDataVector, Stratagem},
+        object_data_map::ObjectDataMap,
+        strategies::Stratagem,
     },
     page_size,
 };
@@ -140,11 +141,8 @@ impl LoadDependencies {
     }
 }
 
-impl Stratagem<ObjectDataVector> for LoadDependencies {
-    fn run(&self, object_data: &mut ObjectDataVector) -> Result<(), crate::error::MirosError> {
-        let _object_names = object_data
-            .iter()
-            .flat_map(|object| object.dynamic_fields.dependency_names());
+impl Stratagem<ObjectDataMap> for LoadDependencies {
+    fn run(&self, _object_data: &mut ObjectDataMap) -> Result<(), crate::error::MirosError> {
         Ok(())
     }
 }
