@@ -134,8 +134,7 @@ impl ObjectData<Dynamic> {
             .any(|header| header.p_type == PT_LOAD));
 
         // Reserve a continuous region of memory:
-        let (min_addr, max_addr) =
-            calculate_virtual_address_bounds(&program_headers_from_file);
+        let (min_addr, max_addr) = calculate_virtual_address_bounds(&program_headers_from_file);
         let protection_flags = ProtectionFlags::ZERO
             .with_executable(true)
             .with_readable(true)
