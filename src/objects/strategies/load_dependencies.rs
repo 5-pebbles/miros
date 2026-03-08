@@ -1,148 +1,57 @@
-use core::slice;
-use std::{
-    cmp::{max, min},
-    ffi::c_void,
-    fs::File,
-    io::Read,
-    os::{fd::AsRawFd, unix::fs::FileExt},
-    ptr::null_mut,
-};
+use std::collections::VecDeque;
 
 use crate::{
-    elf::{
-        header::ElfHeader,
-        program_header::{ProgramHeader, PT_LOAD},
-    },
-    libc::mem::{mmap, MapFlags, ProtectionFlags},
+    error::MirosError,
     objects::{
         object_data::{Dynamic, ObjectData},
         object_data_map::ObjectDataMap,
         strategies::Stratagem,
     },
-    page_size,
 };
-
-fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (usize, usize) {
-    let mut min_addr = usize::MAX;
-    let mut max_addr = 0;
-
-    for header in program_header_table {
-        // Skip non-loadable segments
-        if header.p_type != PT_LOAD {
-            continue;
-        }
-
-        let start = header.p_vaddr as usize;
-        let end = start + header.p_memsz as usize;
-
-        min_addr = min(min_addr, start);
-        max_addr = max(max_addr, end);
-    }
-
-    // Align bounds to page boundaries
-    unsafe {
-        (
-            page_size::get_page_start(min_addr),
-            page_size::get_page_end(max_addr),
-        )
-    }
-}
-
-unsafe fn load_segment(
-    in_memory_base: *const c_void,
-    file: &File,
-    segment_program_header: &ProgramHeader,
-) {
-    debug_assert!(segment_program_header.p_type == PT_LOAD);
-
-    let segment_start =
-        page_size::get_page_start(in_memory_base.byte_add(segment_program_header.p_vaddr) as usize);
-
-    let file_start = page_size::get_page_start(segment_program_header.p_offset);
-    let file_length =
-        (segment_program_header.p_offset + segment_program_header.p_filesz) - file_start;
-
-    let protection_flags = segment_program_header.p_flags.into_protection_flags();
-    let map_flags = MapFlags::ZERO.with_private(true).with_fixed(true);
-
-    mmap(
-        segment_start as *mut u8,
-        file_length,
-        protection_flags,
-        map_flags,
-        file.as_raw_fd(),
-        file_start,
-    );
-
-    if segment_program_header.p_memsz > segment_program_header.p_filesz {
-        slice::from_raw_parts_mut(
-            in_memory_base
-                .byte_add(segment_program_header.p_vaddr)
-                .byte_add(segment_program_header.p_filesz) as *mut u8,
-            segment_program_header.p_memsz - segment_program_header.p_filesz as usize,
-        )
-        .fill(0);
-    }
-}
 
 pub struct LoadDependencies {}
 
 impl LoadDependencies {
-    #[allow(dead_code)]
-    unsafe fn map_object_from_file(&self, mut file: File) -> ObjectData<Dynamic> {
-        // Read the ELF header from file:
-        let mut header_from_file: ElfHeader = unsafe { std::mem::zeroed() };
-        let as_bytes = slice::from_raw_parts_mut(
-            &mut header_from_file as *mut ElfHeader as *mut u8,
-            size_of::<ElfHeader>(),
-        );
-        if let Err(_error) = file.read_exact(as_bytes) {
-            todo!();
-        }
-
-        // Read the program header table from file:
-        let mut program_headers_from_file: Vec<ProgramHeader> =
-            Vec::with_capacity(header_from_file.e_phnum as usize);
-        let as_bytes = slice::from_raw_parts_mut(
-            program_headers_from_file.as_mut_ptr() as *mut u8,
-            size_of::<ProgramHeader>() * header_from_file.e_phnum as usize,
-        );
-        if let Err(_error) = file.read_exact_at(as_bytes, header_from_file.e_phoff as u64) {
-            todo!()
-        }
-        program_headers_from_file.set_len(header_from_file.e_phnum as usize);
-        debug_assert!(program_headers_from_file
-            .iter()
-            .any(|h| h.p_type == PT_LOAD));
-
-        // Reserve a continuous region of memory:
-        let (min_addr, max_addr) = calculate_virtual_address_bounds(&program_headers_from_file);
-        let protection_flags = ProtectionFlags::ZERO
-            .with_executable(true)
-            .with_readable(true)
-            .with_writable(true);
-        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
-        let base = mmap(
-            null_mut(),
-            max_addr - min_addr,
-            protection_flags,
-            map_flags,
-            -1,
-            0,
-        ) as *const c_void;
-
-        // Load all segments:
-        program_headers_from_file
-            .iter()
-            .filter(|program_header| program_header.p_type == PT_LOAD)
-            .for_each(|program_header| load_segment(base, &file, program_header));
-
-        ObjectData::from_base(base).unwrap()
+    pub fn new() -> Self {
+        Self {}
     }
 }
 
 impl Stratagem<ObjectDataMap> for LoadDependencies {
-    fn run(&self, _object_data: &mut ObjectDataMap) -> Result<(), crate::error::MirosError> {
+    fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
+        let mut pending: VecDeque<(String, Option<String>)> = object_data
+            .program
+            .dynamic_fields
+            .dependencies()
+            .map(|name| (name.to_string(), None))
+            .collect();
+
+        while let Some((dependency_name, declarer_key)) = pending.pop_front() {
+            if object_data.dependencies.contains_key(&dependency_name) {
+                continue;
+            }
+
+            let path_resolver = match &declarer_key {
+                None => &object_data.program.dynamic_fields.path_resolver,
+                Some(key) => &object_data.dependencies[key].dynamic_fields.path_resolver,
+            };
+
+            let file = path_resolver.resolve(&dependency_name)?;
+            let loaded_object = unsafe { ObjectData::<Dynamic>::from_file(file)? };
+
+            let transitive_dependencies: Vec<(String, Option<String>)> = loaded_object
+                .dynamic_fields
+                .dependencies()
+                .map(|name| (name.to_string(), Some(dependency_name.clone())))
+                .collect();
+
+            object_data
+                .dependencies
+                .insert(dependency_name, loaded_object);
+
+            pending.extend(transitive_dependencies);
+        }
+
         Ok(())
     }
 }

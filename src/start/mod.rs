@@ -12,8 +12,8 @@ use crate::{
         object_data_map::ObjectDataMap,
         object_pipeline::ObjectPipeline,
         strategies::{
-            init_array::InitArray, relocate::Relocate, thread_local_storage::ThreadLocalStorage,
-            Stratagem,
+            init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
+            thread_local_storage::ThreadLocalStorage, Stratagem,
         },
     },
     page_size,
@@ -119,7 +119,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     };
     let mut executable_and_dependencies = ObjectDataMap::new(executable);
 
-    let executable_stratagems: &[&dyn Stratagem<ObjectDataMap>] = &[&relocate, &init_array];
+    let load_dependencies = LoadDependencies::new();
+    let executable_stratagems: &[&dyn Stratagem<ObjectDataMap>] =
+        &[&load_dependencies, &relocate, &init_array];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
     let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
 

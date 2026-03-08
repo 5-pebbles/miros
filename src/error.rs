@@ -5,4 +5,5 @@ pub enum MirosError {
     MissingAuxvEntry(AuxiliaryVectorType),
     MissingDynamicEntry(DynamicTag),
     DependencyNotFound(String),
+    ElfReadError(String),
 }
