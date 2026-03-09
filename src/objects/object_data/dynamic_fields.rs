@@ -66,54 +66,53 @@ impl DynamicFields {
         let mut needed_libraries_string_table_offsets: Vec<usize> = Vec::new();
 
         DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
-                Ok(DynamicTag::PltGot) => {
-                    global_offset_table_pointer =
-                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const usize)
-                }
-                Ok(DynamicTag::StrTab) => {
-                    string_table_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const u8)
-                }
-                Ok(DynamicTag::SymTab) => {
-                    symbol_table_pointer =
-                        Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol)
-                }
-                #[cfg(debug_assertions)]
-                Ok(DynamicTag::SymEnt) => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
+            Ok(DynamicTag::PltGot) => {
+                global_offset_table_pointer =
+                    Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const usize)
+            }
+            Ok(DynamicTag::StrTab) => {
+                string_table_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const u8)
+            }
+            Ok(DynamicTag::SymTab) => {
+                symbol_table_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Symbol)
+            }
+            #[cfg(debug_assertions)]
+            Ok(DynamicTag::SymEnt) => syscall_assert!(item.d_un.d_val == size_of::<Symbol>()),
 
-                Ok(DynamicTag::Rela) => {
-                    rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
-                }
-                Ok(DynamicTag::RelaSz) => {
-                    rela_count = item.d_un.d_val / core::mem::size_of::<Rela>();
-                }
-                #[cfg(debug_assertions)]
-                Ok(DynamicTag::RelaEnt) => {
-                    syscall_assert!(item.d_un.d_val == size_of::<Rela>())
-                }
+            Ok(DynamicTag::Rela) => {
+                rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
+            }
+            Ok(DynamicTag::RelaSz) => {
+                rela_count = item.d_un.d_val / core::mem::size_of::<Rela>();
+            }
+            #[cfg(debug_assertions)]
+            Ok(DynamicTag::RelaEnt) => {
+                syscall_assert!(item.d_un.d_val == size_of::<Rela>())
+            }
 
-                Ok(DynamicTag::InitArray) => {
-                    init_array_pointer =
-                        base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
-                }
-                Ok(DynamicTag::InitArraySz) => {
-                    init_array_size = item.d_un.d_val / size_of::<usize>();
-                }
+            Ok(DynamicTag::InitArray) => {
+                init_array_pointer =
+                    base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
+            }
+            Ok(DynamicTag::InitArraySz) => {
+                init_array_size = item.d_un.d_val / size_of::<usize>();
+            }
 
-                Ok(DynamicTag::Hash) => {
-                    hash_table.get_or_insert(HashTable::from_sysv(base, item.d_un.d_ptr));
-                }
-                Ok(DynamicTag::GnuHash) => {
-                    hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr))
-                }
+            Ok(DynamicTag::Hash) => {
+                hash_table.get_or_insert(HashTable::from_sysv(base, item.d_un.d_ptr));
+            }
+            Ok(DynamicTag::GnuHash) => {
+                hash_table = Some(HashTable::from_gnu(base, item.d_un.d_ptr))
+            }
 
-                Ok(DynamicTag::Rpath) => rpath_string_table_index = Some(item.d_un.d_val),
-                Ok(DynamicTag::Runpath) => runpath_string_table_index = Some(item.d_un.d_val),
+            Ok(DynamicTag::Rpath) => rpath_string_table_index = Some(item.d_un.d_val),
+            Ok(DynamicTag::Runpath) => runpath_string_table_index = Some(item.d_un.d_val),
 
-                Ok(DynamicTag::Needed) => {
-                    needed_libraries_string_table_offsets.push(item.d_un.d_val);
-                }
-                _ => (),
-            });
+            Ok(DynamicTag::Needed) => {
+                needed_libraries_string_table_offsets.push(item.d_un.d_val);
+            }
+            _ => (),
+        });
 
         let string_table = StringTable::new(string_table_pointer?);
         let symbol_table = SymbolTable::new(symbol_table_pointer?);

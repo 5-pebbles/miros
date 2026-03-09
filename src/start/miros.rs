@@ -110,25 +110,25 @@ impl Miros<Relocate> {
         let mut init_array_size = 0;
 
         DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
-                Ok(DynamicTag::Rela) => {
-                    rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
-                }
-                Ok(DynamicTag::RelaSz) => {
-                    rela_count = item.d_un.d_val / size_of::<Rela>();
-                }
-                #[cfg(debug_assertions)]
-                Ok(DynamicTag::RelaEnt) => {
-                    syscall_assert!(item.d_un.d_val == size_of::<Rela>())
-                }
-                Ok(DynamicTag::InitArray) => {
-                    init_array_pointer =
-                        base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
-                }
-                Ok(DynamicTag::InitArraySz) => {
-                    init_array_size = item.d_un.d_val / size_of::<usize>();
-                }
-                _ => (),
-            });
+            Ok(DynamicTag::Rela) => {
+                rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
+            }
+            Ok(DynamicTag::RelaSz) => {
+                rela_count = item.d_un.d_val / size_of::<Rela>();
+            }
+            #[cfg(debug_assertions)]
+            Ok(DynamicTag::RelaEnt) => {
+                syscall_assert!(item.d_un.d_val == size_of::<Rela>())
+            }
+            Ok(DynamicTag::InitArray) => {
+                init_array_pointer =
+                    base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
+            }
+            Ok(DynamicTag::InitArraySz) => {
+                init_array_size = item.d_un.d_val / size_of::<usize>();
+            }
+            _ => (),
+        });
 
         let rela_slice = ptr::slice_from_raw_parts(rela_pointer?, rela_count);
 
