@@ -5,7 +5,7 @@ use super::{hash_tables::HashTable, path_resolver::PathResolver};
 use crate::io_macros::syscall_assert;
 use crate::{
     elf::{
-        dynamic_array::{DynamicArrayItem, DynamicTag},
+        dynamic_array::{DynamicArrayItem, DynamicArrayIter, DynamicTag},
         relocate::Rela,
         string_table::StringTable,
         symbol::{Symbol, SymbolTable},
@@ -65,10 +65,7 @@ impl DynamicFields {
 
         let mut needed_libraries_string_table_offsets: Vec<usize> = Vec::new();
 
-        (0..)
-            .map(|index| *dynamic_array.add(index))
-            .take_while(|item| item.d_tag() != Ok(DynamicTag::Null))
-            .for_each(|item| match item.d_tag() {
+        DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
                 Ok(DynamicTag::PltGot) => {
                     global_offset_table_pointer =
                         Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const usize)

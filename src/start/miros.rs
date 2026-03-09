@@ -11,7 +11,7 @@ use std::{
 use crate::io_macros::syscall_assert;
 use crate::{
     elf::{
-        dynamic_array::{DynamicArrayItem, DynamicTag},
+        dynamic_array::{DynamicArrayItem, DynamicArrayIter, DynamicTag},
         header::ElfHeader,
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
         relocate::Rela,
@@ -109,10 +109,7 @@ impl Miros<Relocate> {
         let mut init_array_pointer: *const InitArrayFunction = ptr::null();
         let mut init_array_size = 0;
 
-        (0..)
-            .map(|index| *dynamic_array.add(index))
-            .take_while(|item| item.d_tag() != Ok(DynamicTag::Null))
-            .for_each(|item| match item.d_tag() {
+        DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
                 Ok(DynamicTag::Rela) => {
                     rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
                 }
