@@ -70,7 +70,7 @@ impl Miros<Relocate> {
             }
         }
 
-        Self::build(base, dynamic_program_header, tls_program_header)
+        Self::build_internal(base, dynamic_program_header, tls_program_header)
     }
 
     pub unsafe fn from_program_headers(
@@ -90,10 +90,10 @@ impl Miros<Relocate> {
             }
         }
 
-        Self::build(base, dynamic_program_header, tls_program_header)
+        Self::build_internal(base, dynamic_program_header, tls_program_header)
     }
 
-    unsafe fn build(
+    unsafe fn build_internal(
         base: *const c_void,
         dynamic_program_header: *const ProgramHeader,
         tls_program_header: Option<ProgramHeader>,
@@ -234,11 +234,9 @@ impl Miros<AllocateTls> {
                 thread_pointer_register,
                 dynamic_thread_vector: null_mut(),
                 _padding: [0; 3],
-                canary: usize::from_ne_bytes(
-                    (&*pseudorandom_bytes)[..size_of::<usize>()]
-                        .try_into()
-                        .unwrap(),
-                ),
+                canary: usize::from_ne_bytes(ptr::read(
+                    pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
+                )),
             };
 
             set_thread_pointer(thread_pointer_register);
@@ -257,9 +255,12 @@ impl Miros<InitArray> {
         auxv_pointer: *const AuxiliaryVectorItem,
     ) {
         if let Some(init_functions) = self.init_array {
+            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
+            // but these are unsafely read from raw ELF init_array data...
+            #[allow(useless_ptr_null_checks)]
             (&*init_functions)
                 .iter()
-                .filter(|init_fn| **init_fn as *const c_void != null())
+                .filter(|init_fn| !(**init_fn as *const c_void).is_null())
                 .for_each(|init_fn| {
                     init_fn(arg_count, arg_pointer, env_pointer, auxv_pointer);
                 });
