@@ -2,9 +2,12 @@ use std::{ffi::c_void, ptr::null};
 
 use crate::{
     error::MirosError,
-    objects::strategies::{ObjectDataCollection, Stratagem},
+    objects::{object_data_map::ObjectDataMap, strategies::Stratagem},
     start::auxiliary_vector::AuxiliaryVectorItem,
 };
+
+pub type InitArrayFunction =
+    extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
 
 pub struct InitArray {
     arg_count: usize,
@@ -29,8 +32,8 @@ impl InitArray {
     }
 }
 
-impl<T: ObjectDataCollection> Stratagem<T> for InitArray {
-    fn run(&self, object_data: &mut T) -> Result<(), MirosError> {
+impl Stratagem for InitArray {
+    fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
         object_data.iter_objects().for_each(|object| {
             if let Some(init_functions) = unsafe { object.dynamic_fields.init_functions() } {
                 init_functions

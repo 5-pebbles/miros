@@ -2,11 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     error::MirosError,
-    objects::{
-        object_data::{Dynamic, ObjectData},
-        object_data_map::ObjectDataMap,
-        strategies::Stratagem,
-    },
+    objects::{object_data::ObjectData, object_data_map::ObjectDataMap, strategies::Stratagem},
 };
 
 pub struct LoadDependencies {}
@@ -17,7 +13,7 @@ impl LoadDependencies {
     }
 }
 
-impl Stratagem<ObjectDataMap> for LoadDependencies {
+impl Stratagem for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
         let mut pending: VecDeque<(String, Option<String>)> = object_data
             .program
@@ -37,7 +33,7 @@ impl Stratagem<ObjectDataMap> for LoadDependencies {
             };
 
             let file = path_resolver.resolve(&dependency_name)?;
-            let loaded_object = unsafe { ObjectData::<Dynamic>::from_file(file)? };
+            let loaded_object = unsafe { ObjectData::from_file(file)? };
 
             let transitive_dependencies: Vec<(String, Option<String>)> = loaded_object
                 .dynamic_fields

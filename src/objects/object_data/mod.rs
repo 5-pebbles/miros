@@ -1,5 +1,4 @@
 pub mod dynamic_fields;
-mod dynamic_trait_objects;
 mod hash_tables;
 mod path_resolver;
 mod thread_local;
@@ -15,8 +14,7 @@ use std::{
 };
 
 pub use dynamic_fields::DynamicFields;
-pub use dynamic_trait_objects::{AnyDynamic, Dynamic, NonDynamic};
-pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
+pub use thread_local::ThreadLocalData;
 
 use crate::{
     elf::{
@@ -28,19 +26,15 @@ use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{mmap, MapFlags, ProtectionFlags},
     page_size,
-    start::auxiliary_vector::AuxiliaryVectorItem,
 };
 
-pub type InitArrayFunction =
-    extern "C" fn(usize, *const *const u8, *const *const u8, *const AuxiliaryVectorItem);
-
-pub struct ObjectData<T: AnyDynamic> {
+pub struct ObjectData {
     pub base: *const c_void,
-    pub dynamic_fields: DynamicFields<T>,
+    pub dynamic_fields: DynamicFields,
     pub tls_data: Option<ThreadLocalData>,
 }
 
-impl<T: AnyDynamic> ObjectData<T> {
+impl ObjectData {
     pub unsafe fn from_base(base: *const c_void) -> Result<Self, MirosError> {
         // ELf Header:
         let header = &*(base as *const ElfHeader);
@@ -104,9 +98,7 @@ impl<T: AnyDynamic> ObjectData<T> {
             }),
         })
     }
-}
 
-impl ObjectData<Dynamic> {
     pub unsafe fn from_file(mut file: File) -> Result<Self, MirosError> {
         // Read the ELF header from file:
         let mut header_from_file: ElfHeader = unsafe { std::mem::zeroed() };

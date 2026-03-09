@@ -9,7 +9,7 @@ use std::ptr::copy_nonoverlapping;
 use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{mmap, munmap, MapFlags, ProtectionFlags},
-    objects::object_data::InitArrayFunction,
+    objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
 

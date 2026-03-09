@@ -8,20 +8,24 @@ use crate::{
     io_macros::syscall_debug_assert,
     libc::environ::set_environ_pointer,
     objects::{
-        object_data::{Dynamic, NonDynamic, ObjectData},
+        object_data::ObjectData,
         object_data_map::ObjectDataMap,
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
-            thread_local_storage::ThreadLocalStorage, Stratagem,
+            Stratagem,
         },
     },
     page_size,
-    start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
+    start::{
+        auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
+        miros::Miros,
+    },
 };
 
 pub mod auxiliary_vector;
 pub mod environment_variables;
+pub mod miros;
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
@@ -87,24 +91,17 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         auxv_info.program_header_count,
     );
 
-    // Relocate ourselves and initialize thread local storage:
-    let mut miros = if auxv_info.base.is_null() {
-        ObjectData::<NonDynamic>::from_program_headers(program_header_table).unwrap()
+    // Relocate ourselves, initialize TLS, and call init functions:
+    let miros = if auxv_info.base.is_null() {
+        Miros::from_program_headers(program_header_table).unwrap()
     } else {
-        ObjectData::from_base(auxv_info.base).unwrap()
+        Miros::from_base(auxv_info.base).unwrap()
     };
 
-    let relocate = Relocate::new();
-    let thread_local_storage = ThreadLocalStorage::new(auxv_info.pseudorandom_bytes);
-    let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
-
-    let stratagems: &[&dyn Stratagem<ObjectData<NonDynamic>>] =
-        &[&thread_local_storage, &init_array];
-
-    let pipeline = ObjectPipeline::new(stratagems);
-    let _ = relocate
-        .run(&mut miros)
-        .and_then(|_| pipeline.run_pipeline(&mut miros));
+    miros
+        .relocate()
+        .allocate_tls(auxv_info.pseudorandom_bytes)
+        .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
     println!("test");
 
@@ -115,13 +112,14 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     let executable = if auxv_info.base.is_null() {
         todo!()
     } else {
-        ObjectData::<Dynamic>::from_program_headers(program_header_table).unwrap()
+        ObjectData::from_program_headers(program_header_table).unwrap()
     };
     let mut executable_and_dependencies = ObjectDataMap::new(executable);
 
     let load_dependencies = LoadDependencies::new();
-    let executable_stratagems: &[&dyn Stratagem<ObjectDataMap>] =
-        &[&load_dependencies, &relocate, &init_array];
+    let relocate = Relocate::new();
+    let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
+    let executable_stratagems: &[&dyn Stratagem] = &[&load_dependencies, &relocate, &init_array];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
     let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
 
