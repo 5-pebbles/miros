@@ -52,3 +52,26 @@ impl DynamicArrayItem {
         DynamicTag::from_repr(self.d_tag).ok_or(self.d_tag)
     }
 }
+
+pub struct DynamicArrayIter {
+    current: *const DynamicArrayItem,
+}
+
+impl DynamicArrayIter {
+    pub unsafe fn new(start: *const DynamicArrayItem) -> Self {
+        Self { current: start }
+    }
+}
+
+impl Iterator for DynamicArrayIter {
+    type Item = DynamicArrayItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = unsafe { *self.current };
+        if item.d_tag() == Ok(DynamicTag::Null) {
+            return None;
+        }
+        self.current = unsafe { self.current.add(1) };
+        Some(item)
+    }
+}
