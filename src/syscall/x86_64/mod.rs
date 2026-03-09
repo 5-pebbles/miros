@@ -11,6 +11,7 @@ pub enum Syscall {
     GetTid = 186,
     TgKill = 234,
     OpenAt = 257,
+    GetRandom = 318,
 }
 
 pub mod exit;

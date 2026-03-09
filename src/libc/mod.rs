@@ -5,6 +5,7 @@ pub mod environ;
 mod fs;
 pub mod mem;
 mod process;
+mod random;
 mod str;
 mod threads;
 
