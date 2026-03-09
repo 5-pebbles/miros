@@ -8,13 +8,14 @@ use crate::{
     syscall::Syscall,
 };
 
-#[bitenum(u2, exhaustive = false)]
+#[bitenum(u2, exhaustive = true)]
 #[derive(Default)]
 enum EntropySource {
     #[default]
     DevSlashUrandom = 0b00,
     DevSlashRandom = 0b01,
     Insecure = 0b10,
+    Invalid = 0b11,
 }
 
 #[bitfield(u32)]
@@ -22,7 +23,7 @@ struct GetRandomFlags {
     #[bit(0, rw)]
     non_blocking: bool,
     #[bits(1..=2, rw)]
-    entropy_source: Option<EntropySource>,
+    entropy_source: EntropySource,
 }
 
 #[no_mangle]
