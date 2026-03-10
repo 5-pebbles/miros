@@ -30,7 +30,7 @@ macro_rules! signature_matches_libc {
     ($e:expr) => {
         #[allow(unreachable_code)]
         #[allow(clippy::diverging_sub_expression)]
-        if false { // NOTE: I usually just use core::mem::transmute and check that the sizes are the same...
+        if false { // NOTE: I usually just use std::mem::transmute and check that the sizes are the same...
             #[allow(unused_imports)]
             use crate::libc::*;
             return $e;

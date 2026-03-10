@@ -14,8 +14,8 @@ pub const S_IFMT: u32 = 1111 << 12;
 #[no_mangle]
 unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
     signature_matches_libc!(libc::open64(
-        core::mem::transmute(pathname),
-        core::mem::transmute(flags),
+        std::mem::transmute(pathname),
+        std::mem::transmute(flags),
         args,
     ));
 
@@ -38,7 +38,7 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
             in("r10") mode,
             lateout("rcx") _,
             lateout("r11") _,
-            options(nostack, preserves_flags)
+            options(nostack)
         );
     }
 

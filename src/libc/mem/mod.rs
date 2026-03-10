@@ -69,10 +69,10 @@ unsafe extern "C" fn memcpy(
     source: *const u8,
     number_of_bytes_to_copy: usize,
 ) -> *mut u8 {
-    signature_matches_libc!(core::mem::transmute(libc::memcpy(
-        core::mem::transmute(destination),
-        core::mem::transmute(source),
-        core::mem::transmute(number_of_bytes_to_copy)
+    signature_matches_libc!(std::mem::transmute(libc::memcpy(
+        std::mem::transmute(destination),
+        std::mem::transmute(source),
+        std::mem::transmute(number_of_bytes_to_copy)
     )));
 
     asm!(
@@ -91,7 +91,7 @@ unsafe extern "C" fn memset(
     single_byte_thats_32_bits_for_some_fucking_reason: u32, // I hate this stupid fucking API... Like why?
     number_of_bytes_to_set: usize,
 ) -> *mut u8 {
-    signature_matches_libc!(core::mem::transmute(libc::memset(
+    signature_matches_libc!(std::mem::transmute(libc::memset(
         destination.cast(),
         single_byte_thats_32_bits_for_some_fucking_reason as i32,
         number_of_bytes_to_set

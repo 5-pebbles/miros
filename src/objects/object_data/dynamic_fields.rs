@@ -83,7 +83,7 @@ impl DynamicFields {
                 rela_pointer = Ok(base.byte_add(item.d_un.d_ptr.addr()) as *const Rela);
             }
             Ok(DynamicTag::RelaSz) => {
-                rela_count = item.d_un.d_val / core::mem::size_of::<Rela>();
+                rela_count = item.d_un.d_val / size_of::<Rela>();
             }
             #[cfg(debug_assertions)]
             Ok(DynamicTag::RelaEnt) => {

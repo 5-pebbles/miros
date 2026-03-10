@@ -24,7 +24,7 @@ unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
             in("rdi") file_descriptor,
             lateout("rcx") _,
             lateout("r11") _,
-            options(nostack, preserves_flags, readonly)
+            options(nostack, readonly)
         );
     }
 
