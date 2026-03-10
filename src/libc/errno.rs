@@ -44,15 +44,15 @@ impl Display for Errno {
 
 #[no_mangle]
 unsafe extern "C" fn __errno_location() -> *mut Errno {
-    signature_matches_libc!(core::mem::transmute(libc::__errno_location()));
+    signature_matches_libc!(std::mem::transmute(libc::__errno_location()));
     errno.as_ptr()
 }
 
 #[no_mangle]
 unsafe extern "C" fn __xpg_strerror_r(errnum: Errno, buffer: *mut u8, length: usize) -> i32 {
     signature_matches_libc!(libc::strerror_r(
-        core::mem::transmute(errnum),
-        core::mem::transmute(buffer),
+        std::mem::transmute(errnum),
+        std::mem::transmute(buffer),
         length
     ));
 

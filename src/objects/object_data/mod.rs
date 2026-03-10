@@ -3,7 +3,6 @@ mod hash_tables;
 mod path_resolver;
 mod thread_local;
 
-use core::slice;
 use std::{
     cmp::{max, min},
     ffi::c_void,
@@ -11,6 +10,7 @@ use std::{
     io::Read,
     os::{fd::AsRawFd, unix::fs::FileExt},
     ptr::{self, null, null_mut},
+    slice,
 };
 
 pub use dynamic_fields::DynamicFields;

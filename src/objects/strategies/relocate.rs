@@ -35,7 +35,7 @@ impl Relocate {
             }
             R_X86_64_IRELATIVE => {
                 let function_pointer = object_data.base.addr().wrapping_add_signed(rela.r_addend);
-                let function: extern "C" fn() -> usize = core::mem::transmute(function_pointer);
+                let function: extern "C" fn() -> usize = std::mem::transmute(function_pointer);
                 let relocate_value = function();
                 asm!(
                     "mov qword ptr [{}], {}",

@@ -1,4 +1,4 @@
-use core::{slice, str};
+use std::{slice, str};
 
 use crate::io_macros::*;
 

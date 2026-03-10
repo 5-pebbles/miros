@@ -1,4 +1,4 @@
-use core::{slice, str};
+use std::{slice, str};
 
 /// A collection of null-terminated strings stored in contiguous memory.
 ///

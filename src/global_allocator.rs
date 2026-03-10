@@ -1,10 +1,9 @@
-use core::{
+use std::{
     alloc::{GlobalAlloc, Layout},
     cmp::max,
-    ptr::null_mut,
+    ptr::{copy_nonoverlapping, null_mut},
     sync::atomic::{AtomicUsize, Ordering},
 };
-use std::ptr::copy_nonoverlapping;
 
 use crate::{
     io_macros::syscall_debug_assert,
@@ -31,7 +30,7 @@ extern "C" fn init_allocator(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn free(_ptr: *mut core::ffi::c_void) {
+pub unsafe extern "C" fn free(_ptr: *mut std::ffi::c_void) {
     // TODO This is actually a really bad way of handling free...
     return;
 }
@@ -140,7 +139,7 @@ unsafe impl GlobalAlloc for Allocator {
         copy_nonoverlapping(
             ptr,
             new_ptr,
-            core::cmp::min(layout.pad_to_align().size(), new_size),
+            std::cmp::min(layout.pad_to_align().size(), new_size),
         );
         self.dealloc(ptr, layout);
 
