@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr::null};
+use std::ffi::c_void;
 
 use crate::{
     error::MirosError,
