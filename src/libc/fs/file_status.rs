@@ -47,7 +47,7 @@ unsafe extern "C" fn fstat64(
     {
         asm!(
             "syscall",
-            inlateout("rax") Syscall::Fstat as usize => result,
+            inlateout("rax") Syscall::FStat as usize => result,
             in("rdi") file_descriptor.as_raw_fd(),
             in("rsi") file_status_pointer,
             lateout("rcx") _,
