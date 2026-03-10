@@ -1,6 +1,7 @@
 #[repr(usize)]
 pub enum Syscall {
     Read = 0,
+    PRead64 = 17,
     Write = 1,
     Close = 3,
     Stat = 4,
