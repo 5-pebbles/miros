@@ -1,5 +1,6 @@
 mod close;
-mod file_status;
+mod fcntl;
+mod fstat;
 mod open;
 mod pread;
 mod read;
