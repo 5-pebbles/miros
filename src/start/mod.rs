@@ -109,12 +109,18 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     println!("{:?}", env::vars());
 
+    let miros_object_data = if auxv_info.base.is_null() {
+        ObjectData::from_program_headers(program_header_table).unwrap()
+    } else {
+        ObjectData::from_base(auxv_info.base).unwrap()
+    };
+
     let executable = if auxv_info.base.is_null() {
         todo!()
     } else {
         ObjectData::from_program_headers(program_header_table).unwrap()
     };
-    let mut executable_and_dependencies = ObjectDataMap::new(executable);
+    let mut executable_and_dependencies = ObjectDataMap::new(executable, miros_object_data);
 
     let load_dependencies = LoadDependencies::new();
     let relocate = Relocate::new();

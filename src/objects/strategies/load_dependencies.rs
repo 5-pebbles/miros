@@ -5,6 +5,8 @@ use crate::{
     objects::{object_data::ObjectData, object_data_map::ObjectDataMap, strategies::Stratagem},
 };
 
+const INTERCEPTED_LIBRARIES: &[&str] = &["libc.so.6", "libpthread.so.0", "ld-linux-x86-64.so.2"];
+
 pub struct LoadDependencies {}
 
 impl LoadDependencies {
@@ -23,7 +25,9 @@ impl Stratagem for LoadDependencies {
             .collect();
 
         while let Some((dependency_name, declarer_key)) = pending.pop_front() {
-            if object_data.dependencies.contains_key(&dependency_name) {
+            if object_data.dependencies.contains_key(&dependency_name)
+                || INTERCEPTED_LIBRARIES.contains(&dependency_name.as_str())
+            {
                 continue;
             }
 

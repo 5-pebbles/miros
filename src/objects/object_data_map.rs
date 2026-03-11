@@ -10,23 +10,29 @@ use crate::{
 
 pub struct ObjectDataMap {
     pub(crate) program: ObjectData,
+    pub(crate) miros: ObjectData,
     pub(crate) dependencies: IndexMap<String, ObjectData>,
 }
 
 impl ObjectDataMap {
-    pub fn new(program: ObjectData) -> Self {
+    pub fn new(program: ObjectData, miros: ObjectData) -> Self {
         Self {
             program,
+            miros,
             dependencies: IndexMap::new(),
         }
     }
 
     pub fn iter_objects(&self) -> impl Iterator<Item = &ObjectData> {
-        std::iter::once(&self.program).chain(self.dependencies.values())
+        std::iter::once(&self.program)
+            .chain(self.dependencies.values())
+            .chain(std::iter::once(&self.miros))
     }
 
     pub fn iter_objects_mut(&mut self) -> impl Iterator<Item = &mut ObjectData> {
-        std::iter::once(&mut self.program).chain(self.dependencies.values_mut())
+        std::iter::once(&mut self.program)
+            .chain(self.dependencies.values_mut())
+            .chain(std::iter::once(&mut self.miros))
     }
 
     pub fn resolve_symbol_address(

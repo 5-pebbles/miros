@@ -1,3 +1,5 @@
+mod libc_start_main;
+
 use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
 
 use crate::{signature_matches_libc, syscall::Syscall};
