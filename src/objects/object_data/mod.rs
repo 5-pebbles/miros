@@ -21,6 +21,8 @@ use crate::{
         dynamic_array::DynamicArrayItem,
         header::ElfHeader,
         program_header::{ProgramHeader, PT_DYNAMIC, PT_LOAD, PT_PHDR, PT_TLS},
+        section::SectionIndex,
+        symbol::Symbol,
     },
     error::MirosError,
     io_macros::syscall_debug_assert,
@@ -148,6 +150,29 @@ impl ObjectData {
             .for_each(|program_header| load_segment(base, &file, program_header));
 
         Self::from_base(base)
+    }
+
+    pub fn resolve_symbol_and_address(&self, name: &str) -> Option<(Symbol, *const c_void)> {
+        let symbol = unsafe {
+            self.dynamic_fields.hash_table.as_ref()?.lookup(
+                name,
+                &self.dynamic_fields.symbol_table,
+                &self.dynamic_fields.string_table,
+            )?
+        };
+
+        if !symbol.is_exported() {
+            return None;
+        }
+
+        let address = unsafe {
+            match symbol.section_index() {
+                Ok(SectionIndex::Absolute) => symbol.st_value as *const c_void,
+                _ => self.base.byte_add(symbol.st_value),
+            }
+        };
+
+        Some((symbol, address))
     }
 }
 

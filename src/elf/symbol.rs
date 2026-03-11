@@ -1,6 +1,6 @@
 use bitbybit::{bitenum, bitfield};
 
-use super::section::SectionIndex;
+use crate::elf::section::SectionIndex;
 
 // NOTE: The `Common` SymbolType and SectionIndex are only valid in relocatable objects;
 // the static linker resolves these into `.bss` before producing a shared object or executable.
