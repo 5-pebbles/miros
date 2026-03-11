@@ -1,3 +1,5 @@
+mod printf;
+
 use crate::signature_matches_libc;
 
 #[no_mangle]
