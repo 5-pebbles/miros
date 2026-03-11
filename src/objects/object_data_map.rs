@@ -23,16 +23,12 @@ impl ObjectDataMap {
         }
     }
 
-    pub fn iter_objects(&self) -> impl Iterator<Item = &ObjectData> {
-        std::iter::once(&self.program)
-            .chain(self.dependencies.values())
-            .chain(std::iter::once(&self.miros))
+    pub fn iter_objects(&self) -> impl DoubleEndedIterator<Item = &ObjectData> {
+        std::iter::once(&self.program).chain(self.dependencies.values())
     }
 
-    pub fn iter_objects_mut(&mut self) -> impl Iterator<Item = &mut ObjectData> {
-        std::iter::once(&mut self.program)
-            .chain(self.dependencies.values_mut())
-            .chain(std::iter::once(&mut self.miros))
+    pub fn iter_objects_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut ObjectData> {
+        std::iter::once(&mut self.program).chain(self.dependencies.values_mut())
     }
 
     pub fn resolve_symbol_address(
@@ -61,6 +57,7 @@ impl ObjectDataMap {
 
         let resolved = self
             .iter_objects()
+            .chain(std::iter::once(&self.miros))
             .flat_map(|object| object.resolve_symbol_and_address(symbol_name))
             .try_fold(None, |first_weak, (symbol, address)| {
                 match symbol.binding() {
