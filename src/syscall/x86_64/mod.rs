@@ -4,6 +4,7 @@ pub enum Syscall {
     PRead64 = 17,
     Write = 1,
     Close = 3,
+    FCntl = 72,
     Stat = 4,
     FStat = 5,
     Mmap = 9,
