@@ -6,4 +6,5 @@ pub enum MirosError {
     MissingDynamicEntry(DynamicTag),
     DependencyNotFound(String),
     ElfReadError(String),
+    UndefinedSymbol(String),
 }
