@@ -21,6 +21,7 @@ impl Stratagem for LoadDependencies {
             .program
             .dynamic_fields
             .dependencies()
+            .iter()
             .map(|name| (name.to_string(), None))
             .collect();
 
@@ -42,6 +43,7 @@ impl Stratagem for LoadDependencies {
             let transitive_dependencies: Vec<(String, Option<String>)> = loaded_object
                 .dynamic_fields
                 .dependencies()
+                .iter()
                 .map(|name| (name.to_string(), Some(dependency_name.clone())))
                 .collect();
 

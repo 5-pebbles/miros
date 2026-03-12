@@ -28,6 +28,8 @@ pub enum DynamicTag {
     InitArraySz = 27,
     FiniArraySz = 28,
     Runpath = 29,
+    PreInitArray = 32,
+    PreInitArraySz = 33,
     RelrSz = 35,
     Relr = 36,
     GnuHash = 0x6ffffef5,

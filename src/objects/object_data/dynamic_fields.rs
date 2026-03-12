@@ -20,10 +20,11 @@ pub struct DynamicFields {
     pub symbol_table: SymbolTable,
     rela_slice: Option<*const [Rela]>,
     plt_rela_slice: Option<*const [Rela]>,
+    preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
     pub path_resolver: PathResolver,
-    needed_libraries_string_table_offsets: Vec<usize>,
+    dependencies: Vec<*const str>,
 }
 
 impl DynamicFields {
@@ -42,6 +43,9 @@ impl DynamicFields {
 
         let mut plt_rela_pointer: Option<*const Rela> = None;
         let mut plt_rela_count = 0;
+
+        let mut preinit_array_pointer: Option<*const InitArrayFunction> = None;
+        let mut preinit_array_size = 0;
 
         let mut init_array_pointer: Option<*const InitArrayFunction> = None;
         let mut init_array_size = 0;
@@ -88,12 +92,20 @@ impl DynamicFields {
                 syscall_assert!(item.d_un.d_val == DynamicTag::Rela as usize)
             }
 
+            Ok(DynamicTag::PreInitArray) => {
+                preinit_array_pointer =
+                    Some(base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction);
+            }
+            Ok(DynamicTag::PreInitArraySz) => {
+                preinit_array_size = item.d_un.d_val / size_of::<InitArrayFunction>();
+            }
+
             Ok(DynamicTag::InitArray) => {
                 init_array_pointer =
                     Some(base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction);
             }
             Ok(DynamicTag::InitArraySz) => {
-                init_array_size = item.d_un.d_val / size_of::<usize>();
+                init_array_size = item.d_un.d_val / size_of::<InitArrayFunction>();
             }
 
             Ok(DynamicTag::Hash) => {
@@ -119,6 +131,8 @@ impl DynamicFields {
         let plt_rela_slice =
             plt_rela_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, plt_rela_count));
 
+        let preinit_array = preinit_array_pointer
+            .map(|pointer| ptr::slice_from_raw_parts(pointer, preinit_array_size));
         let init_array =
             init_array_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, init_array_size));
 
@@ -127,34 +141,47 @@ impl DynamicFields {
             .or(rpath_string_table_index.map(|index| PathResolver::Rpath(string_table.get(index))))
             .unwrap_or(PathResolver::None);
 
+        let dependencies = needed_libraries_string_table_offsets
+            .iter()
+            .map(|index| string_table.get_wide_pointer(*index))
+            .collect();
+
         Ok(Self {
             global_offset_table,
             string_table,
             symbol_table,
             rela_slice,
             plt_rela_slice,
+            preinit_array,
             init_array,
             hash_table,
             path_resolver,
-            needed_libraries_string_table_offsets,
+            dependencies,
         })
     }
 
-    pub fn dependencies(&self) -> impl Iterator<Item = &str> {
-        self.needed_libraries_string_table_offsets
-            .iter()
-            .map(|offset| unsafe { self.string_table.get(*offset) })
+    pub fn dependencies(&self) -> &[&str] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self.dependencies.as_ptr().cast::<&str>(),
+                self.dependencies.len(),
+            )
+        }
     }
 
-    pub unsafe fn rela_slice(&self) -> Option<&[Rela]> {
-        self.rela_slice.map(|pointer| &*pointer)
+    pub fn rela_slice(&self) -> Option<&[Rela]> {
+        unsafe { self.rela_slice.map(|pointer| &*pointer) }
     }
 
-    pub unsafe fn plt_rela_slice(&self) -> Option<&[Rela]> {
-        self.plt_rela_slice.map(|pointer| &*pointer)
+    pub fn plt_rela_slice(&self) -> Option<&[Rela]> {
+        unsafe { self.plt_rela_slice.map(|pointer| &*pointer) }
     }
 
-    pub unsafe fn init_functions(&self) -> Option<&[InitArrayFunction]> {
-        self.init_array.map(|pointer| &*pointer)
+    pub fn preinit_functions(&self) -> Option<&[InitArrayFunction]> {
+        unsafe { self.preinit_array.map(|pointer| &*pointer) }
+    }
+
+    pub fn init_functions(&self) -> Option<&[InitArrayFunction]> {
+        unsafe { self.init_array.map(|pointer| &*pointer) }
     }
 }

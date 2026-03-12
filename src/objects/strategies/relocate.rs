@@ -84,8 +84,8 @@ impl Relocate {
 impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataMap) -> Result<(), MirosError> {
         object_data_map.iter_objects().try_for_each(|object| {
-            let rela_entries = unsafe { object.dynamic_fields.rela_slice() }.unwrap_or(&[]);
-            let plt_rela_entries = unsafe { object.dynamic_fields.plt_rela_slice() }.unwrap_or(&[]);
+            let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
+            let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
 
             rela_entries
                 .iter()

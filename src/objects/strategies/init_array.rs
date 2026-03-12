@@ -34,8 +34,23 @@ impl InitArray {
 
 impl Stratagem for InitArray {
     fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
+        if let Some(preinit_functions) = object_data.program.dynamic_fields.preinit_functions() {
+            #[allow(useless_ptr_null_checks)]
+            preinit_functions
+                .iter()
+                .filter(|preinit_fn| !(**preinit_fn as *const c_void).is_null())
+                .for_each(|preinit_fn| {
+                    preinit_fn(
+                        self.arg_count,
+                        self.arg_pointer,
+                        self.env_pointer,
+                        self.auxv_pointer,
+                    )
+                });
+        }
+
         object_data.iter_objects().rev().for_each(|object| {
-            if let Some(init_functions) = unsafe { object.dynamic_fields.init_functions() } {
+            if let Some(init_functions) = object.dynamic_fields.init_functions() {
                 // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
                 // but these are unsafely read from raw ELF init_array data...
                 #[allow(useless_ptr_null_checks)]
