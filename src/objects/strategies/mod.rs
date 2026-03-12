@@ -1,4 +1,4 @@
-use crate::{error::MirosError, objects::object_data_map::ObjectDataGraph};
+use crate::{error::MirosError, objects::object_data_graph::ObjectDataGraph};
 
 pub mod init_array;
 pub mod load_dependencies;

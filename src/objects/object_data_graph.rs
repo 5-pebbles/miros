@@ -32,7 +32,7 @@ impl ObjectDataGraph {
     }
 
     // DFS post-order topological sort — dependencies before dependents, cycles skipped
-    pub fn iter_objects_topological(&self) -> impl Iterator<Item = &ObjectData> {
+    pub fn iter_objects_topological(&self) -> impl DoubleEndedIterator<Item = &ObjectData> {
         enum Event<'a> {
             Discover(usize),
             Emit(&'a ObjectData),
@@ -56,7 +56,7 @@ impl ObjectDataGraph {
                     stack.push(Event::Emit(object));
 
                     for needed in object.dynamic_fields.dependencies() {
-                        if let Some(needed_index) = self.dependencies.get_index_of(needed) {
+                        if let Some(needed_index) = self.dependencies.get_index_of(*needed) {
                             if !visited[needed_index] {
                                 stack.push(Event::Discover(needed_index));
                             }

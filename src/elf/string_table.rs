@@ -1,4 +1,4 @@
-use std::{slice, str};
+use std::{ptr, slice, str};
 
 /// A collection of null-terminated strings stored in contiguous memory.
 ///
@@ -38,11 +38,11 @@ impl StringTable {
         &*self.get_wide_pointer(index)
     }
 
-    /// Retrives an unsafe wide pointer to the string at the specified byte offset.
+    /// Retrieves a raw wide pointer to the string at the specified byte offset.
     pub unsafe fn get_wide_pointer(&self, index: usize) -> *const str {
         let string_start = self.0.add(index);
         let length = (0..).find(|&index| *string_start.add(index) == 0).unwrap();
-        str::from_utf8_unchecked(slice::from_raw_parts(string_start, length))
+        ptr::slice_from_raw_parts(string_start, length) as *const str
     }
 
     /// Extracts the inner pointer to the next item consuming the `StringTable`.

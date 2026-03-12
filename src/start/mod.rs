@@ -9,7 +9,7 @@ use crate::{
     libc::environ::set_environ_pointer,
     objects::{
         object_data::ObjectData,
-        object_data_map::ObjectDataGraph,
+        object_data_graph::ObjectDataGraph,
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,

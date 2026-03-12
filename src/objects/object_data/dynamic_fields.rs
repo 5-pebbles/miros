@@ -161,6 +161,9 @@ impl DynamicFields {
     }
 
     pub fn dependencies(&self) -> &[&str] {
+        // SAFETY: `*const str` and `&str` are both wide pointers with identical memory layout.
+        // The pointed-to string table data lives in the mapped ELF segment, which outlives `&self`.
+        // All pointers are non-null and valid.
         unsafe {
             std::slice::from_raw_parts(
                 self.dependencies.as_ptr().cast::<&str>(),

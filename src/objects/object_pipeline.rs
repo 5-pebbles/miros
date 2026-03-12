@@ -1,6 +1,6 @@
 use crate::{
     error::MirosError,
-    objects::{object_data_map::ObjectDataGraph, strategies::Stratagem},
+    objects::{object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
 pub struct ObjectPipeline<'a> {

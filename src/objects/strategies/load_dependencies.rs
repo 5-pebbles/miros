@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     error::MirosError,
-    objects::{object_data::ObjectData, object_data_map::ObjectDataGraph, strategies::Stratagem},
+    objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
 const INTERCEPTED_LIBRARIES: &[&str] = &["libc.so.6", "libpthread.so.0", "ld-linux-x86-64.so.2"];

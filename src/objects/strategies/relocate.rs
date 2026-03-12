@@ -3,7 +3,7 @@ use std::arch::asm;
 use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
     error::MirosError,
-    objects::{object_data::ObjectData, object_data_map::ObjectDataGraph, strategies::Stratagem},
+    objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
 pub struct Relocate {}

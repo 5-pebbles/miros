@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use crate::{
     error::MirosError,
-    objects::{object_data_map::ObjectDataGraph, strategies::Stratagem},
+    objects::{object_data_graph::ObjectDataGraph, strategies::Stratagem},
     start::auxiliary_vector::AuxiliaryVectorItem,
 };
 
