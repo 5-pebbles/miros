@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::{
     error::MirosError,
-    objects::{object_data::ObjectData, object_data_map::ObjectDataMap, strategies::Stratagem},
+    objects::{object_data::ObjectData, object_data_map::ObjectDataGraph, strategies::Stratagem},
 };
 
 const INTERCEPTED_LIBRARIES: &[&str] = &["libc.so.6", "libpthread.so.0", "ld-linux-x86-64.so.2"];
@@ -16,7 +16,7 @@ impl LoadDependencies {
 }
 
 impl Stratagem for LoadDependencies {
-    fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
+    fn run(&self, object_data: &mut ObjectDataGraph) -> Result<(), MirosError> {
         let mut pending: VecDeque<(String, Option<String>)> = object_data
             .program
             .dynamic_fields

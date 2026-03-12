@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use crate::{
     error::MirosError,
-    objects::{object_data_map::ObjectDataMap, strategies::Stratagem},
+    objects::{object_data_map::ObjectDataGraph, strategies::Stratagem},
     start::auxiliary_vector::AuxiliaryVectorItem,
 };
 
@@ -33,8 +33,10 @@ impl InitArray {
 }
 
 impl Stratagem for InitArray {
-    fn run(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
+    fn run(&self, object_data: &mut ObjectDataGraph) -> Result<(), MirosError> {
         if let Some(preinit_functions) = object_data.program.dynamic_fields.preinit_functions() {
+            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
+            // but these are unsafely read from raw ELF init_array data...
             #[allow(useless_ptr_null_checks)]
             preinit_functions
                 .iter()
@@ -49,10 +51,8 @@ impl Stratagem for InitArray {
                 });
         }
 
-        object_data.iter_objects().rev().for_each(|object| {
+        object_data.iter_objects_topological().for_each(|object| {
             if let Some(init_functions) = object.dynamic_fields.init_functions() {
-                // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
-                // but these are unsafely read from raw ELF init_array data...
                 #[allow(useless_ptr_null_checks)]
                 init_functions
                     .iter()
@@ -67,6 +67,7 @@ impl Stratagem for InitArray {
                     });
             }
         });
+
         Ok(())
     }
 }
