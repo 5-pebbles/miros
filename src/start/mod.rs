@@ -9,7 +9,7 @@ use crate::{
     libc::environ::set_environ_pointer,
     objects::{
         object_data::ObjectData,
-        object_data_map::ObjectDataMap,
+        object_data_graph::ObjectDataGraph,
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     } else {
         ObjectData::from_program_headers(program_header_table).unwrap()
     };
-    let mut executable_and_dependencies = ObjectDataMap::new(executable, miros_object_data);
+    let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
 
     let load_dependencies = LoadDependencies::new();
     let relocate = Relocate::new();

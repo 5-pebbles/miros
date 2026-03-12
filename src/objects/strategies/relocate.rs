@@ -3,7 +3,7 @@ use std::arch::asm;
 use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
     error::MirosError,
-    objects::{object_data::ObjectData, object_data_map::ObjectDataMap, strategies::Stratagem},
+    objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
 pub struct Relocate {}
@@ -18,7 +18,7 @@ impl Relocate {
         &self,
         rela: Rela,
         object_data: &ObjectData,
-        object_data_map: &ObjectDataMap,
+        object_data_map: &ObjectDataGraph,
     ) -> Result<(), MirosError> {
         let relocate_address = rela.r_offset.wrapping_add(object_data.base.addr());
 
@@ -82,10 +82,10 @@ impl Relocate {
 }
 
 impl Stratagem for Relocate {
-    fn run(&self, object_data_map: &mut ObjectDataMap) -> Result<(), MirosError> {
+    fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
         object_data_map.iter_objects().try_for_each(|object| {
-            let rela_entries = unsafe { object.dynamic_fields.rela_slice() }.unwrap_or(&[]);
-            let plt_rela_entries = unsafe { object.dynamic_fields.plt_rela_slice() }.unwrap_or(&[]);
+            let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
+            let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
 
             rela_entries
                 .iter()

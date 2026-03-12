@@ -1,6 +1,6 @@
 use crate::{
     error::MirosError,
-    objects::{object_data_map::ObjectDataMap, strategies::Stratagem},
+    objects::{object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
 pub struct ObjectPipeline<'a> {
@@ -14,7 +14,7 @@ impl<'a> ObjectPipeline<'a> {
         }
     }
 
-    pub fn run_pipeline(&self, object_data: &mut ObjectDataMap) -> Result<(), MirosError> {
+    pub fn run_pipeline(&self, object_data: &mut ObjectDataGraph) -> Result<(), MirosError> {
         self.pipeline
             .into_iter()
             .try_for_each(|stratagem| stratagem.run(object_data))
