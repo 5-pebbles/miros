@@ -3,6 +3,7 @@ name = "miros"
 version = "0.1.0"
 edition = "2021"
 description = "A modern ELF interpreter (dynamic linker/loader) written in Rust"
+license = "MIT"
 
 [dependencies]
 arbitrary-int = "2.0.0"
