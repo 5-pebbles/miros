@@ -1,5 +1,8 @@
 mod libc_start_main;
 
+#[no_mangle]
+unsafe extern "C" fn _dl_fini() {}
+
 use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
 
 use crate::{signature_matches_libc, syscall::Syscall};
