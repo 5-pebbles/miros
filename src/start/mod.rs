@@ -27,20 +27,19 @@ pub mod auxiliary_vector;
 pub mod environment_variables;
 pub mod miros;
 
-extern "C" {
-    fn _dl_fini();
-}
-
 #[unsafe(naked)]
-#[unsafe(no_mangle)]
+#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
+    extern "C" {
+        fn rtld_fini();
+    }
     naked_asm!("mov rdi, rsp",
         "and rsp, -16", // !0b1111
         "call {}",
         "lea rdx, [rip + {}]",
         "jmp rax",
         sym relocate_and_calculate_jump_address,
-        sym _dl_fini,
+        sym rtld_fini,
     );
 }
 

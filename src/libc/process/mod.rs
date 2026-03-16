@@ -1,7 +1,7 @@
 mod libc_start_main;
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn _dl_fini() {}
+unsafe extern "C" fn rtld_fini() {}
 
 use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
 
