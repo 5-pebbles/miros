@@ -6,7 +6,7 @@ use crate::{
     syscall::Syscall,
 };
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
     signature_matches_libc!(libc::close(file_descriptor));
 

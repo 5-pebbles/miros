@@ -26,7 +26,7 @@ struct GetRandomFlags {
     entropy_source: EntropySource,
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn getrandom(
     buffer_pointer: *mut c_void,
     buffer_length_in_bytes: usize,

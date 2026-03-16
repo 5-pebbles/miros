@@ -5,7 +5,7 @@ use crate::{signature_matches_libc, syscall::Syscall};
 mod key;
 
 // TODO: Store and invoke destructors when thread support is implemented.
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __cxa_thread_atexit_impl(
     _destructor: unsafe extern "C" fn(*mut c_void),
     _object: *mut c_void,
@@ -14,7 +14,7 @@ unsafe extern "C" fn __cxa_thread_atexit_impl(
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn gettid() -> i32 {
     signature_matches_libc!(std::mem::transmute(libc::gettid()));
     let result: isize;

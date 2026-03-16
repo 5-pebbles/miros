@@ -8,7 +8,7 @@ use crate::{
 };
 
 // TODO: add error handling
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn mmap(
     pointer: *mut u8,
     size: usize,

@@ -6,7 +6,7 @@ use std::{
 
 use crate::{signature_matches_libc, syscall::Syscall};
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn read(
     file_descriptor: BorrowedFd<'_>,
     buffer_pointer: *mut c_void,

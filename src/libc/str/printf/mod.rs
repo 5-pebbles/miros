@@ -10,7 +10,7 @@ use specifier::ResolvedSpecifier;
 
 const STDOUT_FD: i32 = 1;
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn printf(format: *const i8, mut args: ...) -> i32 {
     write_formatted_to_file_descriptor(STDOUT_FD, format, args.as_va_list())
 }

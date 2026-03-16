@@ -32,7 +32,7 @@ pub struct FileStatus {
     _reserved: [u64; 3],
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn fstat64(
     file_descriptor: BorrowedFd<'_>,
     file_status_pointer: *mut FileStatus,
@@ -64,7 +64,7 @@ unsafe extern "C" fn fstat64(
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn stat64(pathname: *const i8, file_status_pointer: *mut FileStatus) -> i32 {
     signature_matches_libc!(libc::stat64(
         std::mem::transmute(pathname),

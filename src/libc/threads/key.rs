@@ -7,7 +7,7 @@ use std::{cell::Cell, ffi::c_void, ptr::null_mut, sync::RwLock};
 
 use crate::signature_matches_libc;
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 static PTHREAD_KEYS_MAX: usize = 128;
 
 #[derive(Default, Copy, Clone)]
@@ -46,7 +46,7 @@ static mut THREAD_LOCAL_ENTRIES: Cell<[ThreadLocalEntry; 128]> = Cell::new(
     }; PTHREAD_KEYS_MAX],
 );
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_key_create(
     mut_key_index: *mut u32,
     destructor: Option<unsafe extern "C" fn(*mut c_void)>,
@@ -67,7 +67,7 @@ unsafe extern "C" fn pthread_key_create(
         .unwrap_or(libc::EAGAIN)
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_key_delete(key_index: u32) -> i32 {
     signature_matches_libc!(libc::pthread_key_delete(key_index));
 
@@ -83,7 +83,7 @@ unsafe extern "C" fn pthread_key_delete(key_index: u32) -> i32 {
         .unwrap_or(libc::EINVAL)
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_getspecific(key_index: u32) -> *mut c_void {
     signature_matches_libc!(libc::pthread_getspecific(key_index));
 
@@ -109,7 +109,7 @@ unsafe extern "C" fn pthread_getspecific(key_index: u32) -> *mut c_void {
         .unwrap_or(null_mut())
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_setspecific(key_index: u32, value: *const c_void) -> i32 {
     signature_matches_libc!(libc::pthread_setspecific(key_index, value));
 

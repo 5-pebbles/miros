@@ -2,7 +2,7 @@ use std::ffi::c_void;
 
 use crate::syscall::exit::exit;
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __libc_start_main(
     main: unsafe extern "C" fn(i32, *const *const u8, *const *const u8) -> i32,
     argc: i32,

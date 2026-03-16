@@ -12,7 +12,7 @@ use crate::{
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
 
-#[link_section = ".init_array"]
+#[cfg_attr(not(test), link_section = ".init_array")]
 pub(crate) static INIT_ALLOCATOR: InitArrayFunction = init_allocator;
 
 extern "C" fn init_allocator(
@@ -29,13 +29,13 @@ extern "C" fn init_allocator(
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn free(_ptr: *mut std::ffi::c_void) {
     // TODO This is actually a really bad way of handling free...
     return;
 }
 
-#[global_allocator]
+#[cfg_attr(not(test), global_allocator)]
 pub(crate) static mut ALLOCATOR: Allocator = Allocator::new();
 
 const MAX_SUPPORTED_ALIGN: usize = 4096;

@@ -11,7 +11,7 @@ use crate::{
 const AT_FDCWD: isize = -100;
 pub const S_IFMT: u32 = 1111 << 12;
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
     signature_matches_libc!(libc::open64(
         std::mem::transmute(pathname),
@@ -51,11 +51,11 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_RDONLY: AccessMode = AccessMode::ReadOnly;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_WRONLY: AccessMode = AccessMode::WriteOnly;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_RDWR: AccessMode = AccessMode::ReadAndWrite;
 
 #[bitenum(u2)]
@@ -66,43 +66,43 @@ pub enum AccessMode {
 }
 
 // TODO: clean up these value definitions...
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_CREAT: u32 = 64;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_EXCL: u32 = 128;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_NOCTTY: u32 = 256;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_TRUNC: u32 = 512;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_APPEND: u32 = 1024;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_NONBLOCK: u32 = 2048;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_DSYNC: u32 = 4096;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static FASYNC: u32 = 8192;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_DIRECT: u32 = 16384;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_LARGEFILE: u32 = 32768;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_DIRECTORY: u32 = 1 << 16;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_NOFOLLOW: u32 = 131072;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_NOATIME: u32 = 262144;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_CLOEXEC: u32 = 524288;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static __O_SYNC: u32 = 1048576;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_SYNC: u32 = 1052672;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_PATH: u32 = 2097152;
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_TMPFILE: u32 = 1 << 22 | O_DIRECTORY; // O_TMPFILE should always be passed with O_DIRECTORY
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub static O_NDELAY: u32 = 2048;
 
 #[bitfield(u32)]

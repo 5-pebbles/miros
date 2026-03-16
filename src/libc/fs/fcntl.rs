@@ -23,7 +23,7 @@ pub enum FCntlCommand {
     DuplicateFileDescriptorCloseOnExec = 1030,
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn fcntl(
     file_descriptor: BorrowedFd<'_>,
     command: FCntlCommand,

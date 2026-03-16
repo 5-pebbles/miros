@@ -43,7 +43,7 @@ pub struct MapFlags {
 }
 
 // TODO: add error handling
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
     signature_matches_libc!(libc::munmap(pointer.cast(), size));
 
@@ -63,7 +63,7 @@ pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn memcpy(
     destination: *mut u8,
     source: *const u8,
@@ -85,7 +85,7 @@ unsafe extern "C" fn memcpy(
     destination
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn memset(
     destination: *mut u8,
     single_byte_thats_32_bits_for_some_fucking_reason: u32, // I hate this stupid fucking API... Like why?
@@ -110,7 +110,7 @@ unsafe extern "C" fn memset(
     destination
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn memcmp(
     left_pointer: *const u8,
     right_pointer: *const u8,

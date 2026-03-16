@@ -5,7 +5,7 @@ use crate::{
     start::environment_variables::EnvironmentIter,
 };
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 #[allow(non_upper_case_globals)]
 static mut environ: MaybeUninit<*mut *mut u8> = MaybeUninit::uninit();
 
@@ -21,7 +21,7 @@ pub unsafe fn get_environ_pointer() -> *mut *mut u8 {
     environ.assume_init_read()
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn getenv(variable_name_pointer: *const u8) -> *const u8 {
     signature_matches_libc!(libc::getenv(variable_name_pointer.cast()).cast());
 

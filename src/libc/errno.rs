@@ -9,7 +9,7 @@ use crate::signature_matches_libc;
 #[derive(PartialEq, Eq)]
 pub struct Errno(pub(crate) u32);
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 #[thread_local]
 #[allow(non_upper_case_globals)]
 pub static errno: Cell<Errno> = Cell::new(Errno(0));
@@ -42,13 +42,13 @@ impl Display for Errno {
     }
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __errno_location() -> *mut Errno {
     signature_matches_libc!(std::mem::transmute(libc::__errno_location()));
     errno.as_ptr()
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __xpg_strerror_r(errnum: Errno, buffer: *mut u8, length: usize) -> i32 {
     signature_matches_libc!(libc::strerror_r(
         std::mem::transmute(errnum),

@@ -1,13 +1,13 @@
 mod libc_start_main;
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn _dl_fini() {}
 
 use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
 
 use crate::{signature_matches_libc, syscall::Syscall};
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn getpid() -> i32 {
     signature_matches_libc!(std::mem::transmute(libc::getpid()));
     let result: usize;
@@ -25,7 +25,7 @@ unsafe extern "C" fn getpid() -> i32 {
     result as i32
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn raise(signal_number: i32) -> i32 {
     signature_matches_libc!(libc::raise(signal_number));
 
@@ -49,7 +49,7 @@ unsafe extern "C" fn raise(signal_number: i32) -> i32 {
     result as i32
 }
 
-#[no_mangle]
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn abort() -> ! {
     #[thread_local]
     static ABORT_IN_PROGRESS: Cell<bool> = const { Cell::new(false) };
