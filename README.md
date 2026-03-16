@@ -2,7 +2,7 @@
 
 A from-scratch ELF dynamic linker/loader/C standard library/pthreads monolith written in Rust. I'm building it to understand (and eventually replace) `ld.so` on my systems.
 
-Requires Rust nightly. Build with `cargo build`.
+Requires Rust nightly and [`just`](https://github.com/casey/just). Run `just --list` to see available commands.
 
 ## What Can It Do? 🔧
 
