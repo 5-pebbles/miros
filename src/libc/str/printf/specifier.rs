@@ -2,7 +2,7 @@ use std::ffi::VaList;
 
 /// Raw flags parsed from a printf format specifier.
 /// No interpretation is applied — flag validity and interactions are resolved later by `ResolvedSpecifier`.
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct RawFlags {
     pub left_justify: bool,
     pub force_sign: bool,
@@ -11,7 +11,7 @@ pub struct RawFlags {
     pub zero_pad: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SignMode {
     None,
     Space,
@@ -32,7 +32,7 @@ impl SignMode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PadMode {
     RightAlign,
     LeftAlign,
@@ -55,7 +55,7 @@ impl PadMode {
 }
 
 /// Length modifier (`h`, `hh`, `l`, `ll`, `z`, `t`, `j`).
-#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum LengthModifier {
     #[default]
     None,
@@ -91,7 +91,7 @@ impl LengthModifier {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum DimensionSpecifier {
     #[default]
     Unspecified,
@@ -99,7 +99,7 @@ pub enum DimensionSpecifier {
     FromNextArg,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Conversion {
     SignedInt,
     UnsignedInt,
@@ -156,7 +156,7 @@ impl Conversion {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FloatFormat {
     Fixed { uppercase: bool },
     Scientific { uppercase: bool },
@@ -165,6 +165,7 @@ pub enum FloatFormat {
 }
 
 /// A parsed format specifier — everything between `%` and the conversion character.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrintfSpecifier {
     pub flags: RawFlags,
     pub width: DimensionSpecifier,
@@ -176,7 +177,7 @@ pub struct PrintfSpecifier {
 /// Fully resolved specifier with all flag interactions applied.
 /// Produced from a raw `PrintfSpecifier` by resolving `*` dimensions
 /// from the argument list and applying C11 §7.21.6.1p6 rules.
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedSpecifier {
     pub sign_mode: SignMode,
     pub pad_mode: PadMode,

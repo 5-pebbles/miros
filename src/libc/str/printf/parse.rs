@@ -3,6 +3,7 @@ use std::ffi::CStr;
 use super::specifier::{Conversion, DimensionSpecifier, LengthModifier, PrintfSpecifier, RawFlags};
 
 /// An item yielded by [`PrintfParser`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrintfItem<'a> {
     Literal(&'a [u8]),
     Specifier(PrintfSpecifier),
