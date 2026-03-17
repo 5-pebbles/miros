@@ -549,4 +549,78 @@ mod tests {
             { conversion: Conversion::Pointer },
             (0xDEADusize as *const ()), "0xdead"
     });
+
+    mod format_char_count {
+        use super::*;
+
+        unsafe extern "C" fn format_n_to_vec(
+            spec: &ResolvedSpecifier,
+            bytes_already_written: usize,
+            mut args: ...
+        ) -> Vec<u8> {
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.bytes_written = bytes_already_written;
+                formatter.format(spec, &mut args.as_va_list());
+            }
+            output
+        }
+
+        #[test]
+        fn stores_current_byte_count_at_pointer() {
+            let mut count: i32 = -1;
+            let spec = ResolvedSpecifier {
+                conversion: Conversion::CharCount,
+                ..Default::default()
+            };
+            let output = unsafe { format_n_to_vec(&spec, 5, &mut count as *mut i32) };
+            assert!(output.is_empty());
+            assert_eq!(count, 5);
+        }
+
+        #[test]
+        fn zero_bytes_written_stores_zero() {
+            let mut count: i32 = -1;
+            let spec = ResolvedSpecifier {
+                conversion: Conversion::CharCount,
+                ..Default::default()
+            };
+            let output = unsafe { format_n_to_vec(&spec, 0, &mut count as *mut i32) };
+            assert!(output.is_empty());
+            assert_eq!(count, 0);
+        }
+    }
+
+    mod finish_return_value {
+        use super::*;
+
+        #[test]
+        fn returns_total_bytes_written() {
+            let mut output = Vec::new();
+            let formatter = Formatter::new(&mut output);
+            assert_eq!(formatter.finish(), 0);
+
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.write_bytes(b"hello");
+                assert_eq!(formatter.finish(), 5);
+            }
+            assert_eq!(output, b"hello");
+        }
+
+        #[test]
+        fn accumulates_across_multiple_writes() {
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.write_bytes(b"abc");
+                formatter.write_byte(b'd');
+                formatter.write_bytes(b"ef");
+                assert_eq!(formatter.finish(), 6);
+            }
+            assert_eq!(output, b"abcdef");
+        }
+    }
 }

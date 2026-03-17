@@ -372,9 +372,9 @@ mod tests {
     // Edge cases derived from C11 §7.21.6.1.
     // Each test exercises a parser code path that no other test covers.
     parse_items_tests!(mod spec_edge_cases {
-        width_before_percent_is_not_literal_escape,       "%5%",    0;
-        double_dot_fails_as_conversion,                   "%.5.3d", 1, [0] == PrintfItem::Literal(b"3d");
-        conflicting_length_modifiers_consumes_only_first, "%lhd",   1, [0] == PrintfItem::Literal(b"d");
-        truncated_after_width,                            "%10",    0
+        percent_as_conversion_after_width_drops_specifier,  "%5%",    0;
+        dot_after_precision_is_unrecognized_conversion,     "%.5.3d", 1, [0] == PrintfItem::Literal(b"3d");
+        h_after_l_modifier_is_unrecognized_conversion,      "%lhd",   1, [0] == PrintfItem::Literal(b"d");
+        truncated_after_width,                              "%10",    0
     });
 }
