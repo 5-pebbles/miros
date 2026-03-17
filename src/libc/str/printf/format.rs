@@ -251,7 +251,7 @@ impl<W: Write> Formatter<W> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Radix {
     Decimal,
     Octal,
@@ -362,5 +362,265 @@ impl DigitBuffer {
 
     fn digits(&self) -> &[u8] {
         &self.storage[..self.length]
+    }
+}
+
+#[cfg(test)]
+#[allow(improper_ctypes_definitions)]
+mod tests {
+    use super::{super::specifier::SignMode, *};
+
+    macro_rules! format_integer_tests {
+        (mod $mod_name:ident {
+            $($name:ident, $value:expr, $negative:expr, $radix:expr,
+                { $($field:ident: $fval:expr),* $(,)? }, $expected:expr);* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+                $(
+                    #[test]
+                    fn $name() {
+                        let mut output = Vec::new();
+                        let spec = ResolvedSpecifier {
+                            $($field: $fval,)*
+                            ..Default::default()
+                        };
+                        {
+                            let mut formatter = Formatter::new(&mut output);
+                            formatter.write_integer(&spec, $radix, $value, $negative);
+                        }
+                        assert_eq!(output, $expected.as_bytes());
+                    }
+                )*
+            }
+        };
+    }
+
+    macro_rules! format_dispatch_tests {
+        (mod $mod_name:ident {
+            $($name:ident, { $($field:ident: $fval:expr),* $(,)? },
+                ($($arg:expr),*), $expected:expr);* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+
+                unsafe extern "C" fn format_to_vec(
+                    spec: &ResolvedSpecifier, mut args: ...
+                ) -> Vec<u8> {
+                    let mut output = Vec::new();
+                    {
+                        let mut formatter = Formatter::new(&mut output);
+                        formatter.format(spec, &mut args.as_va_list());
+                    }
+                    output
+                }
+
+                $(
+                    #[test]
+                    fn $name() {
+                        let spec = ResolvedSpecifier {
+                            $($field: $fval,)*
+                            ..Default::default()
+                        };
+                        let output = unsafe { format_to_vec(&spec, $($arg),*) };
+                        assert_eq!(output.as_slice(), $expected.as_bytes());
+                    }
+                )*
+            }
+        };
+    }
+
+    format_integer_tests!(mod integer_output {
+        // Basic value rendering
+        zero_value_default_precision_emits_single_zero,
+            0,   false, Radix::Decimal, {}, "0";
+        unsigned_value_no_flags,
+            42,  false, Radix::Decimal, {}, "42";
+        negative_value_emits_minus_sign,
+            42,  true,  Radix::Decimal, {}, "-42";
+
+        // Sign modes
+        force_sign_emits_plus_for_positive,
+            42,  false, Radix::Decimal, { sign_mode: SignMode::Force }, "+42";
+        space_sign_emits_space_for_positive,
+            42,  false, Radix::Decimal, { sign_mode: SignMode::Space }, " 42";
+
+        // Padding and alignment
+        default_alignment_right_pads_with_spaces,
+            42,  false, Radix::Decimal, { width: Some(8) }, "      42";
+        left_align_pads_trailing_spaces,
+            42,  false, Radix::Decimal, { width: Some(8), pad_mode: PadMode::LeftAlign }, "42      ";
+        zero_pad_fills_between_sign_and_digits,
+            42,  false, Radix::Decimal, { width: Some(8), pad_mode: PadMode::ZeroPad }, "00000042";
+        width_narrower_than_content_produces_no_padding,
+            12345, false, Radix::Decimal, { width: Some(2) }, "12345";
+
+        // Precision
+        precision_pads_with_leading_zeros,
+            42,  false, Radix::Decimal, { precision: Some(5) }, "00042";
+        precision_zero_suppresses_zero_value,
+            0,   false, Radix::Decimal, { precision: Some(0) }, "";
+        precision_exceeding_width_expands_output,
+            42,  false, Radix::Decimal, { precision: Some(10), width: Some(5) }, "0000000042";
+
+        // Hex output
+        hex_lowercase_digits,
+            255, false, Radix::Hex { uppercase: false }, {}, "ff";
+        hex_uppercase_digits,
+            255, false, Radix::Hex { uppercase: true },  {}, "FF";
+        alternate_hex_prepends_0x_prefix,
+            255, false, Radix::Hex { uppercase: false }, { alternate: true }, "0xff";
+        alternate_hex_zero_value_no_prefix,
+            0,   false, Radix::Hex { uppercase: false }, { alternate: true }, "0";
+
+        // Octal output
+        alternate_octal_forces_leading_zero,
+            8,   false, Radix::Octal, { alternate: true }, "010";
+        alternate_octal_emits_zero_despite_zero_precision,
+            0,   false, Radix::Octal, { precision: Some(0), alternate: true }, "0";
+        alternate_octal_precision_already_provides_leading_zero,
+            8,   false, Radix::Octal, { precision: Some(5), alternate: true }, "00010";
+
+        // Multi-feature interactions
+        zero_pad_with_sign_places_sign_before_zeros,
+            42,  true,  Radix::Decimal, { width: Some(8), pad_mode: PadMode::ZeroPad }, "-0000042";
+        precision_and_width_and_sign_interact,
+            42,  false, Radix::Decimal, { sign_mode: SignMode::Force, width: Some(10), precision: Some(5) }, "    +00042";
+        alternate_hex_with_zero_pad_and_width,
+            255, false, Radix::Hex { uppercase: false }, { alternate: true, width: Some(10), pad_mode: PadMode::ZeroPad }, "0x000000ff";
+
+        // Boundary values
+        u64_max_decimal,
+            u64::MAX, false, Radix::Decimal, {}, "18446744073709551615";
+        u64_max_hex,
+            u64::MAX, false, Radix::Hex { uppercase: false }, {}, "ffffffffffffffff"
+    });
+
+    format_dispatch_tests!(mod format_signed {
+        half_half_truncates_to_signed_byte,
+            { conversion: Conversion::SignedInt, length: LengthModifier::HalfHalf },
+            (0xFFi32), "-1";
+        long_modifier_extracts_64bit_signed,
+            { conversion: Conversion::SignedInt, length: LengthModifier::Long },
+            (1234567890i64), "1234567890"
+    });
+
+    format_dispatch_tests!(mod format_unsigned {
+        alternate_hex_dispatches_unsigned,
+            { conversion: Conversion::Hex { uppercase: false }, alternate: true },
+            (255u32), "0xff"
+    });
+
+    format_dispatch_tests!(mod format_string {
+        simple_string,
+            { conversion: Conversion::String },
+            (c"hello".as_ptr()), "hello";
+        null_string_pointer_emits_null_sentinel,
+            { conversion: Conversion::String },
+            (core::ptr::null::<i8>()), "(null)";
+        precision_truncates_string,
+            { conversion: Conversion::String, precision: Some(3) },
+            (c"hello".as_ptr()), "hel";
+        default_alignment_right_pads_string,
+            { conversion: Conversion::String, width: Some(10) },
+            (c"hi".as_ptr()), "        hi";
+        left_align_pads_string,
+            { conversion: Conversion::String, width: Some(10), pad_mode: PadMode::LeftAlign },
+            (c"hi".as_ptr()), "hi        "
+    });
+
+    format_dispatch_tests!(mod format_char {
+        char_from_integer_code,
+            { conversion: Conversion::Char },
+            (65i32), "A";
+        default_alignment_right_pads_char,
+            { conversion: Conversion::Char, width: Some(5) },
+            (65i32), "    A";
+        left_align_pads_char,
+            { conversion: Conversion::Char, width: Some(5), pad_mode: PadMode::LeftAlign },
+            (65i32), "A    "
+    });
+
+    format_dispatch_tests!(mod format_pointer {
+        null_address_emits_nil_sentinel,
+            { conversion: Conversion::Pointer },
+            (core::ptr::null::<()>()), "(nil)";
+        non_null_address_emits_hex_with_prefix,
+            { conversion: Conversion::Pointer },
+            (0xDEADusize as *const ()), "0xdead"
+    });
+
+    mod format_char_count {
+        use super::*;
+
+        unsafe extern "C" fn format_n_to_vec(
+            spec: &ResolvedSpecifier,
+            bytes_already_written: usize,
+            mut args: ...
+        ) -> Vec<u8> {
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.bytes_written = bytes_already_written;
+                formatter.format(spec, &mut args.as_va_list());
+            }
+            output
+        }
+
+        #[test]
+        fn stores_current_byte_count_at_pointer() {
+            let mut count: i32 = -1;
+            let spec = ResolvedSpecifier {
+                conversion: Conversion::CharCount,
+                ..Default::default()
+            };
+            let output = unsafe { format_n_to_vec(&spec, 5, &mut count as *mut i32) };
+            assert!(output.is_empty());
+            assert_eq!(count, 5);
+        }
+
+        #[test]
+        fn zero_bytes_written_stores_zero() {
+            let mut count: i32 = -1;
+            let spec = ResolvedSpecifier {
+                conversion: Conversion::CharCount,
+                ..Default::default()
+            };
+            let output = unsafe { format_n_to_vec(&spec, 0, &mut count as *mut i32) };
+            assert!(output.is_empty());
+            assert_eq!(count, 0);
+        }
+    }
+
+    mod finish_return_value {
+        use super::*;
+
+        #[test]
+        fn returns_total_bytes_written() {
+            let mut output = Vec::new();
+            let formatter = Formatter::new(&mut output);
+            assert_eq!(formatter.finish(), 0);
+
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.write_bytes(b"hello");
+                assert_eq!(formatter.finish(), 5);
+            }
+            assert_eq!(output, b"hello");
+        }
+
+        #[test]
+        fn accumulates_across_multiple_writes() {
+            let mut output = Vec::new();
+            {
+                let mut formatter = Formatter::new(&mut output);
+                formatter.write_bytes(b"abc");
+                formatter.write_byte(b'd');
+                formatter.write_bytes(b"ef");
+                assert_eq!(formatter.finish(), 6);
+            }
+            assert_eq!(output, b"abcdef");
+        }
     }
 }

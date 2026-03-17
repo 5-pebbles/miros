@@ -28,4 +28,6 @@ mod libc;
 mod objects;
 mod page_size;
 mod start;
+#[cfg(test)]
+mod test_macros;
 mod utils;
