@@ -175,3 +175,14 @@ impl<'a> Iterator for PrintfParser<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CString;
+
+    use super::{super::specifier::FloatFormat, *};
+
+    unsafe fn parser(format: &CString) -> PrintfParser<'_> {
+        PrintfParser::new(format.as_ptr())
+    }
+}

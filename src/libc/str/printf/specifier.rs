@@ -260,3 +260,48 @@ impl ResolvedSpecifier {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CString;
+
+    use super::super::parse::*;
+
+    mod flags {
+        use super::*;
+
+        macro_rules! test_flags {
+            ($name:ident, $input:expr, ($left:expr, $sign:expr, $space:expr, $alt:expr, $zero:expr)) => {
+                #[test]
+                fn $name() {
+                    let format =
+                        CString::new($input).expect("format should contains no internal nulls");
+                    let mut parser = unsafe { PrintfParser::new(format.as_ptr()) };
+                    let Some(PrintfItem::Specifier(specifier)) = parser.next() else {
+                        panic!("expected a single Specifier item");
+                    };
+                    assert_eq!(parser.next(), None);
+                    assert_eq!(
+                        (
+                            specifier.flags.left_justify,
+                            specifier.flags.force_sign,
+                            specifier.flags.space_sign,
+                            specifier.flags.alternate,
+                            specifier.flags.zero_pad,
+                        ),
+                        ($left, $sign, $space, $alt, $zero),
+                    );
+                }
+            };
+        }
+
+        test_flags!(no_flags, "%d", (false, false, false, false, false));
+        test_flags!(left_justify, "%-d", (true, false, false, false, false));
+        test_flags!(force_sign, "%+d", (false, true, false, false, false));
+        test_flags!(space_sign, "% d", (false, false, true, false, false));
+        test_flags!(alternate, "%#d", (false, false, false, true, false));
+        test_flags!(zero_pad, "%0d", (false, false, false, false, true));
+        test_flags!(all_flags, "%-+ #0d", (true, true, true, true, true));
+        test_flags!(duplicate_flags, "%--++d", (true, true, false, false, false));
+    }
+}
