@@ -11,8 +11,9 @@ pub struct RawFlags {
     pub zero_pad: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum SignMode {
+    #[default]
     None,
     Space,
     Force,
@@ -32,8 +33,9 @@ impl SignMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum PadMode {
+    #[default]
     RightAlign,
     LeftAlign,
     ZeroPad,
@@ -259,4 +261,278 @@ impl ResolvedSpecifier {
             conversion: spec.conversion,
         }
     }
+}
+
+#[cfg(test)]
+#[allow(improper_ctypes_definitions)]
+mod tests {
+    use super::*;
+    use crate::test_macros::eq_tests;
+
+    /// Test-only defaults: `Conversion::SignedInt` is an arbitrary choice for `..Default::default()` ergonomics in test macros.
+    /// Not available in production to avoid masking missing fields.
+    impl Default for Conversion {
+        fn default() -> Self {
+            Self::SignedInt
+        }
+    }
+
+    impl Default for PrintfSpecifier {
+        fn default() -> Self {
+            Self {
+                flags: RawFlags::default(),
+                width: DimensionSpecifier::default(),
+                precision: DimensionSpecifier::default(),
+                length: LengthModifier::default(),
+                conversion: Conversion::default(),
+            }
+        }
+    }
+
+    impl Default for ResolvedSpecifier {
+        fn default() -> Self {
+            Self {
+                sign_mode: SignMode::default(),
+                pad_mode: PadMode::default(),
+                alternate: false,
+                width: None,
+                precision: None,
+                length: LengthModifier::default(),
+                conversion: Conversion::default(),
+            }
+        }
+    }
+
+    macro_rules! predicate_tests {
+        (mod $mod_name:ident {
+            $($name:ident, $conversion:expr,
+                ($signed:expr, $float:expr, $integer:expr, $numeric:expr));* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+                $(
+                    #[test]
+                    fn $name() {
+                        let conversion = $conversion;
+                        assert_eq!(
+                            (
+                                conversion.is_signed(),
+                                conversion.is_float(),
+                                conversion.is_integer(),
+                                conversion.is_numeric(),
+                            ),
+                            ($signed, $float, $integer, $numeric),
+                        );
+                    }
+                )*
+            }
+        };
+    }
+
+    macro_rules! resolve_tests {
+        (mod $mod_name:ident {
+            $($name:ident,
+                { $($spec_field:ident: $spec_val:expr),* $(,)? }
+                ($($arg:expr),*)
+                => { $($($path:ident).+ == $expected:expr),+ $(,)? });* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+
+                unsafe extern "C" fn resolve(
+                    spec: PrintfSpecifier, mut args: ...
+                ) -> ResolvedSpecifier {
+                    ResolvedSpecifier::from_parsed(spec, &mut args.as_va_list())
+                }
+
+                $(
+                    #[test]
+                    fn $name() {
+                        let spec = PrintfSpecifier {
+                            $($spec_field: $spec_val,)*
+                            ..Default::default()
+                        };
+                        let resolved = unsafe { resolve(spec, $($arg),*) };
+                        $(assert_eq!(resolved.$($path).+, $expected);)+
+                    }
+                )*
+            }
+        };
+    }
+
+    unsafe extern "C" fn extract_signed_va(length: LengthModifier, mut args: ...) -> i64 {
+        length.extract_signed(&mut args.as_va_list())
+    }
+
+    unsafe extern "C" fn extract_unsigned_va(length: LengthModifier, mut args: ...) -> u64 {
+        length.extract_unsigned(&mut args.as_va_list())
+    }
+
+    eq_tests!(mod sign_byte {
+        none_positive,  SignMode::None.sign_byte(false),  None;
+        none_negative,  SignMode::None.sign_byte(true),   Some(b'-');
+        space_positive, SignMode::Space.sign_byte(false), Some(b' ');
+        space_negative, SignMode::Space.sign_byte(true),  Some(b'-');
+        force_positive, SignMode::Force.sign_byte(false), Some(b'+');
+        force_negative, SignMode::Force.sign_byte(true),  Some(b'-')
+    });
+
+    eq_tests!(mod resolve_padding {
+        right_align, PadMode::RightAlign.resolve_padding(5), (5, 0, 0);
+        left_align,  PadMode::LeftAlign.resolve_padding(5),  (0, 0, 5);
+        zero_pad,    PadMode::ZeroPad.resolve_padding(5),    (0, 5, 0)
+    });
+
+    //                                                    signed  float   integer numeric
+    predicate_tests!(mod conversion_predicates {
+        signed_int,   Conversion::SignedInt,              (true,  false, true,  true);
+        unsigned_int, Conversion::UnsignedInt,            (false, false, true,  true);
+        octal,        Conversion::Octal,                  (false, false, true,  true);
+        hex,          Conversion::Hex { uppercase: false }, (false, false, true, true);
+        float_fixed,  Conversion::Float(FloatFormat::Fixed { uppercase: false }), (true, true, false, true);
+        string,       Conversion::String,                 (false, false, false, false);
+        char_conv,    Conversion::Char,                   (false, false, false, false);
+        pointer,      Conversion::Pointer,                (false, false, false, false);
+        char_count,   Conversion::CharCount,              (false, false, false, false)
+    });
+
+    eq_tests!(mod from_byte {
+        d_is_signed,          Conversion::from_byte(b'd'), Some(Conversion::SignedInt);
+        i_is_signed,          Conversion::from_byte(b'i'), Some(Conversion::SignedInt);
+        u_is_unsigned,        Conversion::from_byte(b'u'), Some(Conversion::UnsignedInt);
+        o_is_octal,           Conversion::from_byte(b'o'), Some(Conversion::Octal);
+        x_is_hex_lower,       Conversion::from_byte(b'x'), Some(Conversion::Hex { uppercase: false });
+        x_is_hex_upper,       Conversion::from_byte(b'X'), Some(Conversion::Hex { uppercase: true });
+        f_is_fixed_lower,     Conversion::from_byte(b'f'), Some(Conversion::Float(FloatFormat::Fixed { uppercase: false }));
+        f_is_fixed_upper,     Conversion::from_byte(b'F'), Some(Conversion::Float(FloatFormat::Fixed { uppercase: true }));
+        e_is_sci_lower,       Conversion::from_byte(b'e'), Some(Conversion::Float(FloatFormat::Scientific { uppercase: false }));
+        e_is_sci_upper,       Conversion::from_byte(b'E'), Some(Conversion::Float(FloatFormat::Scientific { uppercase: true }));
+        g_is_general_lower,   Conversion::from_byte(b'g'), Some(Conversion::Float(FloatFormat::General { uppercase: false }));
+        g_is_general_upper,   Conversion::from_byte(b'G'), Some(Conversion::Float(FloatFormat::General { uppercase: true }));
+        a_is_hex_float_lower, Conversion::from_byte(b'a'), Some(Conversion::Float(FloatFormat::Hex { uppercase: false }));
+        a_is_hex_float_upper, Conversion::from_byte(b'A'), Some(Conversion::Float(FloatFormat::Hex { uppercase: true }));
+        s_is_string,          Conversion::from_byte(b's'), Some(Conversion::String);
+        c_is_char,            Conversion::from_byte(b'c'), Some(Conversion::Char);
+        p_is_pointer,         Conversion::from_byte(b'p'), Some(Conversion::Pointer);
+        n_is_char_count,      Conversion::from_byte(b'n'), Some(Conversion::CharCount);
+        invalid_returns_none, Conversion::from_byte(b'Q'), None
+    });
+
+    eq_tests!(mod extract_signed {
+        none_positive,           unsafe { extract_signed_va(LengthModifier::None, 42i32) },        42i64;
+        half_half_sign_extends,  unsafe { extract_signed_va(LengthModifier::HalfHalf, 0xFFi32) },  -1i64;
+        half_sign_extends,       unsafe { extract_signed_va(LengthModifier::Half, 0xFFFFi32) },    -1i64;
+        long_passthrough,        unsafe { extract_signed_va(LengthModifier::Long, 42i64) },        42i64;
+        long_long_passthrough,   unsafe { extract_signed_va(LengthModifier::LongLong, 42i64) },    42i64;
+        long_double_as_int,      unsafe { extract_signed_va(LengthModifier::LongDouble, 42i32) },  42i64;
+        intmax_passthrough,      unsafe { extract_signed_va(LengthModifier::IntMax, 42i64) },      42i64;
+        size_extends,            unsafe { extract_signed_va(LengthModifier::Size, -1isize) },      -1i64;
+        ptrdiff_extends,         unsafe { extract_signed_va(LengthModifier::Ptrdiff, -1isize) },   -1i64
+    });
+
+    eq_tests!(mod extract_unsigned {
+        none_positive,         unsafe { extract_unsigned_va(LengthModifier::None, 42u32) },        42u64;
+        half_half_truncates,   unsafe { extract_unsigned_va(LengthModifier::HalfHalf, 0x1FFu32) }, 0xFFu64;
+        half_truncates,        unsafe { extract_unsigned_va(LengthModifier::Half, 0x1FFFFu32) },   0xFFFFu64;
+        long_passthrough,      unsafe { extract_unsigned_va(LengthModifier::Long, 42u64) },        42u64;
+        long_long_passthrough, unsafe { extract_unsigned_va(LengthModifier::LongLong, 42u64) },    42u64;
+        long_double_as_int,    unsafe { extract_unsigned_va(LengthModifier::LongDouble, 42u32) },  42u64;
+        intmax_passthrough,    unsafe { extract_unsigned_va(LengthModifier::IntMax, 42u64) },      42u64;
+        size_extends,          unsafe { extract_unsigned_va(LengthModifier::Size, 42usize) },      42u64;
+        ptrdiff_extends,       unsafe { extract_unsigned_va(LengthModifier::Ptrdiff, 42usize) },   42u64
+    });
+
+    resolve_tests!(mod from_parsed {
+        force_sign_overrides_space,
+            { flags: RawFlags { force_sign: true, space_sign: true, ..Default::default() } }
+            ()
+            => { sign_mode == SignMode::Force };
+
+        space_sign_when_no_force,
+            { flags: RawFlags { space_sign: true, ..Default::default() } }
+            ()
+            => { sign_mode == SignMode::Space };
+
+        sign_mode_none_for_unsigned,
+            { flags: RawFlags { force_sign: true, ..Default::default() }, conversion: Conversion::UnsignedInt }
+            ()
+            => { sign_mode == SignMode::None };
+
+        left_justify_overrides_zero_pad,
+            { flags: RawFlags { left_justify: true, zero_pad: true, ..Default::default() } }
+            ()
+            => { pad_mode == PadMode::LeftAlign };
+
+        zero_pad_on_numeric,
+            { flags: RawFlags { zero_pad: true, ..Default::default() } }
+            ()
+            => { pad_mode == PadMode::ZeroPad };
+
+        zero_pad_ignored_on_non_numeric,
+            { flags: RawFlags { zero_pad: true, ..Default::default() }, conversion: Conversion::String }
+            ()
+            => { pad_mode == PadMode::RightAlign };
+
+        precision_suppresses_zero_pad_for_integers,
+            { flags: RawFlags { zero_pad: true, ..Default::default() }, precision: DimensionSpecifier::Fixed(5) }
+            ()
+            => { pad_mode == PadMode::RightAlign };
+
+        precision_does_not_suppress_zero_pad_for_floats,
+            {
+                flags: RawFlags { zero_pad: true, ..Default::default() },
+                precision: DimensionSpecifier::Fixed(5),
+                conversion: Conversion::Float(FloatFormat::Fixed { uppercase: false }),
+            }
+            ()
+            => { pad_mode == PadMode::ZeroPad };
+
+        negative_star_width_flips_align,
+            { width: DimensionSpecifier::FromNextArg }
+            (-10i32)
+            => { width == Some(10), pad_mode == PadMode::LeftAlign };
+
+        negative_star_precision_means_unspecified,
+            { precision: DimensionSpecifier::FromNextArg }
+            (-1i32)
+            => { precision == None };
+
+        long_double_collapses_for_non_float,
+            { length: LengthModifier::LongDouble }
+            ()
+            => { length == LengthModifier::None };
+
+        long_double_preserved_for_float,
+            {
+                length: LengthModifier::LongDouble,
+                conversion: Conversion::Float(FloatFormat::Fixed { uppercase: false }),
+            }
+            ()
+            => { length == LengthModifier::LongDouble };
+
+        alternate_flag_passthrough,
+            { flags: RawFlags { alternate: true, ..Default::default() } }
+            ()
+            => { alternate == true };
+
+        positive_star_width,
+            { width: DimensionSpecifier::FromNextArg }
+            (10i32)
+            => { width == Some(10), pad_mode == PadMode::RightAlign };
+
+        positive_star_precision,
+            { precision: DimensionSpecifier::FromNextArg }
+            (5i32)
+            => { precision == Some(5) };
+
+        fixed_width,
+            { width: DimensionSpecifier::Fixed(10) }
+            ()
+            => { width == Some(10) };
+
+        fixed_precision,
+            { precision: DimensionSpecifier::Fixed(5) }
+            ()
+            => { precision == Some(5) }
+    });
 }

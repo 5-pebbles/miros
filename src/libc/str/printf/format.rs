@@ -251,7 +251,7 @@ impl<W: Write> Formatter<W> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Radix {
     Decimal,
     Octal,
@@ -363,4 +363,157 @@ impl DigitBuffer {
     fn digits(&self) -> &[u8] {
         &self.storage[..self.length]
     }
+}
+
+#[cfg(test)]
+#[allow(improper_ctypes_definitions)]
+mod tests {
+    use super::{super::specifier::SignMode, *};
+    use crate::test_macros::eq_tests;
+
+    macro_rules! cstr {
+        ($s:literal) => {
+            concat!($s, "\0").as_ptr() as *const i8
+        };
+    }
+
+    macro_rules! format_integer_tests {
+        (mod $mod_name:ident {
+            $($name:ident, $value:expr, $negative:expr, $radix:expr,
+                { $($field:ident: $fval:expr),* $(,)? }, $expected:expr);* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+                $(
+                    #[test]
+                    fn $name() {
+                        let mut output = Vec::new();
+                        let spec = ResolvedSpecifier {
+                            $($field: $fval,)*
+                            ..Default::default()
+                        };
+                        {
+                            let mut formatter = Formatter::new(&mut output);
+                            formatter.write_integer(&spec, $radix, $value, $negative);
+                        }
+                        assert_eq!(output.as_slice(), $expected);
+                    }
+                )*
+            }
+        };
+    }
+
+    macro_rules! format_dispatch_tests {
+        (mod $mod_name:ident {
+            $($name:ident, { $($field:ident: $fval:expr),* $(,)? },
+                ($($arg:expr),*), $expected:expr);* $(;)?
+        }) => {
+            mod $mod_name {
+                use super::*;
+
+                unsafe extern "C" fn format_to_vec(
+                    spec: &ResolvedSpecifier, mut args: ...
+                ) -> Vec<u8> {
+                    let mut output = Vec::new();
+                    {
+                        let mut formatter = Formatter::new(&mut output);
+                        formatter.format(spec, &mut args.as_va_list());
+                    }
+                    output
+                }
+
+                $(
+                    #[test]
+                    fn $name() {
+                        let spec = ResolvedSpecifier {
+                            $($field: $fval,)*
+                            ..Default::default()
+                        };
+                        let output = unsafe { format_to_vec(&spec, $($arg),*) };
+                        assert_eq!(output.as_slice(), $expected);
+                    }
+                )*
+            }
+        };
+    }
+
+    eq_tests!(mod radix {
+        decimal_base,       Radix::Decimal.base(),                      10;
+        octal_base,         Radix::Octal.base(),                        8;
+        hex_base,           Radix::Hex { uppercase: false }.base(),     16;
+        decimal_prefix,     Radix::Decimal.prefix(),                    b"" as &[u8];
+        octal_prefix,       Radix::Octal.prefix(),                      b"" as &[u8];
+        hex_lower_prefix,   Radix::Hex { uppercase: false }.prefix(),   b"0x" as &[u8];
+        hex_upper_prefix,   Radix::Hex { uppercase: true }.prefix(),    b"0X" as &[u8];
+        octal_is_octal,     Radix::Octal.is_octal(),                    true;
+        decimal_not_octal,  Radix::Decimal.is_octal(),                  false;
+        hex_upper_is_upper, Radix::Hex { uppercase: true }.is_uppercase(), true;
+        hex_lower_not_upper, Radix::Hex { uppercase: false }.is_uppercase(), false;
+        from_octal,         Radix::from_conversion(Conversion::Octal),  Radix::Octal;
+        from_hex_lower,     Radix::from_conversion(Conversion::Hex { uppercase: false }), Radix::Hex { uppercase: false };
+        from_signed,        Radix::from_conversion(Conversion::SignedInt), Radix::Decimal
+    });
+
+    eq_tests!(mod output_digit_count {
+        default_uses_actual,        Radix::Decimal.output_digit_count(3, None, false, false),    3;
+        default_minimum_one,        Radix::Decimal.output_digit_count(1, None, false, false),    1;
+        precision_pads,             Radix::Decimal.output_digit_count(2, Some(5), false, false), 5;
+        precision_does_not_shrink,  Radix::Decimal.output_digit_count(5, Some(2), false, false), 5;
+        zero_value_zero_precision,  Radix::Decimal.output_digit_count(1, Some(0), false, true),  0;
+        octal_alt_zero_value,       Radix::Octal.output_digit_count(1, Some(0), true, true),     1;
+        octal_alt_forces_leading,   Radix::Octal.output_digit_count(3, None, true, false),       4;
+        octal_alt_no_extra_if_padded, Radix::Octal.output_digit_count(3, Some(5), true, false),  5
+    });
+
+    eq_tests!(mod digit_buffer {
+        zero_decimal,      DigitBuffer::from_value(0, Radix::Decimal).digits(),                  &[b'0'] as &[u8];
+        forty_two_decimal, DigitBuffer::from_value(42, Radix::Decimal).digits(),                 &[b'2', b'4'] as &[u8];
+        hex_lowercase,     DigitBuffer::from_value(255, Radix::Hex { uppercase: false }).digits(), &[b'f', b'f'] as &[u8];
+        hex_uppercase,     DigitBuffer::from_value(255, Radix::Hex { uppercase: true }).digits(),  &[b'F', b'F'] as &[u8];
+        octal_eight,       DigitBuffer::from_value(8, Radix::Octal).digits(),                    &[b'0', b'1'] as &[u8];
+        single_digit,      DigitBuffer::from_value(7, Radix::Decimal).digits(),                  &[b'7']    });
+
+    format_integer_tests!(mod integer_output {
+        zero,                   0,   false, Radix::Decimal, {},                                    b"0" as &[u8];
+        simple_positive,        42,  false, Radix::Decimal, {},                                    b"42" as &[u8];
+        simple_negative,        42,  true,  Radix::Decimal, {},                                    b"-42" as &[u8];
+        forced_sign_positive,   42,  false, Radix::Decimal, { sign_mode: SignMode::Force },        b"+42" as &[u8];
+        space_sign_positive,    42,  false, Radix::Decimal, { sign_mode: SignMode::Space },        b" 42" as &[u8];
+        right_padded,           42,  false, Radix::Decimal, { width: Some(8) },                    b"      42" as &[u8];
+        left_padded,            42,  false, Radix::Decimal, { width: Some(8), pad_mode: PadMode::LeftAlign }, b"42      " as &[u8];
+        zero_padded,            42,  false, Radix::Decimal, { width: Some(8), pad_mode: PadMode::ZeroPad },   b"00000042" as &[u8];
+        precision_leading_zeros, 42, false, Radix::Decimal, { precision: Some(5) },                b"00042" as &[u8];
+        hex_lower,              255, false, Radix::Hex { uppercase: false }, {},                    b"ff" as &[u8];
+        hex_upper,              255, false, Radix::Hex { uppercase: true },  {},                    b"FF" as &[u8];
+        hex_alternate,          255, false, Radix::Hex { uppercase: false }, { alternate: true },   b"0xff" as &[u8];
+        octal_alternate,        8,   false, Radix::Octal, { alternate: true },                     b"010" as &[u8];
+        zero_precision_zero,    0,   false, Radix::Decimal, { precision: Some(0) },                b"" as &[u8];
+        octal_alt_zero,         0,   false, Radix::Octal, { precision: Some(0), alternate: true }, b"0"    });
+
+    format_dispatch_tests!(mod format_signed {
+        basic,            { conversion: Conversion::SignedInt },                (42i32),    b"42" as &[u8];
+        negative,         { conversion: Conversion::SignedInt },                (-42i32),   b"-42" as &[u8];
+        half_half_trunc,  { conversion: Conversion::SignedInt, length: LengthModifier::HalfHalf }, (0xFFi32), b"-1" as &[u8];
+        long_value,       { conversion: Conversion::SignedInt, length: LengthModifier::Long },     (1234567890i64), b"1234567890"    });
+
+    format_dispatch_tests!(mod format_unsigned {
+        decimal,    { conversion: Conversion::UnsignedInt },                    (42u32),  b"42" as &[u8];
+        hex_lower,  { conversion: Conversion::Hex { uppercase: false } },       (255u32), b"ff" as &[u8];
+        octal,      { conversion: Conversion::Octal },                          (8u32),   b"10" as &[u8];
+        hex_alt,    { conversion: Conversion::Hex { uppercase: false }, alternate: true }, (255u32), b"0xff"    });
+
+    format_dispatch_tests!(mod format_string {
+        basic,          { conversion: Conversion::String },                          (cstr!("hello")), b"hello" as &[u8];
+        null_pointer,   { conversion: Conversion::String },                          (core::ptr::null::<i8>()),          b"(null)" as &[u8];
+        with_precision, { conversion: Conversion::String, precision: Some(3) },      (cstr!("hello")), b"hel" as &[u8];
+        right_padded,   { conversion: Conversion::String, width: Some(10) },         (cstr!("hi")),    b"        hi" as &[u8];
+        left_padded,    { conversion: Conversion::String, width: Some(10), pad_mode: PadMode::LeftAlign }, (cstr!("hi")), b"hi        "    });
+
+    format_dispatch_tests!(mod format_char {
+        letter_a,   { conversion: Conversion::Char },                          (65i32), b"A" as &[u8];
+        right_pad,  { conversion: Conversion::Char, width: Some(5) },          (65i32), b"    A" as &[u8];
+        left_pad,   { conversion: Conversion::Char, width: Some(5), pad_mode: PadMode::LeftAlign }, (65i32), b"A    "    });
+
+    format_dispatch_tests!(mod format_pointer {
+        null_pointer, { conversion: Conversion::Pointer }, (core::ptr::null::<()>()), b"(nil)"    });
 }
