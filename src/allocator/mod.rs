@@ -43,16 +43,12 @@ const MAX_SUPPORTED_ALIGN: usize = 4096;
 pub(crate) struct Allocator {
     // I can't use OnceCell/OnceLock because they aren't sync
     page_size: AtomicUsize,
-
-    thread_cache: ThreadCache,
 }
 
 impl Allocator {
     pub const fn new() -> Self {
         Allocator {
             page_size: AtomicUsize::new(0),
-
-            thread_cache: ThreadCache::new(),
         }
     }
 
@@ -144,13 +140,5 @@ unsafe impl GlobalAlloc for Allocator {
         self.dealloc(ptr, layout);
 
         new_ptr
-    }
-}
-
-struct ThreadCache {}
-
-impl ThreadCache {
-    pub const fn new() -> Self {
-        Self {}
     }
 }

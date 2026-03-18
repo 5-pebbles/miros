@@ -1,4 +1,4 @@
-use std::{ptr, slice, str};
+use std::ptr;
 
 /// A collection of null-terminated strings stored in contiguous memory.
 ///

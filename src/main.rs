@@ -16,7 +16,7 @@
 // NOTE: The entry point is defined in /src/start/mod.rs. o7
 #![cfg_attr(not(test), no_main)]
 
-mod global_allocator;
+mod allocator;
 
 #[cfg_attr(target_arch = "x86_64", path = "syscall/x86_64/mod.rs")]
 mod syscall;
