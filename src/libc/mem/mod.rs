@@ -64,6 +64,31 @@ pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn mprotect(
+    pointer: *mut u8,
+    size: usize,
+    protection_flags: ProtectionFlags,
+) -> i32 {
+    signature_matches_libc!(libc::mprotect(pointer.cast(), size, std::mem::transmute(protection_flags)));
+
+    let mut result: isize;
+    unsafe {
+        asm!(
+            "syscall",
+            inlateout("rax") Syscall::Mprotect as usize => result,
+            in("rdi") pointer,
+            in("rsi") size,
+            in("rdx") protection_flags.raw_value(),
+            out("rcx") _,
+            out("r11") _,
+            options(nostack)
+        );
+    }
+    syscall_debug_assert!(result >= 0);
+    0
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn memcpy(
     destination: *mut u8,
     source: *const u8,
