@@ -69,7 +69,11 @@ pub unsafe extern "C" fn mprotect(
     size: usize,
     protection_flags: ProtectionFlags,
 ) -> i32 {
-    signature_matches_libc!(libc::mprotect(pointer.cast(), size, std::mem::transmute(protection_flags)));
+    signature_matches_libc!(libc::mprotect(
+        pointer.cast(),
+        size,
+        std::mem::transmute(protection_flags)
+    ));
 
     let mut result: isize;
     unsafe {

@@ -1,3 +1,4 @@
+mod page_allocator;
 use std::{
     alloc::{GlobalAlloc, Layout},
     cmp::max,
