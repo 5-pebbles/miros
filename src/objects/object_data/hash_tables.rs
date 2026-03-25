@@ -6,11 +6,11 @@ use crate::elf::{
 };
 
 pub enum HashTable {
-    SystemV {
+    SysV {
         buckets: *const [u32],
         chain: *const [u32],
     },
-    GNU {
+    Gnu {
         symbol_offset: u32,
         bloom_shift: u32,
         bloom: *const [u64],
@@ -36,7 +36,7 @@ impl HashTable {
         let buckets_start = header.add(2);
         let chain_start = buckets_start.add(bucket_count);
 
-        Self::SystemV {
+        Self::SysV {
             buckets: ptr::slice_from_raw_parts(buckets_start, bucket_count),
             chain: ptr::slice_from_raw_parts(chain_start, chain_count),
         }
@@ -65,7 +65,7 @@ impl HashTable {
         let buckets_start = bloom_start.add(bloom_count) as *const u32;
         let chain_start = buckets_start.add(bucket_count);
 
-        Self::GNU {
+        Self::Gnu {
             symbol_offset,
             bloom_shift,
             bloom: ptr::slice_from_raw_parts(bloom_start, bloom_count),
@@ -81,7 +81,7 @@ impl HashTable {
         string_table: &StringTable,
     ) -> Option<Symbol> {
         match self {
-            Self::SystemV { buckets, chain } => {
+            Self::SysV { buckets, chain } => {
                 let buckets = &**buckets;
                 let chain = &**chain;
                 let hash = elf_hash(name);
@@ -97,7 +97,7 @@ impl HashTable {
                 }
                 None
             }
-            Self::GNU {
+            Self::Gnu {
                 symbol_offset,
                 bloom_shift,
                 bloom,

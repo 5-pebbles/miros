@@ -8,6 +8,7 @@ pub enum Syscall {
     Stat = 4,
     FStat = 5,
     Mmap = 9,
+    Mprotect = 10,
     Munmap = 11,
     GetPid = 39,
     Exit = 60,

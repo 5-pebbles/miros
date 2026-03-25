@@ -1,3 +1,6 @@
+mod metadata_allocator;
+mod page_allocator;
+
 use std::{
     alloc::{GlobalAlloc, Layout},
     cmp::max,
@@ -11,6 +14,15 @@ use crate::{
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
+
+pub(crate) const DATA_PAGE_PROTECTION: ProtectionFlags = ProtectionFlags::ZERO
+    .with_readable(true)
+    .with_writable(true);
+
+pub(crate) const GUARD_PAGE_PROTECTION: ProtectionFlags = ProtectionFlags::ZERO;
+
+pub(crate) const ANONYMOUS_PRIVATE_MAP: MapFlags =
+    MapFlags::ZERO.with_private(true).with_anonymous(true);
 
 #[cfg_attr(not(test), link_section = ".init_array")]
 pub(crate) static INIT_ALLOCATOR: InitArrayFunction = init_allocator;
