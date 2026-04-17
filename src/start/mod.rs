@@ -107,11 +107,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
-    println!("test");
-
     set_environ_pointer(env_pointer as *mut *mut u8);
-
-    println!("{:?}", env::vars());
 
     let miros_object_data = if auxv_info.base.is_null() {
         ObjectData::from_program_headers(program_header_table).unwrap()
