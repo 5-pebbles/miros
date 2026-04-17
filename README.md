@@ -54,7 +54,7 @@ Contributions are welcome! A few things to know:
 
 ```fish
 set BINARY ./examples/print_deadbeef
-comm -23 (nm -D --undefined-only $BINARY | grep '@GLIBC' | awk '{print $NF}' | sed 's/@.*//' | sort | psub) (nm -D --defined-only ./target/debug/miros | awk '{print $NF}' | sort | psub)
+comm -23 (nm -D --undefined-only $BINARY | grep '@GLIBC' | awk '{print $NF}' | sed 's/@.*//' | sort | psub) (nm -D --defined-only ./target/x86_64-unknown-linux-gnu/debug/miros | awk '{print $NF}' | sort | psub)
 ```
 
 Check the [issues](https://github.com/5-pebbles/miros/issues) if you're looking for something to work on (there's a lot).
