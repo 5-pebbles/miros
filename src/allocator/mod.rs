@@ -1,5 +1,6 @@
 mod metadata_allocator;
 mod page_allocator;
+mod primary_allocator;
 
 use std::{
     alloc::{GlobalAlloc, Layout},

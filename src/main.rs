@@ -1,6 +1,7 @@
 #![feature(impl_trait_in_assoc_type)]
 #![feature(c_variadic)]
-#![feature(ptr_as_ref_unchecked)]
+#![feature(const_trait_impl)]
+#![feature(const_cmp)]
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]
 #![feature(thread_local)]
