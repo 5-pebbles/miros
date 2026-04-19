@@ -1,30 +1,32 @@
-pub struct SizeClass(usize);
+use crate::allocator::primary_allocator::span::MAX_SLOTS_PER_SPAN;
+
+pub struct SizeClass(u8);
 
 impl SizeClass {
     #[inline(always)]
     pub const fn from_raw(raw: u8) -> Self {
         debug_assert!((raw as usize) < SIZE_CLASS_COUNT);
-        SizeClass(raw as usize)
+        SizeClass(raw)
     }
 
     #[inline(always)]
     pub const fn slot_size_in_bytes(&self) -> usize {
-        SIZE_CLASSES[self.0].slot_size_in_bytes
+        SIZE_CLASSES[self.0 as usize].slot_size_in_bytes
     }
 
     #[inline(always)]
     pub const fn slot_shift(&self) -> u32 {
-        SIZE_CLASSES[self.0].slot_shift
+        SIZE_CLASSES[self.0 as usize].slot_shift
     }
 
     #[inline(always)]
     pub const fn slots_per_span(&self) -> u32 {
-        SIZE_CLASSES[self.0].slots_per_span
+        SIZE_CLASSES[self.0 as usize].slots_per_span
     }
 
     #[inline(always)]
     pub const fn span_length_in_bytes(&self) -> usize {
-        SIZE_CLASSES[self.0].span_length_in_bytes
+        SIZE_CLASSES[self.0 as usize].span_length_in_bytes
     }
 }
 
@@ -34,7 +36,7 @@ pub struct SizeClassInfo {
     // SAFETY: This only works as long as all size classes are powers of 2...
     slot_shift: u32,
     slots_per_span: u32,
-    span_length_in_bytes: usize,
+    pub span_length_in_bytes: usize,
 }
 
 impl SizeClassInfo {
@@ -42,7 +44,8 @@ impl SizeClassInfo {
         assert!(slot_size_in_bytes.is_power_of_two());
 
         let slot_shift = slot_size_in_bytes.trailing_zeros();
-        let slots_per_span = (MAX_SLOT_SIZE / slot_size_in_bytes).clamp(8, 4096) as u32;
+        let slots_per_span =
+            (MAX_SLOT_SIZE / slot_size_in_bytes).clamp(8, MAX_SLOTS_PER_SPAN) as u32;
 
         Self {
             slot_size_in_bytes,
