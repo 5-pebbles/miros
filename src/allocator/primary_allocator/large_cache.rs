@@ -1,16 +1,20 @@
 use core::ptr;
+use std::ffi::c_void;
 
 const CAPACITY: usize = 8;
 
+type EntryIndex = u8;
+const _: () = assert!(CAPACITY <= EntryIndex::MAX as usize);
+
 #[derive(Clone, Copy)]
 pub struct CachedRegion {
-    pub pointer: *mut u8,
+    pub pointer: *mut c_void,
     pub size_in_bytes: usize,
 }
 
 pub struct LargeCache {
     entries: [CachedRegion; CAPACITY],
-    entry_count: u8,
+    entry_count: EntryIndex,
 }
 
 impl LargeCache {
