@@ -13,10 +13,6 @@ impl<T> LinkedList<T> {
         self.head
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.head.is_null()
-    }
-
     pub unsafe fn list_push_front(&mut self, node: *mut LinkedListNode<T>) {
         let old_head = self.head;
         (*node).next = old_head;
@@ -25,6 +21,22 @@ impl<T> LinkedList<T> {
             (*old_head).prevprev = ptr::from_mut(&mut (*node).next);
         }
         self.head = node;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.head.is_null()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = *mut LinkedListNode<T>> {
+        let mut current = self.head;
+        std::iter::from_fn(move || {
+            let node = current;
+            if node.is_null() {
+                return None;
+            }
+            current = unsafe { (*node).next };
+            Some(node)
+        })
     }
 }
 
