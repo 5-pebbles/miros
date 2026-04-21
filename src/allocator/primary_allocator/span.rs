@@ -1,4 +1,4 @@
-use std::{ffi::c_void, ptr::null_mut};
+use std::ffi::c_void;
 
 use crate::allocator::primary_allocator::size_classes::SizeClass;
 
@@ -17,10 +17,7 @@ fn word_and_bit(slot_index: u16) -> (usize, usize) {
     )
 }
 
-#[repr(C)]
-pub struct BaseSpan {
-    next: *mut Self,
-    prev: *mut Self,
+pub struct Span {
     data_pointer: *mut c_void,
     size_class: SizeClass,
     slots_total: SlotIndex,
@@ -29,7 +26,7 @@ pub struct BaseSpan {
     bitmap: [BitmapWord; BITMAP_WORD_COUNT],
 }
 
-impl BaseSpan {
+impl Span {
     pub fn new(data_pointer: *mut c_void, slots_total: SlotIndex, size_class: SizeClass) -> Self {
         debug_assert!(slots_total > 0 && slots_total as usize <= MAX_SLOTS_PER_SPAN);
 
@@ -44,8 +41,6 @@ impl BaseSpan {
             .map(|word| *word &= BitmapWord::MAX.wrapping_shl(trailing_bits as u32));
 
         Self {
-            next: null_mut(),
-            prev: null_mut(),
             data_pointer,
             size_class,
             slots_total,
@@ -83,7 +78,7 @@ impl BaseSpan {
         })
     }
 
-    pub fn release_slot(&mut self, pointer: *const c_void) {
+    pub fn dealloc_slot(&mut self, pointer: *const c_void) {
         let slot_index = self.slot_index_of(pointer);
         debug_assert!(self.is_occupied(slot_index));
 
