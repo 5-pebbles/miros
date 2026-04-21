@@ -5,7 +5,7 @@ use crate::{
     allocator::{
         metadata_allocator::MetadataAllocator, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
     },
-    libc::mem::mmap,
+    libc::mem::{mmap, munmap},
     linked_list::{LinkedList, LinkedListNode},
     page_size,
 };
@@ -17,8 +17,8 @@ type EntryIndex = u8;
 const _: () = assert!(CAPACITY <= EntryIndex::MAX as usize);
 
 pub struct LargeAllocator {
-    metadata: MetadataAllocator<LinkedListNode<LargeAllocation>>,
-    allocations: LinkedList<LargeAllocation>,
+    metadata: MetadataAllocator<LinkedListNode<LargeRegion>>,
+    allocations: LinkedList<LargeRegion>,
     cache: LargeCache,
 }
 
@@ -49,18 +49,36 @@ impl LargeAllocator {
 
         let record = self.metadata.alloc();
         unsafe {
-            ptr::write(record, LinkedListNode::new(LargeAllocation { region }));
+            ptr::write(record, LinkedListNode::new(region));
             self.allocations.list_push_front(record);
         }
 
         region.pointer
     }
 
-    pub fn dealloc_large(&mut self, pointer: *mut c_void) {}
-}
+    pub fn dealloc_large(&mut self, pointer: *mut c_void) {
+        unsafe {
+            let node = match self
+                .allocations
+                .iter()
+                .find(|&node| (*node).value.pointer == pointer as *mut u8)
+            {
+                Some(node) => node,
+                None => {
+                    debug_assert!(false, "dealloc_large: pointer not found");
+                    core::hint::unreachable_unchecked()
+                }
+            };
 
-struct LargeAllocation {
-    region: LargeRegion,
+            let region = (*node).value;
+            (*node).list_remove();
+            self.metadata.dealloc(node);
+
+            if !self.cache.park(region) {
+                munmap(region.pointer, region.size_in_bytes);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
