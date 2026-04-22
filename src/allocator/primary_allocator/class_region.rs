@@ -4,9 +4,9 @@ use crate::{
     allocator::{
         metadata_allocator::MetadataAllocator,
         primary_allocator::{size_classes::SizeClass, span::Span},
-        DATA_PAGE_PROTECTION,
+        ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
     },
-    libc::mem::mprotect,
+    libc::mem::{mmap, mprotect},
     linked_list::{LinkedList, LinkedListNode},
     page_size,
 };
@@ -80,19 +80,36 @@ pub struct ClassRegion {
 }
 
 impl ClassRegion {
-    pub unsafe fn new(
-        size_class: SizeClass,
-        base: *mut u8,
-        span_stride_shift: u32,
-        span_index: *mut [*mut LinkedListNode<Span>],
-    ) -> Self {
+    pub unsafe fn new(size_class: SizeClass, base: *mut u8) -> Self {
+        let guard_size = size_class
+            .slot_size_in_bytes()
+            .max(page_size::get_page_size());
+        let raw_stride = 2 * guard_size + size_class.span_length_in_bytes();
+        let span_stride_shift = raw_stride.next_power_of_two().trailing_zeros();
+
+        let max_spans = CLASS_REGION_SIZE >> span_stride_shift;
+        let index_byte_count = max_spans * core::mem::size_of::<*mut LinkedListNode<Span>>();
+        let span_index_base = mmap(
+            null_mut(),
+            index_byte_count,
+            DATA_PAGE_PROTECTION,
+            ANONYMOUS_PRIVATE_MAP,
+            -1,
+            0,
+        );
+        assert!((span_index_base as isize) > 0, "span index mmap failed");
+        let span_index = core::ptr::slice_from_raw_parts_mut(
+            span_index_base as *mut *mut LinkedListNode<Span>,
+            max_spans,
+        );
+
         Self {
             size_class,
             base,
             span_stride_shift,
             next_span_offset: 0,
             span_index,
-            span_metadata: MetadataAllocator::new(page_size::get_page_size()),
+            span_metadata: MetadataAllocator::new(),
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
             empty_spans: LinkedList::new(),
