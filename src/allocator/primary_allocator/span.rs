@@ -19,8 +19,9 @@ pub struct Span {
     data_pointer: *mut u8,
     size_class: SizeClass,
     slots_occupied: SlotIndex,
-    /// Bits beyond `slots_per_span` are pre-set to 1 so hot path doesn't need
-    /// range checks on bitmap scans.
+    /// Bit N = 1 iff `bitmap[N]` has a free slot.
+    summary: BitmapWord,
+    /// Bits beyond `slots_per_span` are pre-set to 1 so scans don't need range checks.
     bitmap: [BitmapWord; BITMAP_WORD_COUNT],
 }
 
@@ -39,40 +40,63 @@ impl Span {
             .get_mut(full_words)
             .map(|word| *word &= BitmapWord::MAX.wrapping_shl(trailing_bits as u32));
 
+        let full_word_mask = if full_words >= BITMAP_WORD_COUNT {
+            BitmapWord::MAX
+        } else {
+            (1 as BitmapWord)
+                .wrapping_shl(full_words as u32)
+                .wrapping_sub(1)
+        };
+        let partial_bit = (trailing_bits > 0)
+            .then_some((1 as BitmapWord) << full_words)
+            .unwrap_or(0);
+
         Self {
             data_pointer,
             size_class,
             slots_occupied: 0,
+            summary: full_word_mask | partial_bit,
             bitmap,
         }
     }
 
     pub fn allocate_slot(&mut self, random: u64) -> Option<*mut u8> {
-        let active_words = (self.slots_per_span() as usize).div_ceil(BitmapWord::BITS as usize);
-        debug_assert!(active_words != 0);
+        if self.summary == 0 {
+            return None;
+        }
 
-        let start_word = (random as usize) % active_words;
+        // Random rotation spreads allocations across words.
+        let rotation = (random >> 16) as u32;
+        let rotated = self.summary.rotate_right(rotation);
+        let word_index =
+            ((rotation + rotated.trailing_zeros()) % BITMAP_WORD_COUNT as u32) as usize;
 
-        (0..active_words).find_map(|offset| {
-            let word_index = (start_word + offset) % active_words;
-            let free_bits = !self.bitmap[word_index];
-            (free_bits != 0).then(|| {
-                let slot_index = (word_index * BitmapWord::BITS as usize
-                    + free_bits.trailing_zeros() as usize)
-                    as SlotIndex;
-                debug_assert!(slot_index < self.slots_per_span());
-                debug_assert!(!self.is_occupied(slot_index));
+        let free_bits = !self.bitmap[word_index];
+        debug_assert!(free_bits != 0, "summary bit set but word is full");
 
-                self.slots_occupied += 1;
-                let (word, bit) = word_and_bit(slot_index);
-                self.bitmap[word] |= (1 as BitmapWord) << bit;
+        // Random mask scatters within the word; fall back to trailing_zeros.
+        let within_word_mask = random | random.rotate_left(13);
+        let masked = free_bits & within_word_mask;
+        let bit_index = if masked != 0 {
+            masked.trailing_zeros() as usize
+        } else {
+            free_bits.trailing_zeros() as usize
+        };
 
-                // SAFETY: slot_index < slots_per_span, so the offset is within the span's backing allocation.
-                unsafe {
-                    self.data_pointer
-                        .byte_add((slot_index as usize) << self.size_class.slot_shift())
-                }
-            })
+        let slot_index = (word_index * BitmapWord::BITS as usize + bit_index) as SlotIndex;
+        debug_assert!(slot_index < self.slots_per_span());
+        debug_assert!(!self.is_occupied(slot_index));
+
+        self.slots_occupied += 1;
+        self.bitmap[word_index] |= (1 as BitmapWord) << bit_index;
+        if self.bitmap[word_index] == BitmapWord::MAX {
+            self.summary &= !((1 as BitmapWord) << word_index);
+        }
+
+        // SAFETY: slot_index < slots_per_span, so the offset is within the span's backing allocation.
+        Some(unsafe {
+            self.data_pointer
+                .byte_add((slot_index as usize) << self.size_class.slot_shift())
         })
     }
 
@@ -83,6 +107,7 @@ impl Span {
         self.slots_occupied -= 1;
         let (word, bit) = word_and_bit(slot_index);
         self.bitmap[word] &= !((1 as BitmapWord) << bit);
+        self.summary |= (1 as BitmapWord) << word;
     }
 
     pub fn is_full(&self) -> bool {
@@ -93,8 +118,6 @@ impl Span {
         self.slots_occupied == 0
     }
 
-    /// Reset bitmap and counters for span reuse, preserving the data pointer
-    /// and size class.
     pub fn reinitialize(&mut self) {
         *self = Self::new(self.data_pointer, self.size_class);
     }
