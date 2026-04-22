@@ -1,5 +1,5 @@
 use core::ptr;
-use std::{alloc::Layout, ffi::c_void, ptr::null_mut};
+use std::{alloc::Layout, ptr::null_mut};
 
 use crate::{
     allocator::{
@@ -23,9 +23,9 @@ pub struct LargeAllocator {
 }
 
 impl LargeAllocator {
-    pub fn new(page_size: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            metadata: MetadataAllocator::new(page_size),
+            metadata: MetadataAllocator::new(),
             allocations: LinkedList::new(),
             cache: LargeCache::new(),
         }
@@ -64,19 +64,9 @@ impl LargeAllocator {
         region.pointer
     }
 
-    pub fn dealloc_large(&mut self, pointer: *mut c_void) {
+    pub fn dealloc_large(&mut self, pointer: *mut u8) {
         unsafe {
-            let node = match self
-                .allocations
-                .iter()
-                .find(|&node| (*node).value.pointer == pointer as *mut u8)
-            {
-                Some(node) => node,
-                None => {
-                    debug_assert!(false, "dealloc_large: pointer not found");
-                    core::hint::unreachable_unchecked()
-                }
-            };
+            let node = self.region_from_ptr(pointer);
 
             let region = (*node).value;
             (*node).list_remove();
@@ -85,6 +75,20 @@ impl LargeAllocator {
             if !self.cache.park(region) {
                 munmap(region.pointer, region.size_in_bytes);
             }
+        }
+    }
+
+    /// Look up the mapped size of a live large allocation.
+    pub fn allocation_size(&self, pointer: *mut u8) -> usize {
+        unsafe { (*self.region_from_ptr(pointer)).value.size_in_bytes }
+    }
+
+    fn region_from_ptr(&self, pointer: *mut u8) -> *mut LinkedListNode<LargeRegion> {
+        unsafe {
+            self.allocations
+                .iter()
+                .find(|&node| (*node).value.pointer == pointer)
+                .unwrap_unchecked()
         }
     }
 }
