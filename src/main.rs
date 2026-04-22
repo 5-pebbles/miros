@@ -10,6 +10,7 @@
 #![feature(trait_alias)]
 #![feature(type_alias_impl_trait)]
 #![feature(slice_ptr_get)]
+#![feature(maybe_uninit_array_assume_init)]
 #![allow(dead_code)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
 // (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
