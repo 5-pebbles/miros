@@ -12,20 +12,20 @@ use super::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION, GUARD_PAGE_PROTECTION};
 use crate::{
     libc::mem::{mmap, mprotect, munmap},
     linked_list::{LinkedList, LinkedListNode},
+    page_size,
 };
 
 pub struct MetadataAllocator<T> {
     partial_regions: LinkedList<RegionHeader<T>>,
     full_regions: LinkedList<RegionHeader<T>>,
     empty_region: *mut LinkedListNode<RegionHeader<T>>,
-    page_size: usize,
     slots_per_region: u32,
     slots_offset: usize,
     _marker: PhantomData<T>,
 }
 
 impl<T> MetadataAllocator<T> {
-    pub fn new(page_size: usize) -> Self {
+    pub fn new() -> Self {
         const {
             assert!(
                 size_of::<T>() > 0,
@@ -33,15 +33,13 @@ impl<T> MetadataAllocator<T> {
             );
         }
 
-        debug_assert!(page_size.is_power_of_two());
-
-        let (slots_per_region, slots_offset) = RegionHeader::<T>::compute_slot_geometry(page_size);
+        let (slots_per_region, slots_offset) =
+            RegionHeader::<T>::compute_slot_geometry(page_size::get_page_size());
 
         Self {
             partial_regions: LinkedList::new(),
             full_regions: LinkedList::new(),
             empty_region: null_mut(),
-            page_size,
             slots_per_region,
             slots_offset,
             _marker: PhantomData,
@@ -151,7 +149,8 @@ impl<T> MetadataAllocator<T> {
     }
 
     unsafe fn create_region(&mut self) {
-        let total_size = self.page_size * 3;
+        let page_size = page_size::get_page_size();
+        let total_size = page_size * 3;
 
         let region_start = mmap(
             null_mut(),
@@ -162,8 +161,8 @@ impl<T> MetadataAllocator<T> {
             0,
         );
 
-        let usable_page = region_start.add(self.page_size);
-        mprotect(usable_page, self.page_size, DATA_PAGE_PROTECTION);
+        let usable_page = region_start.add(page_size);
+        mprotect(usable_page, page_size, DATA_PAGE_PROTECTION);
 
         let region = usable_page as *mut LinkedListNode<RegionHeader<T>>;
         // The bitmap bytes are guaranteed zero by the kernel (anonymous mmap pages are always zeroed),
@@ -183,15 +182,15 @@ impl<T> MetadataAllocator<T> {
     }
 
     unsafe fn destroy_region(&self, region: *mut LinkedListNode<RegionHeader<T>>) {
-        let mmap_start = (region as *mut u8).sub(self.page_size);
-        let total_size = self.page_size * 3;
+        let page_size = page_size::get_page_size();
+        let mmap_start = (region as *mut u8).sub(page_size);
+        let total_size = page_size * 3;
         munmap(mmap_start, total_size);
     }
 
     // Masking off the low bits of a slot pointer recovers the region header
     // because each region fits within a single page-aligned page.
     unsafe fn region_from_pointer(&self, pointer: *mut T) -> *mut LinkedListNode<RegionHeader<T>> {
-        let region_mask = !(self.page_size - 1);
-        (pointer as usize & region_mask) as *mut LinkedListNode<RegionHeader<T>>
+        page_size::get_page_start(pointer.addr()) as *mut LinkedListNode<RegionHeader<T>>
     }
 }
