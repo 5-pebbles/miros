@@ -1,11 +1,10 @@
 use std::ptr::null_mut;
 
+use super::{
+    metadata_allocator::MetadataAllocator, size_classes::SizeClass, span::Span,
+    ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
+};
 use crate::{
-    allocator::{
-        metadata_allocator::MetadataAllocator,
-        primary_allocator::{size_classes::SizeClass, span::Span},
-        ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
-    },
     libc::mem::{mmap, mprotect},
     linked_list::{LinkedList, LinkedListNode},
     page_size,

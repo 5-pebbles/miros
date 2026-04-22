@@ -1,4 +1,4 @@
-use crate::allocator::primary_allocator::size_classes::SizeClass;
+use super::size_classes::SizeClass;
 
 pub type BitmapWord = u64;
 pub const BITMAP_WORD_COUNT: usize = 64;

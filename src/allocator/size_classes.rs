@@ -1,4 +1,4 @@
-use crate::allocator::primary_allocator::span::MAX_SLOTS_PER_SPAN;
+use super::span::MAX_SLOTS_PER_SPAN;
 
 /// C standard requires `malloc`/`realloc` to return memory aligned for any
 /// fundamental type — `_Alignof(max_align_t)`, which is 16 on x86_64.

@@ -1,5 +1,10 @@
+mod class_region;
+mod large_allocator;
 mod metadata_allocator;
-mod primary_allocator;
+mod non_crypto_rng;
+mod primary;
+mod size_classes;
+mod span;
 
 use std::{
     alloc::{GlobalAlloc, Layout},

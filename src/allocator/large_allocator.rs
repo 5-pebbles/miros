@@ -1,10 +1,8 @@
 use core::ptr;
 use std::{alloc::Layout, ptr::null_mut};
 
+use super::{metadata_allocator::MetadataAllocator, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{
-    allocator::{
-        metadata_allocator::MetadataAllocator, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
-    },
     libc::mem::{mmap, munmap},
     linked_list::{LinkedList, LinkedListNode},
     page_size,

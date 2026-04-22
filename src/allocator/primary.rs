@@ -4,19 +4,14 @@ use std::{
     ptr::{self, null_mut},
 };
 
-use class_region::{ClassRegion, CLASS_REGION_SHIFT, CLASS_REGION_SIZE};
-use large_allocator::LargeAllocator;
-use non_crypto_rng::Xoroshiro128PlusPlus;
-use size_classes::{SizeClass, SIZE_CLASS_COUNT};
-
-use super::{ANONYMOUS_PRIVATE_MAP, GUARD_PAGE_PROTECTION};
+use super::{
+    class_region::{ClassRegion, CLASS_REGION_SHIFT, CLASS_REGION_SIZE},
+    large_allocator::LargeAllocator,
+    non_crypto_rng::Xoroshiro128PlusPlus,
+    size_classes::{SizeClass, SIZE_CLASS_COUNT},
+    ANONYMOUS_PRIVATE_MAP, GUARD_PAGE_PROTECTION,
+};
 use crate::libc::mem::{mmap, munmap};
-
-mod class_region;
-mod large_allocator;
-mod non_crypto_rng;
-mod size_classes;
-mod span;
 
 /// Number of class-region windows in the super-region.
 /// Rounded to the next power of two so pointer→class is a single shift.
