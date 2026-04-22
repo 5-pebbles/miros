@@ -23,6 +23,14 @@ pub struct LargeAllocator {
 }
 
 impl LargeAllocator {
+    pub fn new(page_size: usize) -> Self {
+        Self {
+            metadata: MetadataAllocator::new(page_size),
+            allocations: LinkedList::new(),
+            cache: LargeCache::new(),
+        }
+    }
+
     pub fn alloc_large(&mut self, layout: Layout) -> *mut u8 {
         if layout.align() > MAX_ALIGNMENT {
             return null_mut();
