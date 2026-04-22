@@ -1,6 +1,10 @@
 use crate::allocator::primary_allocator::span::MAX_SLOTS_PER_SPAN;
 
-#[derive(Clone, Copy)]
+/// C standard requires `malloc`/`realloc` to return memory aligned for any
+/// fundamental type — `_Alignof(max_align_t)`, which is 16 on x86_64.
+const C_ABI_MIN_ALIGNMENT: usize = 16;
+
+#[derive(Clone, Copy, PartialEq)]
 pub struct SizeClass(u8);
 
 impl SizeClass {
@@ -8,16 +12,16 @@ impl SizeClass {
     /// Returns `None` when the request exceeds [`MAX_SLOT_SIZE`].
     ///
     /// Because every class is a power of two, any slot >= `align` is naturally aligned.
-    /// We take `max(size, align)` then round up to the next power of two to find the required slot size.
-    // SAFETY: This *also* only works as long as size classes are powers of two...
+    /// We take `max(size, align, C_ABI_MIN_ALIGNMENT)` then round up to the next power of two.
     #[inline(always)]
     pub fn from_layout(size: usize, align: usize) -> Option<Self> {
-        let effective_size = size.max(align);
+        let effective_size = size.max(align).max(C_ABI_MIN_ALIGNMENT);
         if effective_size > MAX_SIZE_CLASS_SIZE {
             return None;
         }
 
         // Sizes at or below the minimum class all land in index 0.
+        // SAFETY: Only works as long as size classes are powers of two.
         let minimum_slot_size = 1usize << SIZE_CLASS_BASE_EXPONENT;
         let rounded = effective_size.next_power_of_two().max(minimum_slot_size);
 
@@ -32,6 +36,11 @@ impl SizeClass {
     pub const fn from_raw(raw: u8) -> Self {
         debug_assert!((raw as usize) < SIZE_CLASS_COUNT);
         SizeClass(raw)
+    }
+
+    #[inline(always)]
+    pub const fn index(&self) -> usize {
+        self.0 as usize
     }
 
     #[inline(always)]
@@ -83,7 +92,6 @@ impl SizeClassInfo {
 
 macro_rules! define_size_classes {
     ($($sizes:expr),+) => {
-        /// The exponent of the smallest size class: 2^3 = 8 bytes.
         pub const SIZE_CLASS_BASE_EXPONENT: u32 = SIZE_CLASSES[0].slot_size_in_bytes.trailing_zeros();
         pub const MAX_SIZE_CLASS_SIZE: usize = define_size_classes!(@last $($sizes),+);
         pub const SIZE_CLASS_COUNT: usize = [$($sizes),+].len();
@@ -94,5 +102,5 @@ macro_rules! define_size_classes {
 }
 
 define_size_classes!(
-    8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072
+    16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072
 );
