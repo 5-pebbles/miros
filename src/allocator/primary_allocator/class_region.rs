@@ -20,12 +20,12 @@ const RECENT_FREE_CAPACITY: usize = 16;
 type EntryIndex = u8;
 const _: () = assert!(RECENT_FREE_CAPACITY <= EntryIndex::MAX as usize);
 
-struct RecentFreeStack {
+struct RecentFreeCache {
     entries: [*mut u8; RECENT_FREE_CAPACITY],
     entry_count: EntryIndex,
 }
 
-impl RecentFreeStack {
+impl RecentFreeCache {
     const fn new() -> Self {
         Self {
             entries: [null_mut(); RECENT_FREE_CAPACITY],
@@ -33,9 +33,11 @@ impl RecentFreeStack {
         }
     }
 
-    fn pop(&mut self) -> Option<*mut u8> {
+    fn random_pop(&mut self, random: u64) -> Option<*mut u8> {
         (self.entry_count != 0).then(|| {
+            let index = (random as usize) % self.entry_count as usize;
             self.entry_count -= 1;
+            self.entries.swap(index, self.entry_count as usize);
             self.entries[self.entry_count as usize]
         })
     }
@@ -74,7 +76,7 @@ pub struct ClassRegion {
     partial_spans: LinkedList<Span>,
     full_spans: LinkedList<Span>,
     empty_spans: LinkedList<Span>,
-    recent_free: RecentFreeStack,
+    recent_free: RecentFreeCache,
 }
 
 impl ClassRegion {
@@ -94,7 +96,7 @@ impl ClassRegion {
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
             empty_spans: LinkedList::new(),
-            recent_free: RecentFreeStack::new(),
+            recent_free: RecentFreeCache::new(),
         }
     }
 
@@ -102,7 +104,7 @@ impl ClassRegion {
     /// 16 GB address space is exhausted — the caller should fall back to the
     /// large allocation path.
     pub unsafe fn alloc_slot(&mut self, random: u64) -> *mut u8 {
-        if let Some(pointer) = self.recent_free.pop() {
+        if let Some(pointer) = self.recent_free.random_pop(random) {
             return pointer;
         }
 
