@@ -1,5 +1,6 @@
 use crate::allocator::primary_allocator::span::MAX_SLOTS_PER_SPAN;
 
+#[derive(Clone, Copy)]
 pub struct SizeClass(u8);
 
 impl SizeClass {

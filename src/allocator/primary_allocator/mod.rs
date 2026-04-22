@@ -1,14 +1,5 @@
-use std::ffi::c_void;
-
-use crate::{
-    allocator::{
-        metadata_allocator::MetadataAllocator,
-        primary_allocator::{
-            class_region::ClassRegion, non_crypto_rng::Xoroshiro128PlusPlus,
-            size_classes::SIZE_CLASS_COUNT, span::Span,
-        },
-    },
-    linked_list::LinkedListNode,
+use crate::allocator::primary_allocator::{
+    class_region::ClassRegion, non_crypto_rng::Xoroshiro128PlusPlus, size_classes::SIZE_CLASS_COUNT,
 };
 
 mod class_region;
@@ -19,8 +10,7 @@ mod span;
 
 pub struct PrimaryAllocator {
     page_size: usize,
-    super_base: *mut c_void,
+    super_base: *mut u8,
     class_regions: [ClassRegion; SIZE_CLASS_COUNT],
-    span_metadata: MetadataAllocator<LinkedListNode<Span>>,
     rng: Xoroshiro128PlusPlus,
 }
