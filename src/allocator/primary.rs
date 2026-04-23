@@ -93,8 +93,9 @@ impl PrimaryAllocator {
 
     #[inline(always)]
     unsafe fn alloc_small(&mut self, size_class: SizeClass) -> *mut u8 {
-        let random = self.rng.next_u64();
-        let result = self.class_regions[size_class.index()].alloc_slot(random);
+        // PERF: Raw pointer avoids destructuring self, which would keep &mut large_allocator alive across the alloc_slot call and force LLVM to spill it to the stack.
+        let rng = &raw mut self.rng;
+        let result = self.class_regions[size_class.index()].alloc_slot(&mut *rng);
         if !result.is_null() {
             return result;
         }

@@ -1,8 +1,8 @@
 use std::ptr::null_mut;
 
 use super::{
-    metadata_allocator::MetadataAllocator, size_classes::SizeClass, span::Span,
-    ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
+    metadata_allocator::MetadataAllocator, non_crypto_rng::Xoroshiro128PlusPlus,
+    size_classes::SizeClass, span::Span, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
 };
 use crate::{
     libc::mem::{mmap, mprotect},
@@ -19,12 +19,12 @@ const RECENT_FREE_CAPACITY: usize = 16;
 type EntryIndex = u8;
 const _: () = assert!(RECENT_FREE_CAPACITY <= EntryIndex::MAX as usize);
 
-struct RecentFreeCache {
+struct RecentFreeStack {
     entries: [*mut u8; RECENT_FREE_CAPACITY],
     entry_count: EntryIndex,
 }
 
-impl RecentFreeCache {
+impl RecentFreeStack {
     const fn new() -> Self {
         Self {
             entries: [null_mut(); RECENT_FREE_CAPACITY],
@@ -32,13 +32,15 @@ impl RecentFreeCache {
         }
     }
 
-    fn random_pop(&mut self, random: u64) -> Option<*mut u8> {
-        (self.entry_count != 0).then(|| {
-            let index = (random as usize) % self.entry_count as usize;
-            self.entry_count -= 1;
-            self.entries.swap(index, self.entry_count as usize);
-            self.entries[self.entry_count as usize]
-        })
+    fn pop(&mut self) -> *mut u8 {
+        if self.entry_count == 0 {
+            return null_mut();
+        }
+
+        self.entry_count -= 1;
+        // SAFETY: `try_push` is the only writer and caps `entry_count` at `RECENT_FREE_CAPACITY`.
+        // Every pushed pointer came from a prior allocation, so slots `[0..entry_count)` are non-null.
+        unsafe { *self.entries.get_unchecked(self.entry_count as usize) }
     }
 
     fn try_push(&mut self, entry: *mut u8) -> bool {
@@ -46,19 +48,18 @@ impl RecentFreeCache {
             return false;
         }
 
-        self.entries[self.entry_count as usize] = entry;
+        unsafe {
+            *self.entries.get_unchecked_mut(self.entry_count as usize) = entry;
+        }
         self.entry_count += 1;
         true
     }
 }
 
-/// Per-size-class state managing a contiguous virtual address region subdivided
-/// into spans. Each class region occupies [`CLASS_REGION_SIZE`] bytes within the
-/// super-region and lays spans back-to-back via a bump pointer.
-///
-/// Fully self-contained: owns its span metadata allocator and handles span
-/// creation, reactivation, and release internally. The only external input is a
-/// random `u64` for slot selection.
+// PERF: Padded to 256 bytes so `class_regions[i]` indexing compiles to a shift instead of a 3-cycle `imul`. Both `malloc` and `free` hit this on every call.
+#[repr(C, align(256))]
+/// Per-size-class state managing a contiguous virtual address region subdivided into spans.
+/// Each class region occupies [`CLASS_REGION_SIZE`] bytes within the super-region and lays spans back-to-back via a bump pointer.
 pub struct ClassRegion {
     size_class: SizeClass,
     base: *mut u8,
@@ -75,7 +76,7 @@ pub struct ClassRegion {
     partial_spans: LinkedList<Span>,
     full_spans: LinkedList<Span>,
     empty_spans: LinkedList<Span>,
-    recent_free: RecentFreeCache,
+    recent_free: RecentFreeStack,
 }
 
 impl ClassRegion {
@@ -112,18 +113,24 @@ impl ClassRegion {
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
             empty_spans: LinkedList::new(),
-            recent_free: RecentFreeCache::new(),
+            recent_free: RecentFreeStack::new(),
         }
     }
 
-    /// Allocate a slot from this class region. Returns null only if the region's
-    /// 16 GB address space is exhausted — the caller should fall back to the
-    /// large allocation path.
-    pub unsafe fn alloc_slot(&mut self, random: u64) -> *mut u8 {
-        if let Some(pointer) = self.recent_free.random_pop(random) {
-            return pointer;
+    /// Allocate a slot from this class region.
+    /// Returns null only if the region's 16 GB address space is exhausted — the caller should fall back to the large allocation path.
+    #[inline(always)]
+    pub unsafe fn alloc_slot(&mut self, rng: &mut Xoroshiro128PlusPlus) -> *mut u8 {
+        let cached = self.recent_free.pop();
+        if !cached.is_null() {
+            return cached;
         }
 
+        self.alloc_slot_slow(rng)
+    }
+
+    #[cold]
+    unsafe fn alloc_slot_slow(&mut self, rng: &mut Xoroshiro128PlusPlus) -> *mut u8 {
         if self.partial_spans.is_empty() {
             if !self.empty_spans.is_empty() {
                 self.reactivate_span();
@@ -132,6 +139,7 @@ impl ClassRegion {
             }
         }
 
+        let random = rng.next_u64();
         let span_node = self.partial_spans.front();
         let span = &mut (*span_node).value;
 

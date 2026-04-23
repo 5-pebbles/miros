@@ -29,6 +29,7 @@ impl LargeAllocator {
         }
     }
 
+    #[cold]
     pub fn alloc_large(&mut self, layout: Layout) -> *mut u8 {
         if layout.align() > MAX_ALIGNMENT {
             return null_mut();
