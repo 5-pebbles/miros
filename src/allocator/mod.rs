@@ -25,6 +25,7 @@ pub(crate) const ANONYMOUS_PRIVATE_MAP: MapFlags =
     MapFlags::ZERO.with_private(true).with_anonymous(true);
 
 #[cfg_attr(not(test), link_section = ".init_array")]
+#[used]
 pub(crate) static INIT_ALLOCATOR: InitArrayFunction = init_allocator;
 
 extern "C" fn init_allocator(

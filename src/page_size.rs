@@ -7,7 +7,7 @@ use crate::{
 
 static mut PAGE_SIZE: MaybeUninit<usize> = MaybeUninit::uninit();
 
-#[cfg_attr(not(test), link_section = ".init_array")]
+#[cfg_attr(not(test), link_section = ".preinit_array")]
 #[used]
 static INIT_PAGE_SIZE: InitArrayFunction = init_page_size;
 
