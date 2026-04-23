@@ -103,6 +103,20 @@ impl PrimaryAllocator {
         self.large_allocator.alloc_large(fallback_layout)
     }
 
+    #[inline(always)]
+    pub unsafe fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
+        match SizeClass::from_layout(layout.size(), layout.align()) {
+            Some(size_class) => {
+                let pointer = self.alloc_small(size_class);
+                if !pointer.is_null() {
+                    ptr::write_bytes(pointer, 0, size_class.slot_size_in_bytes());
+                }
+                pointer
+            }
+            None => self.large_allocator.alloc_large_zeroed(layout),
+        }
+    }
+
     // ── deallocation ────────────────────────────────────────────────────
 
     /// Entry point for the C `free(ptr)` — no layout information available,

@@ -33,11 +33,29 @@ impl LargeAllocator {
         if layout.align() > MAX_ALIGNMENT {
             return null_mut();
         }
-
         let total_bytes = page_size::get_page_end(layout.size());
+        let region = self.acquire_region(total_bytes);
+        self.register_allocation(region)
+    }
 
-        let region = self.cache.take(total_bytes).unwrap_or_else(|| {
-            let fresh = unsafe {
+    pub fn alloc_large_zeroed(&mut self, layout: Layout) -> *mut u8 {
+        if layout.align() > MAX_ALIGNMENT {
+            return null_mut();
+        }
+        let total_bytes = page_size::get_page_end(layout.size());
+        let mut region = self.acquire_region(total_bytes);
+        if !region.zeroed {
+            unsafe {
+                ptr::write_bytes(region.pointer, 0, region.size_in_bytes);
+            }
+        }
+        region.zeroed = true;
+        self.register_allocation(region)
+    }
+
+    fn acquire_region(&mut self, total_bytes: usize) -> LargeRegion {
+        self.cache.take(total_bytes).unwrap_or_else(|| {
+            let pointer = unsafe {
                 mmap(
                     null_mut(),
                     total_bytes,
@@ -48,17 +66,19 @@ impl LargeAllocator {
                 )
             };
             LargeRegion {
-                pointer: fresh,
+                pointer,
                 size_in_bytes: total_bytes,
+                zeroed: true,
             }
-        });
+        })
+    }
 
+    fn register_allocation(&mut self, region: LargeRegion) -> *mut u8 {
         let record = self.metadata.alloc();
         unsafe {
             ptr::write(record, LinkedListNode::new(region));
             self.allocations.list_push_front(record);
         }
-
         region.pointer
     }
 
@@ -95,6 +115,7 @@ impl LargeAllocator {
 pub struct LargeRegion {
     pub pointer: *mut u8,
     pub size_in_bytes: usize,
+    pub zeroed: bool,
 }
 
 pub struct LargeCache {
@@ -108,6 +129,7 @@ impl LargeCache {
             entries: [LargeRegion {
                 pointer: ptr::null_mut(),
                 size_in_bytes: 0,
+                zeroed: false,
             }; CAPACITY],
             entry_count: 0,
         }
@@ -129,11 +151,12 @@ impl LargeCache {
 
     /// Attempt to cache a freed region for reuse. Returns `true` if stored,
     /// `false` if the cache is full and the caller should unmap.
-    pub fn park(&mut self, region: LargeRegion) -> bool {
+    pub fn park(&mut self, mut region: LargeRegion) -> bool {
         if (self.entry_count as usize) >= CAPACITY {
             return false;
         }
 
+        region.zeroed = false;
         self.entries[self.entry_count as usize] = region;
         self.entry_count += 1;
         true
