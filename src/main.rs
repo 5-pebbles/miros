@@ -4,6 +4,7 @@
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]
 #![feature(thread_local)]
+#![feature(stmt_expr_attributes)]
 #![feature(maybe_uninit_array_assume_init)]
 #![allow(dead_code)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
@@ -14,10 +15,6 @@
 #![cfg_attr(not(test), no_main)]
 
 mod allocator;
-
-#[cfg_attr(target_arch = "x86_64", path = "syscall/x86_64/mod.rs")]
-mod syscall;
-
 mod elf;
 mod error;
 mod io_macros;
@@ -26,6 +23,7 @@ mod linked_list;
 mod objects;
 mod page_size;
 mod start;
+mod syscall;
 #[cfg(test)]
 mod test_macros;
 mod utils;

@@ -1,10 +1,10 @@
-use std::{arch::asm, os::fd::RawFd};
+use std::os::fd::RawFd;
 
 use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{MapFlags, ProtectionFlags},
     signature_matches_libc,
-    syscall::Syscall,
+    syscall::{syscall, Syscall},
 };
 
 // TODO: add error handling
@@ -26,22 +26,15 @@ pub unsafe extern "C" fn mmap(
         file_offset as i64,
     ))
     .cast());
-    let mut result: isize;
-    unsafe {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::Mmap as usize => result,
-            in("rdi") pointer,
-            in("rsi") size,
-            in("rdx") protection_flags.raw_value(),
-            in("r10") map_flags.raw_value(),
-            in("r8") file_descriptor,
-            in("r9") file_offset,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack)
-        );
-    }
+    let result = syscall!(
+        Syscall::Mmap,
+        pointer,
+        size,
+        protection_flags.raw_value(),
+        map_flags.raw_value(),
+        file_descriptor,
+        file_offset
+    );
     syscall_debug_assert!(result >= 0);
     result as *mut u8
 }

@@ -1,11 +1,11 @@
-use std::{arch::asm, ffi::c_void};
+use std::ffi::c_void;
 
 use bitbybit::{bitenum, bitfield};
 
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc,
-    syscall::Syscall,
+    syscall::{syscall, Syscall},
 };
 
 #[bitenum(u2, exhaustive = true)]
@@ -38,21 +38,12 @@ unsafe extern "C" fn getrandom(
         std::mem::transmute(flags),
     ));
 
-    let result: isize;
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::GetRandom as usize => result,
-            in("rdi") buffer_pointer,
-            in("rsi") buffer_length_in_bytes,
-            in("rdx") flags.raw_value(),
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack, preserves_flags)
-        );
-    }
+    let result = syscall!(
+        Syscall::GetRandom,
+        buffer_pointer,
+        buffer_length_in_bytes,
+        flags.raw_value()
+    );
 
     if result < 0 {
         set_errno(Errno(result.abs() as u32));

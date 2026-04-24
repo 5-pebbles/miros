@@ -1,9 +1,9 @@
-use std::{arch::asm, os::fd::RawFd};
+use std::os::fd::RawFd;
 
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc,
-    syscall::Syscall,
+    syscall::{syscall, Syscall},
 };
 
 #[cfg_attr(not(test), no_mangle)]
@@ -15,18 +15,6 @@ unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
         return -1;
     }
 
-    let result: isize;
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::Close as usize => result,
-            in("rdi") file_descriptor,
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack, readonly)
-        );
-    }
-
+    let result = syscall!(Syscall::Close, file_descriptor);
     result as i32
 }

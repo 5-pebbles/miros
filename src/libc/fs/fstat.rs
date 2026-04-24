@@ -1,12 +1,9 @@
-use std::{
-    arch::asm,
-    os::fd::{AsRawFd, BorrowedFd},
-};
+use std::os::fd::{AsRawFd, BorrowedFd};
 
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc,
-    syscall::Syscall,
+    syscall::{syscall, Syscall},
 };
 
 // TODO: structure fields with proper types (e.g. enums for st_mode, bitfields for permissions)
@@ -42,19 +39,11 @@ unsafe extern "C" fn fstat64(
         std::mem::transmute(file_status_pointer),
     ));
 
-    let result: isize;
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::FStat as usize => result,
-            in("rdi") file_descriptor.as_raw_fd(),
-            in("rsi") file_status_pointer,
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack)
-        );
-    }
+    let result = syscall!(
+        Syscall::FStat,
+        file_descriptor.as_raw_fd(),
+        file_status_pointer
+    );
 
     if result < 0 {
         set_errno(Errno(result.abs() as u32));
@@ -71,19 +60,7 @@ unsafe extern "C" fn stat64(pathname: *const i8, file_status_pointer: *mut FileS
         std::mem::transmute(file_status_pointer),
     ));
 
-    let result: isize;
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::Stat as usize => result,
-            in("rdi") pathname,
-            in("rsi") file_status_pointer,
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack)
-        );
-    }
+    let result = syscall!(Syscall::Stat, pathname, file_status_pointer);
 
     if result < 0 {
         set_errno(Errno(result.abs() as u32));

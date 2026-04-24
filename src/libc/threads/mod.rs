@@ -1,6 +1,9 @@
-use std::{arch::asm, ffi::c_void};
+use std::ffi::c_void;
 
-use crate::{signature_matches_libc, syscall::Syscall};
+use crate::{
+    signature_matches_libc,
+    syscall::{syscall, Syscall},
+};
 
 mod key;
 
@@ -17,17 +20,6 @@ unsafe extern "C" fn __cxa_thread_atexit_impl(
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn gettid() -> i32 {
     signature_matches_libc!(std::mem::transmute(libc::gettid()));
-    let result: isize;
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::GetTid as usize => result,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack),
-        )
-    }
+    let result = syscall!(Syscall::GetTid);
     result as i32
 }
