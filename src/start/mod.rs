@@ -1,6 +1,5 @@
 use std::{
     arch::naked_asm,
-    env,
     ptr::{self, null, null_mut},
 };
 
