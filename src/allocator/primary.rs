@@ -164,18 +164,29 @@ impl PrimaryAllocator {
             return pointer;
         }
 
+        // Allocate from new_class directly — avoids recomputing the class inside alloc().
+        let new_pointer = match new_class {
+            Some(size_class) => self.alloc_small(size_class),
+            None => self
+                .large_allocator
+                .alloc_large(Layout::from_size_align_unchecked(new_size, 1)),
+        };
+        if new_pointer.is_null() {
+            return null_mut();
+        }
+
         let old_usable = match old_class {
             Some(class) => class.slot_size_in_bytes(),
             None => self.large_allocator.allocation_size(pointer),
         };
 
-        let new_pointer = self.alloc(Layout::from_size_align_unchecked(new_size, 1));
-        if new_pointer.is_null() {
-            return null_mut();
-        }
+        copy_realloc_payload(pointer, new_pointer, old_usable.min(new_size), old_class);
 
-        ptr::copy_nonoverlapping(pointer, new_pointer, old_usable.min(new_size));
-        self.free(pointer);
+        // Dealloc using old_class directly — avoids re-deriving class_from_pointer inside free().
+        match old_class {
+            Some(size_class) => self.dealloc_small(pointer, size_class),
+            None => self.large_allocator.dealloc_large(pointer),
+        }
         new_pointer
     }
 
@@ -195,4 +206,23 @@ impl PrimaryAllocator {
         }
         Some(SizeClass::from_raw(class_index as u8))
     }
+}
+
+/// Copy `copy_bytes` from `source` to `dest`. When `copy_bytes` matches the
+/// old class's full slot size, dispatches through `SizeClass::copy_slot` for
+/// inline SIMD loads/stores; otherwise falls back to `copy_nonoverlapping`.
+#[inline(always)]
+unsafe fn copy_realloc_payload(
+    source: *const u8,
+    dest: *mut u8,
+    copy_bytes: usize,
+    old_class: Option<SizeClass>,
+) {
+    if let Some(class) = old_class {
+        if copy_bytes == class.slot_size_in_bytes() {
+            class.copy_slot(source, dest);
+            return;
+        }
+    }
+    ptr::copy_nonoverlapping(source, dest, copy_bytes);
 }
