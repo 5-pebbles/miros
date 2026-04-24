@@ -1,11 +1,11 @@
-use std::{arch::asm, ffi::VaList};
+use std::ffi::VaList;
 
 use bitbybit::{bitenum, bitfield};
 
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc,
-    syscall::Syscall,
+    syscall::{syscall, Syscall},
 };
 
 const AT_FDCWD: isize = -100;
@@ -25,22 +25,8 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
         0
     };
 
-    let result: isize;
-
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::OpenAt as usize => result,
-            in("rdi") 0, // directory_file_descriptor
-            in("rsi") pathname,
-            in("rdx") flags.raw_value(),
-            in("r10") mode,
-            lateout("rcx") _,
-            lateout("r11") _,
-            options(nostack)
-        );
-    }
+    // directory_file_descriptor = 0 (AT_FDCWD is unused; we always pass 0)
+    let result = syscall!(Syscall::OpenAt, 0usize, pathname, flags.raw_value(), mode);
 
     if result < 0 {
         // The kernel returns the inverse of our errno...

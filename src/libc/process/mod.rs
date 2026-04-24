@@ -5,23 +5,16 @@ unsafe extern "C" fn rtld_fini() {}
 
 use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
 
-use crate::{signature_matches_libc, syscall::Syscall};
+use crate::{
+    signature_matches_libc,
+    syscall::{syscall, Syscall},
+};
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn getpid() -> i32 {
     signature_matches_libc!(std::mem::transmute(libc::getpid()));
-    let result: usize;
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::GetPid as usize => result,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack),
-        )
-    }
+    let result = syscall!(Syscall::GetPid);
     result as i32
 }
 
@@ -32,20 +25,12 @@ unsafe extern "C" fn raise(signal_number: i32) -> i32 {
     let process_id = process::id();
     let thread_id = thread::current().id();
 
-    let result: isize;
-    #[cfg(target_arch = "x86_64")]
-    {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::TgKill as usize => result,
-            in("rdi") process_id,
-            in("rsi") thread_id.as_u64().get(),
-            in("rdx") signal_number,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack),
-        )
-    }
+    let result = syscall!(
+        Syscall::TgKill,
+        process_id,
+        thread_id.as_u64().get(),
+        signal_number
+    );
     result as i32
 }
 

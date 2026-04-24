@@ -3,7 +3,11 @@ use std::arch::asm;
 
 use bitbybit::{bitenum, bitfield};
 
-use crate::{io_macros::syscall_debug_assert, signature_matches_libc, syscall::Syscall};
+use crate::{
+    io_macros::syscall_debug_assert,
+    signature_matches_libc,
+    syscall::{syscall, Syscall},
+};
 
 mod mmap;
 pub use mmap::mmap;
@@ -47,19 +51,8 @@ pub struct MapFlags {
 pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
     signature_matches_libc!(libc::munmap(pointer.cast(), size));
 
-    let mut result: isize;
-    unsafe {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::Munmap as usize => result,
-            in("rdi") pointer,
-            in("rsi") size,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack)
-        )
-    };
-    syscall_debug_assert!(result >= 0);
+    let _result = syscall!(Syscall::MunMap, pointer, size);
+    syscall_debug_assert!(_result >= 0);
     0
 }
 
@@ -75,20 +68,13 @@ pub unsafe extern "C" fn mprotect(
         std::mem::transmute(protection_flags)
     ));
 
-    let mut result: isize;
-    unsafe {
-        asm!(
-            "syscall",
-            inlateout("rax") Syscall::Mprotect as usize => result,
-            in("rdi") pointer,
-            in("rsi") size,
-            in("rdx") protection_flags.raw_value(),
-            out("rcx") _,
-            out("r11") _,
-            options(nostack)
-        );
-    }
-    syscall_debug_assert!(result >= 0);
+    let _result = syscall!(
+        Syscall::MProtect,
+        pointer,
+        size,
+        protection_flags.raw_value()
+    );
+    syscall_debug_assert!(_result >= 0);
     0
 }
 
