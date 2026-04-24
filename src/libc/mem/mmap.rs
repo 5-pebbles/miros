@@ -27,7 +27,7 @@ pub unsafe extern "C" fn mmap(
     ))
     .cast());
     let result = syscall!(
-        Syscall::Mmap,
+        Syscall::MMap,
         pointer,
         size,
         protection_flags.raw_value(),

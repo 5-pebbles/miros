@@ -51,7 +51,7 @@ pub struct MapFlags {
 pub unsafe fn munmap(pointer: *mut u8, size: usize) -> i32 {
     signature_matches_libc!(libc::munmap(pointer.cast(), size));
 
-    let _result = syscall!(Syscall::Munmap, pointer, size);
+    let _result = syscall!(Syscall::MunMap, pointer, size);
     syscall_debug_assert!(_result >= 0);
     0
 }
@@ -69,7 +69,7 @@ pub unsafe extern "C" fn mprotect(
     ));
 
     let _result = syscall!(
-        Syscall::Mprotect,
+        Syscall::MProtect,
         pointer,
         size,
         protection_flags.raw_value()
