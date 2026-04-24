@@ -34,6 +34,7 @@ pub struct Miros<Stage> {
     base: *const c_void,
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
+    preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     _marker: PhantomData<Stage>,
 }
@@ -44,6 +45,7 @@ impl<Stage> Miros<Stage> {
             base: self.base,
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
+            preinit_array: self.preinit_array,
             init_array: self.init_array,
             _marker: PhantomData,
         }
@@ -106,6 +108,8 @@ impl Miros<Relocate> {
         let mut rela_pointer: Result<*const Rela, MirosError> =
             Err(MirosError::MissingDynamicEntry(DynamicTag::Rela));
         let mut rela_count = 0;
+        let mut preinit_array_pointer: *const InitArrayFunction = ptr::null();
+        let mut preinit_array_size = 0;
         let mut init_array_pointer: *const InitArrayFunction = ptr::null();
         let mut init_array_size = 0;
 
@@ -120,6 +124,13 @@ impl Miros<Relocate> {
             Ok(DynamicTag::RelaEnt) => {
                 syscall_assert!(item.d_un.d_val == size_of::<Rela>())
             }
+            Ok(DynamicTag::PreInitArray) => {
+                preinit_array_pointer =
+                    base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
+            }
+            Ok(DynamicTag::PreInitArraySz) => {
+                preinit_array_size = item.d_un.d_val / size_of::<usize>();
+            }
             Ok(DynamicTag::InitArray) => {
                 init_array_pointer =
                     base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction;
@@ -131,6 +142,15 @@ impl Miros<Relocate> {
         });
 
         let rela_slice = ptr::slice_from_raw_parts(rela_pointer?, rela_count);
+
+        let preinit_array = if preinit_array_pointer.is_null() || preinit_array_size == 0 {
+            None
+        } else {
+            Some(ptr::slice_from_raw_parts(
+                preinit_array_pointer,
+                preinit_array_size,
+            ))
+        };
 
         let init_array = if init_array_pointer.is_null() || init_array_size == 0 {
             None
@@ -145,6 +165,7 @@ impl Miros<Relocate> {
             base,
             rela_slice,
             tls_program_header,
+            preinit_array,
             init_array,
             _marker: PhantomData,
         })
@@ -254,16 +275,23 @@ impl Miros<InitArray> {
         env_pointer: *const *const u8,
         auxv_pointer: *const AuxiliaryVectorItem,
     ) {
-        if let Some(init_functions) = self.init_array {
+        let call_array = |functions: *const [InitArrayFunction]| {
             // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
             // but these are unsafely read from raw ELF init_array data...
             #[allow(useless_ptr_null_checks)]
-            (&*init_functions)
+            (&*functions)
                 .iter()
-                .filter(|init_fn| !(**init_fn as *const c_void).is_null())
-                .for_each(|init_fn| {
-                    init_fn(arg_count, arg_pointer, env_pointer, auxv_pointer);
+                .filter(|function| !(**function as *const c_void).is_null())
+                .for_each(|function| {
+                    function(arg_count, arg_pointer, env_pointer, auxv_pointer);
                 });
+        };
+
+        if let Some(preinit_functions) = self.preinit_array {
+            call_array(preinit_functions);
+        }
+        if let Some(init_functions) = self.init_array {
+            call_array(init_functions);
         }
     }
 }

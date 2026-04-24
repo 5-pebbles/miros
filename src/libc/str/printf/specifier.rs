@@ -72,7 +72,7 @@ pub enum LengthModifier {
 }
 
 impl LengthModifier {
-    pub unsafe fn extract_signed(self, args: &mut VaList<'_, '_>) -> i64 {
+    pub unsafe fn extract_signed(self, args: &mut VaList<'_>) -> i64 {
         match self {
             Self::HalfHalf => (args.arg::<i32>() as i8) as i64,
             Self::Half => (args.arg::<i32>() as i16) as i64,
@@ -82,7 +82,7 @@ impl LengthModifier {
         }
     }
 
-    pub unsafe fn extract_unsigned(self, args: &mut VaList<'_, '_>) -> u64 {
+    pub unsafe fn extract_unsigned(self, args: &mut VaList<'_>) -> u64 {
         match self {
             Self::HalfHalf => (args.arg::<u32>() as u8) as u64,
             Self::Half => (args.arg::<u32>() as u16) as u64,
@@ -192,7 +192,7 @@ pub struct ResolvedSpecifier {
 
 impl ResolvedSpecifier {
     /// Resolve `*` width/precision from the argument list and apply all flag-interaction rules (C11 §7.21.6.1p6).
-    pub unsafe fn from_parsed(spec: PrintfSpecifier, args: &mut VaList<'_, '_>) -> Self {
+    pub unsafe fn from_parsed(spec: PrintfSpecifier, args: &mut VaList<'_>) -> Self {
         let mut left_align = spec.flags.left_justify;
 
         let width = match spec.width {
@@ -342,7 +342,7 @@ mod tests {
                 unsafe extern "C" fn resolve(
                     spec: PrintfSpecifier, mut args: ...
                 ) -> ResolvedSpecifier {
-                    ResolvedSpecifier::from_parsed(spec, &mut args.as_va_list())
+                    ResolvedSpecifier::from_parsed(spec, &mut args)
                 }
 
                 $(
@@ -361,11 +361,11 @@ mod tests {
     }
 
     unsafe extern "C" fn extract_signed_va(length: LengthModifier, mut args: ...) -> i64 {
-        length.extract_signed(&mut args.as_va_list())
+        length.extract_signed(&mut args)
     }
 
     unsafe extern "C" fn extract_unsigned_va(length: LengthModifier, mut args: ...) -> u64 {
-        length.extract_unsigned(&mut args.as_va_list())
+        length.extract_unsigned(&mut args)
     }
 
     eq_tests!(mod sign_byte {

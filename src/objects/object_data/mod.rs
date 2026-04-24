@@ -193,12 +193,10 @@ fn calculate_virtual_address_bounds(program_header_table: &[ProgramHeader]) -> (
     }
 
     // Align bounds to page boundaries
-    unsafe {
-        (
-            page_size::get_page_start(min_addr),
-            page_size::get_page_end(max_addr),
-        )
-    }
+    (
+        page_size::get_page_start(min_addr),
+        page_size::get_page_end(max_addr),
+    )
 }
 
 unsafe fn load_segment(

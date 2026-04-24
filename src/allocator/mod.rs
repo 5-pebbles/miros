@@ -1,16 +1,16 @@
+mod class_region;
+mod large_allocator;
 mod metadata_allocator;
-mod page_allocator;
+mod non_crypto_rng;
+mod primary;
+mod size_classes;
+mod span;
 
-use std::{
-    alloc::{GlobalAlloc, Layout},
-    cmp::max,
-    ptr::{copy_nonoverlapping, null_mut},
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use std::mem::MaybeUninit;
 
+use self::primary::PrimaryAllocator;
 use crate::{
-    io_macros::syscall_debug_assert,
-    libc::mem::{mmap, munmap, MapFlags, ProtectionFlags},
+    libc::mem::{MapFlags, ProtectionFlags},
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
@@ -25,6 +25,7 @@ pub(crate) const ANONYMOUS_PRIVATE_MAP: MapFlags =
     MapFlags::ZERO.with_private(true).with_anonymous(true);
 
 #[cfg_attr(not(test), link_section = ".init_array")]
+#[used]
 pub(crate) static INIT_ALLOCATOR: InitArrayFunction = init_allocator;
 
 extern "C" fn init_allocator(
@@ -37,120 +38,8 @@ extern "C" fn init_allocator(
         let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
 
         #[allow(static_mut_refs)]
-        ALLOCATOR.initialize(auxv_info.page_size);
+        PRIMARY.write(PrimaryAllocator::new(*auxv_info.pseudorandom_bytes));
     }
 }
 
-#[cfg_attr(not(test), no_mangle)]
-pub unsafe extern "C" fn free(_ptr: *mut std::ffi::c_void) {
-    // TODO This is actually a really bad way of handling free...
-    return;
-}
-
-#[cfg_attr(not(test), global_allocator)]
-pub(crate) static mut ALLOCATOR: Allocator = Allocator::new();
-
-const MAX_SUPPORTED_ALIGN: usize = 4096;
-
-pub(crate) struct Allocator {
-    // I can't use OnceCell/OnceLock because they aren't sync
-    page_size: AtomicUsize,
-}
-
-impl Allocator {
-    pub const fn new() -> Self {
-        Allocator {
-            page_size: AtomicUsize::new(0),
-        }
-    }
-
-    pub fn initialize(&mut self, page_size: usize) {
-        syscall_debug_assert!(self.page_size.load(Ordering::Relaxed) == 0);
-
-        self.page_size.store(page_size, Ordering::Release);
-    }
-
-    fn align_layout_to_page_size(&self, layout: Layout) -> Layout {
-        let page_size = self.page_size.load(Ordering::Acquire);
-
-        let aligned_layout = layout.align_to(max(layout.align(), page_size));
-
-        syscall_debug_assert!(aligned_layout.is_ok());
-
-        aligned_layout.unwrap()
-    }
-}
-
-unsafe impl GlobalAlloc for Allocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if layout.align() > MAX_SUPPORTED_ALIGN {
-            return null_mut();
-        }
-
-        let size = layout.pad_to_align().size();
-
-        let protection_flags = ProtectionFlags::ZERO
-            .with_readable(true)
-            .with_writable(true);
-
-        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
-
-        match size {
-            _ => mmap(
-                null_mut(),
-                self.align_layout_to_page_size(layout).pad_to_align().size(),
-                protection_flags,
-                map_flags,
-                -1, // file descriptor (-1 for anonymous mapping)
-                0,  // offset
-            ),
-        }
-    }
-
-    unsafe fn dealloc(&self, pointer: *mut u8, layout: Layout) {
-        munmap(
-            pointer,
-            self.align_layout_to_page_size(layout).pad_to_align().size(),
-        );
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        if ptr.is_null() {
-            return self.alloc(Layout::from_size_align_unchecked(new_size, layout.align()));
-        }
-
-        if new_size == 0 {
-            self.dealloc(ptr, layout);
-            return null_mut();
-        }
-
-        if layout.align() > MAX_SUPPORTED_ALIGN {
-            return null_mut();
-        }
-
-        let old_aligned_size = self.align_layout_to_page_size(layout).pad_to_align().size();
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
-        let new_aligned_size = self
-            .align_layout_to_page_size(new_layout)
-            .pad_to_align()
-            .size();
-
-        if old_aligned_size == new_aligned_size {
-            return ptr;
-        }
-
-        let new_ptr = self.alloc(new_layout);
-        if new_ptr.is_null() {
-            return null_mut();
-        }
-
-        copy_nonoverlapping(
-            ptr,
-            new_ptr,
-            std::cmp::min(layout.pad_to_align().size(), new_size),
-        );
-        self.dealloc(ptr, layout);
-
-        new_ptr
-    }
-}
+pub(crate) static mut PRIMARY: MaybeUninit<PrimaryAllocator> = MaybeUninit::uninit();

@@ -10,3 +10,6 @@ check *args:
 
 test *args:
     cargo test {{args}}
+
+bench *args:
+    cargo xtask bench {{args}}

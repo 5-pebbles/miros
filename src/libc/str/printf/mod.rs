@@ -43,20 +43,20 @@ impl Write for UncheckedBufWriter {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn printf(format: *const i8, mut args: ...) -> i32 {
-    vdprintf(stdout().as_raw_fd(), format, args.as_va_list())
+unsafe extern "C" fn printf(format: *const i8, args: ...) -> i32 {
+    vdprintf(stdout().as_raw_fd(), format, args)
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn sprintf(destination: *mut i8, format: *const i8, mut args: ...) -> i32 {
-    vsprintf(destination, format, args.as_va_list())
+unsafe extern "C" fn sprintf(destination: *mut i8, format: *const i8, args: ...) -> i32 {
+    vsprintf(destination, format, args)
 }
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn vsprintf(
     destination: *mut i8,
     format: *const i8,
-    mut args: VaList<'_, '_>,
+    mut args: VaList<'_>,
 ) -> i32 {
     let writer = UncheckedBufWriter::new(destination);
     let mut formatter = Formatter::new(writer);
@@ -81,7 +81,7 @@ unsafe extern "C" fn vsprintf(
 unsafe extern "C" fn vdprintf(
     file_descriptor: i32,
     format: *const i8,
-    mut args: VaList<'_, '_>,
+    mut args: VaList<'_>,
 ) -> i32 {
     let file = ManuallyDrop::new(File::from_raw_fd(file_descriptor));
     let writer = BufWriter::new(&*file);
@@ -107,9 +107,9 @@ mod tests {
 
     use super::*;
 
-    unsafe extern "C" fn test_sprintf(format: *const i8, mut args: ...) -> Vec<u8> {
+    unsafe extern "C" fn test_sprintf(format: *const i8, args: ...) -> Vec<u8> {
         let mut buffer = [0u8; 4096];
-        let bytes_written = vsprintf(buffer.as_mut_ptr() as *mut i8, format, args.as_va_list());
+        let bytes_written = vsprintf(buffer.as_mut_ptr() as *mut i8, format, args);
         buffer[..bytes_written as usize].to_vec()
     }
 

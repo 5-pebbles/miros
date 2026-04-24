@@ -1,6 +1,5 @@
 use std::{
     arch::naked_asm,
-    env,
     ptr::{self, null, null_mut},
 };
 
@@ -16,7 +15,6 @@ use crate::{
             Stratagem,
         },
     },
-    page_size,
     start::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
         miros::Miros,
@@ -88,7 +86,6 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
     syscall_debug_assert!(auxv_info.page_size.is_power_of_two());
     syscall_debug_assert!(auxv_info.base.addr() & (auxv_info.page_size - 1) == 0);
-    page_size::set_page_size(auxv_info.page_size);
 
     let program_header_table = ptr::slice_from_raw_parts(
         auxv_info.program_header_pointer,

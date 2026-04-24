@@ -1,14 +1,10 @@
-#![feature(impl_trait_in_assoc_type)]
 #![feature(c_variadic)]
-#![feature(ptr_as_ref_unchecked)]
+#![feature(const_trait_impl)]
+#![feature(const_cmp)]
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]
 #![feature(thread_local)]
-#![feature(associated_type_defaults)]
-#![feature(anonymous_lifetime_in_impl_trait)]
-#![feature(trait_alias)]
-#![feature(type_alias_impl_trait)]
-#![feature(slice_ptr_get)]
+#![feature(maybe_uninit_array_assume_init)]
 #![allow(dead_code)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
 // (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
@@ -26,6 +22,7 @@ mod elf;
 mod error;
 mod io_macros;
 mod libc;
+mod linked_list;
 mod objects;
 mod page_size;
 mod start;

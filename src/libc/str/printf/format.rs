@@ -68,7 +68,7 @@ impl<W: Write> Formatter<W> {
         }
     }
 
-    pub unsafe fn format(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_, '_>) {
+    pub unsafe fn format(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         match spec.conversion {
             Conversion::SignedInt => self.format_signed_integer(spec, args),
             Conversion::UnsignedInt | Conversion::Octal | Conversion::Hex { .. } => {
@@ -90,21 +90,13 @@ impl<W: Write> Formatter<W> {
         }
     }
 
-    unsafe fn format_signed_integer(
-        &mut self,
-        spec: &ResolvedSpecifier,
-        args: &mut VaList<'_, '_>,
-    ) {
+    unsafe fn format_signed_integer(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let value = spec.length.extract_signed(args);
         let radix = Radix::from_conversion(spec.conversion);
         self.write_integer(spec, radix, value.unsigned_abs(), value < 0);
     }
 
-    unsafe fn format_unsigned_integer(
-        &mut self,
-        spec: &ResolvedSpecifier,
-        args: &mut VaList<'_, '_>,
-    ) {
+    unsafe fn format_unsigned_integer(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let value = spec.length.extract_unsigned(args);
         let radix = Radix::from_conversion(spec.conversion);
         self.write_integer(spec, radix, value, false);
@@ -156,7 +148,7 @@ impl<W: Write> Formatter<W> {
         self.write_repeated(b' ', right_spaces);
     }
 
-    unsafe fn format_string(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_, '_>) {
+    unsafe fn format_string(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let pointer: *const i8 = args.arg();
 
         let bytes: &[u8] = if pointer.is_null() {
@@ -175,7 +167,7 @@ impl<W: Write> Formatter<W> {
         });
     }
 
-    unsafe fn format_char(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_, '_>) {
+    unsafe fn format_char(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let character = args.arg::<i32>() as u8;
 
         self.write_padded(spec, 1, |formatter| {
@@ -183,7 +175,7 @@ impl<W: Write> Formatter<W> {
         });
     }
 
-    unsafe fn format_pointer(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_, '_>) {
+    unsafe fn format_pointer(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let address = args.arg::<*const ()>().addr();
 
         if address == 0 {
@@ -204,11 +196,7 @@ impl<W: Write> Formatter<W> {
         }
     }
 
-    unsafe fn store_character_count(
-        &mut self,
-        spec: &ResolvedSpecifier,
-        args: &mut VaList<'_, '_>,
-    ) {
+    unsafe fn store_character_count(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
         let count = self.bytes_written as i64;
 
         macro_rules! store_count {
@@ -410,7 +398,7 @@ mod tests {
                     let mut output = Vec::new();
                     {
                         let mut formatter = Formatter::new(&mut output);
-                        formatter.format(spec, &mut args.as_va_list());
+                        formatter.format(spec, &mut args);
                     }
                     output
                 }
@@ -562,7 +550,7 @@ mod tests {
             {
                 let mut formatter = Formatter::new(&mut output);
                 formatter.bytes_written = bytes_already_written;
-                formatter.format(spec, &mut args.as_va_list());
+                formatter.format(spec, &mut args);
             }
             output
         }
