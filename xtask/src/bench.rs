@@ -206,11 +206,9 @@ fn analyze(runs: &[Vec<PhaseResult>]) -> Vec<(String, PhaseStats)> {
         for result in run {
             match phases.iter_mut().find(|(name, _, _)| *name == result.name) {
                 Some(phase) => phase.2.push(result.total_ns),
-                None => phases.push((
-                    result.name.clone(),
-                    result.iterations,
-                    vec![result.total_ns],
-                )),
+                None => phases.push((result.name.clone(), result.iterations, vec![
+                    result.total_ns,
+                ])),
             }
         }
     }
@@ -224,13 +222,10 @@ fn analyze(runs: &[Vec<PhaseResult>]) -> Vec<(String, PhaseStats)> {
             } else {
                 0.0
             };
-            (
-                name,
-                PhaseStats {
-                    total_ns: total,
-                    ns_per_op,
-                },
-            )
+            (name, PhaseStats {
+                total_ns: total,
+                ns_per_op,
+            })
         })
         .collect()
 }
