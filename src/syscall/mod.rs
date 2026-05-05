@@ -12,12 +12,14 @@ pub enum Syscall {
     MProtect = 10,
     MunMap = 11,
     GetPid = 39,
+    // Clone = 56,
     Exit = 60,
     ArchPrctl = 158,
     GetTid = 186,
     TgKill = 234,
     OpenAt = 257,
     GetRandom = 318,
+    Clone3 = 435,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
