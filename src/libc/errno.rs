@@ -19,6 +19,7 @@ pub fn set_errno(new_errno: Errno) {
 }
 
 impl Errno {
+    pub const INVAL: Self = Self(linux_raw_sys::errno::EINVAL);
     pub const BADF: Self = Self(linux_raw_sys::errno::EBADF);
 }
 
@@ -33,6 +34,7 @@ impl Display for Errno {
         // Recognize errors documented in POSIX and use the documented strings.
         // <https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/errno.h.html>
         let message = match *self {
+            Errno::INVAL => "Invalid argument",
             Errno::BADF => "Bad file descriptor",
             ref unknown_errno => {
                 return write!(f, "Unknown error: {}", Into::<u32>::into(unknown_errno))

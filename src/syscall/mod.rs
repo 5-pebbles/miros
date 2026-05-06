@@ -12,7 +12,7 @@ pub enum Syscall {
     MProtect = 10,
     MunMap = 11,
     GetPid = 39,
-    // Clone = 56,
+    Clone = 56,
     Exit = 60,
     ArchPrctl = 158,
     GetTid = 186,

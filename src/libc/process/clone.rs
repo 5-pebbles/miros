@@ -2,12 +2,16 @@ use std::{arch::asm, ffi::c_void, mem::size_of, os::fd::RawFd};
 
 use bitbybit::bitfield;
 
-use crate::syscall::{exit, Syscall};
+use crate::{
+    libc::errno::{set_errno, Errno},
+    signature_matches_libc,
+    syscall::{exit, Syscall},
+};
 
 pub type ThreadID = i32;
 
 #[bitfield(u64)]
-pub struct CloneThreeFlags {
+pub struct Clone3Flags {
     #[bit(8, rw)]
     share_virtual_memory: bool,
     #[bit(9, rw)]
@@ -21,7 +25,7 @@ pub struct CloneThreeFlags {
 /// Kernel's `struct clone_args` — every field is u64-sized.
 #[repr(C)]
 pub struct Clone3Args {
-    pub flags: CloneThreeFlags,
+    pub flags: Clone3Flags,
     pub pid_file_descriptor: *mut RawFd,
     pub child_tid_pointer: *mut ThreadID,
     pub parent_tid_pointer: *mut ThreadID,
@@ -32,6 +36,67 @@ pub struct Clone3Args {
     pub set_tid_array: *mut ThreadID,
     pub set_tid_array_count: u64,
     pub target_control_group: u64,
+}
+
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn clone(
+    entry_function: extern "C" fn(*mut c_void) -> i32,
+    child_stack: *mut c_void,
+    flags: i32,
+    entry_argument: *mut c_void,
+    mut varargs: ...
+) -> i32 {
+    signature_matches_libc!(libc::clone(
+        entry_function,
+        child_stack,
+        flags,
+        entry_argument
+    ));
+
+    if (entry_function as usize) == 0 || child_stack.is_null() {
+        set_errno(Errno::INVAL);
+        return -1;
+    }
+
+    let parent_tid_pointer: *mut ThreadID = varargs.arg();
+    let thread_local_storage: *mut c_void = varargs.arg();
+    let child_tid_pointer: *mut ThreadID = varargs.arg();
+
+    let result: isize;
+    asm!(
+        "syscall",
+        "test eax, eax",
+        "jnz 2f",
+
+        // child
+        "mov rdi, {entry_function}",
+        "mov rsi, {entry_argument}",
+        "xor ebp, ebp",
+        "call {clone_entry_point}",
+        "ud2",
+
+        // parent
+        "2:",
+        entry_function = in(reg) entry_function,
+        entry_argument = in(reg) entry_argument,
+        clone_entry_point = sym clone_entry_point_trampoline,
+        inlateout("rax") Syscall::Clone as usize => result,
+        in("rdi") flags as u32 as usize,
+        in("rsi") ((child_stack as usize) & !0xF),
+        in("rdx") parent_tid_pointer,
+        in("r10") child_tid_pointer,
+        in("r8") thread_local_storage,
+        lateout("rcx") _,
+        lateout("r11") _,
+        options(nostack),
+    );
+
+    if result < 0 {
+        set_errno(Errno((-result) as u32));
+        return -1;
+    }
+
+    result as i32
 }
 
 unsafe fn clone3(
