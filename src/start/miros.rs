@@ -34,6 +34,7 @@ pub struct Miros<Stage> {
     base: *const c_void,
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
+    tls_block_size: usize,
     preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     _marker: PhantomData<Stage>,
@@ -45,6 +46,7 @@ impl<Stage> Miros<Stage> {
             base: self.base,
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
+            tls_block_size: self.tls_block_size,
             preinit_array: self.preinit_array,
             init_array: self.init_array,
             _marker: PhantomData,
@@ -161,10 +163,15 @@ impl Miros<Relocate> {
             ))
         };
 
+        let tls_block_size = tls_program_header
+            .map(|header| round_up_to_boundary(header.p_memsz, header.p_align))
+            .unwrap_or(0);
+
         Ok(Self {
             base,
             rela_slice,
             tls_program_header,
+            tls_block_size,
             preinit_array,
             init_array,
             _marker: PhantomData,
@@ -173,9 +180,13 @@ impl Miros<Relocate> {
 
     #[cfg(target_arch = "x86_64")]
     pub unsafe fn relocate(self) -> Miros<AllocateTls> {
-        use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE};
+        use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE, R_X86_64_TPOFF64};
 
         let base_address = self.base.addr();
+        // Variant II: TLS block is at [TP - tls_block_size, TP), so a variable
+        // at addend bytes into the segment sits at TP + (-(tls_block_size) + addend).
+        let tpoff_base = -(self.tls_block_size as isize);
+
         for rela in &*self.rela_slice {
             let relocate_address = rela.r_offset.wrapping_add(base_address);
 
@@ -200,6 +211,15 @@ impl Miros<Relocate> {
                         options(nostack, preserves_flags),
                     );
                 }
+                R_X86_64_TPOFF64 => {
+                    let tpoff_value = tpoff_base.wrapping_add(rela.r_addend);
+                    asm!(
+                        "mov qword ptr [{}], {}",
+                        in(reg) relocate_address,
+                        in(reg) tpoff_value,
+                        options(nostack, preserves_flags),
+                    );
+                }
                 _ => (),
             }
         }
@@ -212,7 +232,7 @@ impl Miros<AllocateTls> {
     pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Miros<InitArray> {
         if let Some(tls_header) = self.tls_program_header {
             let max_required_align = max(align_of::<ThreadControlBlock>(), tls_header.p_align);
-            let tls_block_size = round_up_to_boundary(tls_header.p_memsz, tls_header.p_align);
+            let tls_block_size = self.tls_block_size;
             let tcb_size = size_of::<ThreadControlBlock>() + max_required_align;
 
             let protection_flags = ProtectionFlags::ZERO
