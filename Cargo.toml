@@ -7,6 +7,10 @@ version = "0.1.0"
 edition = "2021"
 description = "A modern ELF interpreter (dynamic linker/loader) written in Rust"
 license = "MIT"
+autobins = false
+
+[lib]
+crate-type = ["cdylib"]
 
 [dependencies]
 arbitrary-int = "2.0.0"
