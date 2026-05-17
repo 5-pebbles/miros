@@ -1,8 +1,8 @@
 use std::{
     arch::asm,
-    cmp::max,
     ffi::c_void,
     marker::PhantomData,
+    mem::size_of,
     ptr::{self, null, null_mut},
     slice,
 };
@@ -30,11 +30,12 @@ pub struct Relocate;
 pub struct AllocateTls;
 pub struct InitArray;
 
+const TLS_RESERVE_SIZE: usize = 8 * 1024 * 1024;
+
 pub struct Miros<Stage> {
     base: *const c_void,
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
-    tls_block_size: usize,
     preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     _marker: PhantomData<Stage>,
@@ -46,7 +47,6 @@ impl<Stage> Miros<Stage> {
             base: self.base,
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
-            tls_block_size: self.tls_block_size,
             preinit_array: self.preinit_array,
             init_array: self.init_array,
             _marker: PhantomData,
@@ -163,15 +163,10 @@ impl Miros<Relocate> {
             ))
         };
 
-        let tls_block_size = tls_program_header
-            .map(|header| round_up_to_boundary(header.p_memsz, header.p_align))
-            .unwrap_or(0);
-
         Ok(Self {
             base,
             rela_slice,
             tls_program_header,
-            tls_block_size,
             preinit_array,
             init_array,
             _marker: PhantomData,
@@ -183,10 +178,6 @@ impl Miros<Relocate> {
         use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE, R_X86_64_TPOFF64};
 
         let base_address = self.base.addr();
-        // Variant II: TLS block is at [TP - tls_block_size, TP), so a variable
-        // at addend bytes into the segment sits at TP + (-(tls_block_size) + addend).
-        let tpoff_base = -(self.tls_block_size as isize);
-
         for rela in &*self.rela_slice {
             let relocate_address = rela.r_offset.wrapping_add(base_address);
 
@@ -212,7 +203,8 @@ impl Miros<Relocate> {
                     );
                 }
                 R_X86_64_TPOFF64 => {
-                    let tpoff_value = tpoff_base.wrapping_add(rela.r_addend);
+                    let tpoff_value =
+                        (size_of::<ThreadControlBlock>() as isize).wrapping_add(rela.r_addend);
                     asm!(
                         "mov qword ptr [{}], {}",
                         in(reg) relocate_address,
@@ -230,58 +222,50 @@ impl Miros<Relocate> {
 
 impl Miros<AllocateTls> {
     pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Miros<InitArray> {
+        let miros_tls_size = self
+            .tls_program_header
+            .map(|h| round_up_to_boundary(h.p_memsz, h.p_align))
+            .unwrap_or(0);
+
+        // [~8 MiB reserve (exe TLS allocated)][TCB][miros TLS]
+        //                                     ^TP (fs:0)
+        let total_size = TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>() + miros_tls_size;
+
+        let protection_flags = ProtectionFlags::ZERO
+            .with_readable(true)
+            .with_writable(true);
+        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
+
+        let region_pointer = mmap(null_mut(), total_size, protection_flags, map_flags, -1, 0);
+
+        let thread_control_block =
+            region_pointer.byte_add(TLS_RESERVE_SIZE) as *mut ThreadControlBlock;
+        let thread_pointer_register: *mut c_void =
+            (*thread_control_block).thread_pointee.as_mut_ptr().cast();
+
+        *thread_control_block = ThreadControlBlock {
+            thread_pointee: [],
+            thread_pointer_register,
+            dynamic_thread_vector: null_mut(),
+            _padding: [0; 3],
+            canary: usize::from_ne_bytes(ptr::read(
+                pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
+            )),
+        };
+
         if let Some(tls_header) = self.tls_program_header {
-            let max_required_align = max(align_of::<ThreadControlBlock>(), tls_header.p_align);
-            let tls_block_size = self.tls_block_size;
-            let tcb_size = size_of::<ThreadControlBlock>() + max_required_align;
+            let miros_tls_destination =
+                region_pointer.byte_add(TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>());
+            debug_assert_eq!(miros_tls_destination.addr() % tls_header.p_align, 0);
 
-            let protection_flags = ProtectionFlags::ZERO
-                .with_readable(true)
-                .with_writable(true);
-            let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
-
-            let tls_block_pointer = mmap(
-                null_mut(),
-                tls_block_size + tcb_size,
-                protection_flags,
-                map_flags,
-                -1,
-                0,
-            );
-            assert_eq!(tls_block_pointer.addr() % max_required_align, 0);
-
-            // Copy TLS template image
-            slice::from_raw_parts_mut(tls_block_pointer as *mut u8, tls_header.p_filesz)
+            slice::from_raw_parts_mut(miros_tls_destination as *mut u8, tls_header.p_filesz)
                 .copy_from_slice(slice::from_raw_parts(
                     self.base.byte_add(tls_header.p_offset) as *const u8,
                     tls_header.p_filesz,
                 ));
-
-            // Zero TLS BSS
-            slice::from_raw_parts_mut(
-                tls_block_pointer.byte_add(tls_header.p_filesz) as *mut u8,
-                tls_header.p_memsz - tls_header.p_filesz,
-            )
-            .fill(0);
-
-            // Thread Control Block
-            let thread_control_block =
-                tls_block_pointer.byte_add(tls_block_size) as *mut ThreadControlBlock;
-            let thread_pointer_register: *mut c_void =
-                (*thread_control_block).thread_pointee.as_mut_ptr().cast();
-
-            *thread_control_block = ThreadControlBlock {
-                thread_pointee: [],
-                thread_pointer_register,
-                dynamic_thread_vector: null_mut(),
-                _padding: [0; 3],
-                canary: usize::from_ne_bytes(ptr::read(
-                    pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
-                )),
-            };
-
-            set_thread_pointer(thread_pointer_register);
         }
+
+        set_thread_pointer(thread_pointer_register);
 
         self.transition()
     }
