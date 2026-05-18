@@ -1,6 +1,21 @@
 use std::ffi::c_void;
 
+use bitbybit::bitfield;
 use strum::FromRepr;
+
+#[bitfield(u64)]
+pub struct DynamicFlags {
+    #[bit(0, r)]
+    origin: bool,
+    #[bit(1, r)]
+    symbolic: bool,
+    #[bit(2, r)]
+    text_rel: bool,
+    #[bit(3, r)]
+    bind_now: bool,
+    #[bit(4, r)]
+    pub static_tls: bool,
+}
 
 #[derive(Debug, FromRepr, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -28,11 +43,13 @@ pub enum DynamicTag {
     InitArraySz = 27,
     FiniArraySz = 28,
     Runpath = 29,
+    Flags = 30,
     PreInitArray = 32,
     PreInitArraySz = 33,
     RelrSz = 35,
     Relr = 36,
     GnuHash = 0x6ffffef5,
+    Flags1 = 0x6ffffffb,
 }
 
 /// A union resolved by the d_tag field of the parent dynamic array item.
