@@ -26,4 +26,5 @@ mod start;
 mod syscall;
 #[cfg(test)]
 mod test_macros;
+mod tls;
 mod utils;

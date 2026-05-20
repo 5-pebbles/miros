@@ -59,6 +59,16 @@ impl<T> LinkedListNode<T> {
         !self.prevprev.is_null()
     }
 
+    pub unsafe fn list_insert_after(&mut self, new_node: *mut LinkedListNode<T>) {
+        let old_next = self.next;
+        (*new_node).next = old_next;
+        (*new_node).prevprev = ptr::from_mut(&mut self.next);
+        self.next = new_node;
+        if !old_next.is_null() {
+            (*old_next).prevprev = ptr::from_mut(&mut (*new_node).next);
+        }
+    }
+
     pub unsafe fn list_remove(&mut self) {
         debug_assert!(self.is_linked(), "removing node that is not in a list");
         *self.prevprev = self.next;

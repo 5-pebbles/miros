@@ -23,14 +23,13 @@ use crate::{
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
+    tls::TLS_RESERVE_SIZE,
     utils::round_up_to_boundary,
 };
 
 pub struct Relocate;
 pub struct AllocateTls;
 pub struct InitArray;
-
-const TLS_RESERVE_SIZE: usize = 8 * 1024 * 1024;
 
 pub struct Miros<Stage> {
     base: *const c_void,
