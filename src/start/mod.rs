@@ -17,13 +17,13 @@ use crate::{
     },
     start::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
-        miros::Miros,
+        bootstrap::Bootstrap,
     },
 };
 
 pub mod auxiliary_vector;
+pub mod bootstrap;
 pub mod environment_variables;
-pub mod miros;
 
 #[unsafe(naked)]
 #[cfg_attr(not(test), no_mangle)]
@@ -93,13 +93,13 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     );
 
     // Relocate ourselves, initialize TLS, and call init functions:
-    let miros = if auxv_info.base.is_null() {
-        Miros::from_program_headers(program_header_table).unwrap()
+    let bootstrap = if auxv_info.base.is_null() {
+        Bootstrap::from_program_headers(program_header_table).unwrap()
     } else {
-        Miros::from_base(auxv_info.base).unwrap()
+        Bootstrap::from_base(auxv_info.base).unwrap()
     };
 
-    miros
+    bootstrap
         .relocate()
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);

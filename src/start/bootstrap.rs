@@ -31,7 +31,7 @@ pub struct Relocate;
 pub struct AllocateTls;
 pub struct InitArray;
 
-pub struct Miros<Stage> {
+pub struct Bootstrap<Stage> {
     base: *const c_void,
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
@@ -40,9 +40,9 @@ pub struct Miros<Stage> {
     _marker: PhantomData<Stage>,
 }
 
-impl<Stage> Miros<Stage> {
-    fn transition<NextStage>(self) -> Miros<NextStage> {
-        Miros {
+impl<Stage> Bootstrap<Stage> {
+    fn transition<NextStage>(self) -> Bootstrap<NextStage> {
+        Bootstrap {
             base: self.base,
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
@@ -53,7 +53,7 @@ impl<Stage> Miros<Stage> {
     }
 }
 
-impl Miros<Relocate> {
+impl Bootstrap<Relocate> {
     pub unsafe fn from_base(base: *const c_void) -> Result<Self, MirosError> {
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
@@ -173,7 +173,7 @@ impl Miros<Relocate> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub unsafe fn relocate(self) -> Miros<AllocateTls> {
+    pub unsafe fn relocate(self) -> Bootstrap<AllocateTls> {
         use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE, R_X86_64_TPOFF64};
 
         let base_address = self.base.addr();
@@ -219,8 +219,8 @@ impl Miros<Relocate> {
     }
 }
 
-impl Miros<AllocateTls> {
-    pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Miros<InitArray> {
+impl Bootstrap<AllocateTls> {
+    pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Bootstrap<InitArray> {
         let miros_tls_size = self
             .tls_program_header
             .map(|h| round_up_to_boundary(h.p_memsz, h.p_align))
@@ -270,7 +270,7 @@ impl Miros<AllocateTls> {
     }
 }
 
-impl Miros<InitArray> {
+impl Bootstrap<InitArray> {
     pub unsafe fn init_array(
         self,
         arg_count: usize,
