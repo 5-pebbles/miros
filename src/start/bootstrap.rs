@@ -2,7 +2,7 @@ use std::{
     arch::asm,
     ffi::c_void,
     marker::PhantomData,
-    mem::size_of,
+    mem::{size_of, MaybeUninit},
     ptr::{self, null, null_mut},
     slice,
 };
@@ -23,9 +23,18 @@ use crate::{
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
-    tls::TLS_RESERVE_SIZE,
+    tls::{template::TlsTemplate, TLS_RESERVE_SIZE},
     utils::round_up_to_boundary,
 };
+
+static mut BOOTSTRAP_TLS_TEMPLATE: MaybeUninit<Option<TlsTemplate>> = MaybeUninit::uninit();
+
+pub fn get_bootstrap_tls_template() -> Option<TlsTemplate> {
+    #[allow(static_mut_refs)]
+    unsafe {
+        BOOTSTRAP_TLS_TEMPLATE.assume_init_read()
+    }
+}
 
 pub struct Relocate;
 pub struct AllocateTls;
@@ -253,15 +262,29 @@ impl Bootstrap<AllocateTls> {
         };
 
         if let Some(tls_header) = self.tls_program_header {
+            let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
+            let template_size = tls_header.p_filesz;
+
+            let block_size = tls_header.p_memsz;
+            let alignment = tls_header.p_align;
+
             let miros_tls_destination =
                 region_pointer.byte_add(TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>());
-            debug_assert_eq!(miros_tls_destination.addr() % tls_header.p_align, 0);
+            debug_assert_eq!(miros_tls_destination.addr() % alignment, 0);
 
-            slice::from_raw_parts_mut(miros_tls_destination as *mut u8, tls_header.p_filesz)
-                .copy_from_slice(slice::from_raw_parts(
-                    self.base.byte_add(tls_header.p_offset) as *const u8,
-                    tls_header.p_filesz,
-                ));
+            slice::from_raw_parts_mut(miros_tls_destination as *mut u8, template_size)
+                .copy_from_slice(slice::from_raw_parts(template_pointer, template_size));
+
+            #[allow(static_mut_refs)]
+            BOOTSTRAP_TLS_TEMPLATE.write(Some(TlsTemplate::new(
+                template_pointer,
+                template_size,
+                block_size,
+                alignment,
+            )));
+        } else {
+            #[allow(static_mut_refs)]
+            BOOTSTRAP_TLS_TEMPLATE.write(None);
         }
 
         set_thread_pointer(thread_pointer_register);
