@@ -78,7 +78,7 @@ impl LargeAllocator {
         let record = self.metadata.alloc();
         unsafe {
             ptr::write(record, LinkedListNode::new(region));
-            self.allocations.list_push_front(record);
+            self.allocations.push_front(record);
         }
         region.pointer
     }
@@ -88,7 +88,7 @@ impl LargeAllocator {
             let node = self.region_from_ptr(pointer);
 
             let region = (*node).value;
-            (*node).list_remove();
+            (*node).remove();
             self.metadata.dealloc(node);
 
             if !self.cache.park(region) {

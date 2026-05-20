@@ -36,7 +36,7 @@ impl TlsReserveAllocator {
                 size: TLS_RESERVE_SIZE,
             }),
         );
-        free.list_push_front(initial_chunk);
+        free.push_front(initial_chunk);
 
         Self { free, metadata }
     }
@@ -55,7 +55,7 @@ impl TlsReserveAllocator {
         let remaining = (aligned_start - chunk.offset) as usize;
 
         if remaining == 0 {
-            (*node).list_remove();
+            (*node).remove();
             self.metadata.dealloc(node);
         } else {
             chunk.size = remaining;
@@ -88,7 +88,7 @@ impl TlsReserveAllocator {
         match (merge_prev, merge_next) {
             (true, true) => {
                 (*prev).value.size = ((*next).value.top() - (*prev).value.offset) as usize;
-                (*next).list_remove();
+                (*next).remove();
                 self.metadata.dealloc(next);
             }
             (true, false) => {
@@ -102,9 +102,9 @@ impl TlsReserveAllocator {
                 let new_node = self.metadata.alloc();
                 ptr::write(new_node, LinkedListNode::new(FreeChunk { offset, size }));
                 if prev.is_null() {
-                    self.free.list_push_front(new_node);
+                    self.free.push_front(new_node);
                 } else {
-                    (*prev).list_insert_after(new_node);
+                    (*prev).insert_after(new_node);
                 }
             }
         }

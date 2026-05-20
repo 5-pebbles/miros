@@ -72,8 +72,8 @@ impl<T> MetadataAllocator<T> {
             (*region).value.slots_occupied += 1;
 
             if (*region).value.slots_occupied == self.slots_per_region {
-                (*region).list_remove();
-                self.full_regions.list_push_front(region);
+                (*region).remove();
+                self.full_regions.push_front(region);
             }
 
             let slot_address = (region as *mut u8)
@@ -110,14 +110,14 @@ impl<T> MetadataAllocator<T> {
             (*region).value.slots_occupied -= 1;
 
             if was_full {
-                (*region).list_remove();
+                (*region).remove();
                 if (*region).value.slots_occupied == 0 {
                     self.cache_or_destroy_region(region);
                 } else {
-                    self.partial_regions.list_push_front(region);
+                    self.partial_regions.push_front(region);
                 }
             } else if (*region).value.slots_occupied == 0 {
-                (*region).list_remove();
+                (*region).remove();
                 self.cache_or_destroy_region(region);
             }
         }
@@ -138,7 +138,7 @@ impl<T> MetadataAllocator<T> {
                 );
             }
 
-            self.partial_regions.list_push_front(empty);
+            self.partial_regions.push_front(empty);
         } else {
             self.create_region();
         }
@@ -165,7 +165,7 @@ impl<T> MetadataAllocator<T> {
         // which represents all slots free.
         ptr::write(region, LinkedListNode::new(RegionHeader::new()));
 
-        self.partial_regions.list_push_front(region);
+        self.partial_regions.push_front(region);
     }
 
     // SAFETY: The region must have been removed from its list before calling this.

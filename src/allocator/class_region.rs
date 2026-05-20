@@ -148,8 +148,8 @@ impl ClassRegion {
         let slot_pointer = span.allocate_slot(random).unwrap_unchecked();
 
         if span.is_full() {
-            (*span_node).list_remove();
-            self.full_spans.list_push_front(span_node);
+            (*span_node).remove();
+            self.full_spans.push_front(span_node);
         }
 
         slot_pointer
@@ -197,7 +197,7 @@ impl ClassRegion {
         );
 
         (&mut *self.span_index)[span_number] = span_node;
-        self.partial_spans.list_push_front(span_node);
+        self.partial_spans.push_front(span_node);
         true
     }
 
@@ -210,14 +210,14 @@ impl ClassRegion {
         span.dealloc_slot(pointer);
 
         if was_full {
-            (*span_node).list_remove();
+            (*span_node).remove();
             if span.is_empty() {
                 self.release_empty_span(span_node);
             } else {
-                self.partial_spans.list_push_front(span_node);
+                self.partial_spans.push_front(span_node);
             }
         } else if span.is_empty() {
-            (*span_node).list_remove();
+            (*span_node).remove();
             self.release_empty_span(span_node);
         }
     }
@@ -226,14 +226,14 @@ impl ClassRegion {
     // re-mprotect the data pages RW before reuse — keep these two in sync.
     unsafe fn reactivate_span(&mut self) {
         let span_node = self.empty_spans.front();
-        (*span_node).list_remove();
+        (*span_node).remove();
         (*span_node).value.reinitialize();
-        self.partial_spans.list_push_front(span_node);
+        self.partial_spans.push_front(span_node);
     }
 
     unsafe fn release_empty_span(&mut self, span_node: *mut LinkedListNode<Span>) {
         // TODO: madvise(MADV_DONTNEED) on data pages to release physical memory
-        self.empty_spans.list_push_front(span_node);
+        self.empty_spans.push_front(span_node);
     }
 
     /// O(1) pointer-to-span lookup via the span index. Debug builds add bounds,
