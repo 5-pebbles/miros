@@ -1,3 +1,4 @@
+mod dtv;
 mod reserve_allocator;
 pub mod template;
 
