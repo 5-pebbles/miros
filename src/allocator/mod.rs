@@ -1,6 +1,5 @@
 mod class_region;
 mod large_allocator;
-pub mod metadata_allocator;
 mod non_crypto_rng;
 mod primary;
 mod size_classes;

@@ -1,13 +1,16 @@
 use std::ptr::null_mut;
 
 use super::{
-    metadata_allocator::MetadataAllocator, non_crypto_rng::Xoroshiro128PlusPlus,
-    size_classes::SizeClass, span::Span, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
+    non_crypto_rng::Xoroshiro128PlusPlus, size_classes::SizeClass, span::Span,
+    ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
 };
 use crate::{
     libc::mem::{mmap, mprotect},
-    linked_list::{LinkedList, LinkedListNode},
     page_size,
+    utils::{
+        linked_list::{LinkedList, LinkedListNode},
+        metadata_allocator::MetadataAllocator,
+    },
 };
 
 /// Log2 of the per-class region size. 2^34 = 16 GB per class.

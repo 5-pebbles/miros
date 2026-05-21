@@ -19,7 +19,6 @@ mod elf;
 mod error;
 mod io_macros;
 mod libc;
-mod linked_list;
 mod objects;
 mod page_size;
 mod start;

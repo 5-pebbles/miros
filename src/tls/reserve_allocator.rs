@@ -1,11 +1,13 @@
 use std::{mem::size_of, ptr};
 
 use crate::{
-    allocator::metadata_allocator::MetadataAllocator,
     elf::thread_local_storage::DynamicThreadVectorItem,
-    linked_list::{LinkedList, LinkedListNode},
     tls::TLS_RESERVE_SIZE,
-    utils::round_up_to_boundary,
+    utils::{
+        linked_list::{LinkedList, LinkedListNode},
+        metadata_allocator::MetadataAllocator,
+        round_up_to_boundary,
+    },
 };
 
 struct FreeChunk {

@@ -4,10 +4,10 @@ use std::{
     ptr::{self, null_mut},
 };
 
-use super::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION, GUARD_PAGE_PROTECTION};
+use super::linked_list::{LinkedList, LinkedListNode};
 use crate::{
+    allocator::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION, GUARD_PAGE_PROTECTION},
     libc::mem::{mmap, mprotect, munmap},
-    linked_list::{LinkedList, LinkedListNode},
     page_size,
 };
 
