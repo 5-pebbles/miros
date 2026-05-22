@@ -28,3 +28,10 @@ extern "C" fn init_tls_reserve_allocator(
         TLS_RESERVE_ALLOCATOR.write(Mutex::new(TlsReserveAllocator::new()));
     }
 }
+
+pub fn get_tls_reserve_allocator_ref() -> &'static Mutex<TlsReserveAllocator> {
+    #[allow(static_mut_refs)]
+    unsafe {
+        TLS_RESERVE_ALLOCATOR.assume_init_ref()
+    }
+}
