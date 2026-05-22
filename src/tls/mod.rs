@@ -1,5 +1,30 @@
+use std::{mem::MaybeUninit, sync::Mutex};
+
+use crate::{
+    objects::strategies::init_array::InitArrayFunction, tls::reserve_allocator::TlsReserveAllocator,
+};
+
 mod dtv;
 mod reserve_allocator;
 pub mod template;
 
 pub const TLS_RESERVE_SIZE: usize = 8 * 1024 * 1024;
+
+pub static mut TLS_RESERVE_ALLOCATOR: MaybeUninit<Mutex<TlsReserveAllocator>> =
+    MaybeUninit::uninit();
+
+#[cfg_attr(not(test), link_section = ".init_array")]
+#[used]
+static INIT_TLS_RESERVE_ALLOCATOR: InitArrayFunction = init_tls_reserve_allocator;
+
+extern "C" fn init_tls_reserve_allocator(
+    _arg_count: usize,
+    _arg_pointer: *const *const u8,
+    _env_pointer: *const *const u8,
+    _auxv_pointer: *const crate::start::auxiliary_vector::AuxiliaryVectorItem,
+) {
+    unsafe {
+        #[allow(static_mut_refs)]
+        TLS_RESERVE_ALLOCATOR.write(Mutex::new(TlsReserveAllocator::new()));
+    }
+}
