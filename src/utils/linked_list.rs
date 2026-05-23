@@ -40,10 +40,11 @@ impl<T> LinkedList<T> {
     }
 }
 
+#[repr(C)]
 pub struct LinkedListNode<T> {
+    pub value: T,
     next: *mut LinkedListNode<T>,
     prevprev: *mut *mut LinkedListNode<T>,
-    pub value: T,
 }
 
 impl<T> LinkedListNode<T> {
