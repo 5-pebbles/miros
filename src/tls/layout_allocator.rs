@@ -21,31 +21,30 @@ impl FreeChunk {
     }
 }
 
-/// Manages the TLS reserve region shared across all threads. Tracks DTV and
+/// Manages the TLS reserve region layout shared across all threads. Tracks DTV and
 /// block allocations as offsets from the thread pointer - individual threads
 /// apply these offsets to their own TP to derive addresses.
-pub struct TlsReserveAllocator {
+pub struct TlsLayoutAllocator {
     dtv_entry_count: usize,
     free: LinkedList<FreeChunk>,
     metadata: MetadataAllocator<LinkedListNode<FreeChunk>>,
 }
 
-impl TlsReserveAllocator {
+impl TlsLayoutAllocator {
     const RESERVE_BASE_OFFSET: isize = -(TLS_RESERVE_SIZE as isize);
 
-    pub unsafe fn new() -> Self {
+    pub fn new() -> Self {
         let mut metadata = MetadataAllocator::new();
         let mut free = LinkedList::new();
 
         let initial_chunk = metadata.alloc();
-        ptr::write(
-            initial_chunk,
-            LinkedListNode::new(FreeChunk {
+        unsafe {
+            *initial_chunk = LinkedListNode::new(FreeChunk {
                 offset: Self::RESERVE_BASE_OFFSET,
                 size: TLS_RESERVE_SIZE,
-            }),
-        );
-        free.push_front(initial_chunk);
+            });
+            free.push_front(initial_chunk);
+        }
 
         Self {
             dtv_entry_count: 0,
@@ -108,7 +107,7 @@ impl TlsReserveAllocator {
 
 // DTV - bump allocator from base upward
 
-pub struct DtvAllocator<'a>(&'a mut TlsReserveAllocator);
+pub struct DtvAllocator<'a>(&'a mut TlsLayoutAllocator);
 
 impl DtvAllocator<'_> {
     pub unsafe fn allocate(&mut self, new_entry_count: usize) -> bool {
@@ -116,7 +115,7 @@ impl DtvAllocator<'_> {
 
         let entry_size = size_of::<DynamicThreadVectorItem>();
         let additional = (new_entry_count - self.0.dtv_entry_count) * entry_size;
-        let dtv_top = TlsReserveAllocator::RESERVE_BASE_OFFSET
+        let dtv_top = TlsLayoutAllocator::RESERVE_BASE_OFFSET
             + (self.0.dtv_entry_count * entry_size) as isize;
 
         let Some(adjacent) = self
@@ -150,14 +149,14 @@ impl DtvAllocator<'_> {
         let entry_size = size_of::<DynamicThreadVectorItem>();
         let released_bytes = (self.0.dtv_entry_count - new_entry_count) * entry_size;
         let released_offset =
-            TlsReserveAllocator::RESERVE_BASE_OFFSET + (new_entry_count * entry_size) as isize;
+            TlsLayoutAllocator::RESERVE_BASE_OFFSET + (new_entry_count * entry_size) as isize;
 
         self.0.release(released_offset, released_bytes);
         self.0.dtv_entry_count = new_entry_count;
     }
 
     pub fn offset(&self) -> isize {
-        TlsReserveAllocator::RESERVE_BASE_OFFSET
+        TlsLayoutAllocator::RESERVE_BASE_OFFSET
     }
 
     pub fn entry_count(&self) -> usize {
@@ -167,7 +166,7 @@ impl DtvAllocator<'_> {
 
 // TLS blocks - free list from top downward
 
-pub struct BlockAllocator<'a>(&'a mut TlsReserveAllocator);
+pub struct BlockAllocator<'a>(&'a mut TlsLayoutAllocator);
 
 impl BlockAllocator<'_> {
     pub unsafe fn allocate(&mut self, block_size: usize, alignment: usize) -> Option<isize> {
