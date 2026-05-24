@@ -1,3 +1,4 @@
+#![feature(allocator_api)]
 #![feature(c_variadic)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]

@@ -42,3 +42,8 @@ pub fn get_page_offset(address: usize) -> usize {
 pub fn get_page_end(address: usize) -> usize {
     get_page_start(address + get_page_size() - 1)
 }
+
+pub fn round_up_to_page_size(size: usize) -> usize {
+    let page_size = get_page_size();
+    page_size * size.div_ceil(page_size)
+}
