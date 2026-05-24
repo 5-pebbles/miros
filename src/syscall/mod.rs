@@ -11,6 +11,7 @@ pub enum Syscall {
     MMap = 9,
     MProtect = 10,
     MunMap = 11,
+    MreMap = 25,
     GetPid = 39,
     Clone = 56,
     Exit = 60,

@@ -12,6 +12,9 @@ use crate::{
 mod mmap;
 pub use mmap::mmap;
 
+mod mremap;
+pub use mremap::{mremap, MremapFlags};
+
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]
 pub enum GrowthDirection {
