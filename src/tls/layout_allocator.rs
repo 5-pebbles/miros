@@ -1,8 +1,7 @@
 use std::{mem::size_of, ptr};
 
 use crate::{
-    elf::thread_local_storage::DynamicThreadVectorItem,
-    tls::TLS_RESERVE_SIZE,
+    tls::{thread_control_block::DynamicThreadVectorItem, TLS_RESERVE_SIZE},
     utils::{
         linked_list::{LinkedList, LinkedListNode},
         metadata_allocator::MetadataAllocator,

@@ -7,7 +7,7 @@ use crate::{
 mod layout_allocator;
 mod module_registry;
 pub mod template;
-mod thread_control_block;
+pub mod thread_control_block;
 
 pub const TLS_RESERVE_SIZE: usize = 8 * 1024 * 1024;
 

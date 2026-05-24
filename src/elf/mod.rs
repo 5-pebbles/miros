@@ -5,4 +5,3 @@ pub mod relocate;
 pub mod section;
 pub mod string_table;
 pub mod symbol;
-pub mod thread_local_storage;

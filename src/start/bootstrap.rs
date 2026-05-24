@@ -15,7 +15,6 @@ use crate::{
         header::ElfHeader,
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
         relocate::Rela,
-        thread_local_storage::ThreadControlBlock,
     },
     error::MirosError,
     io_macros::syscall_debug_assert,
@@ -23,7 +22,7 @@ use crate::{
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
-    tls::{template::TlsTemplate, TLS_RESERVE_SIZE},
+    tls::{template::TlsTemplate, thread_control_block::ThreadControlBlock, TLS_RESERVE_SIZE},
     utils::round_up_to_boundary,
 };
 
