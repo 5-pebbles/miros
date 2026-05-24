@@ -99,8 +99,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         Bootstrap::from_base(auxv_info.base).unwrap()
     };
 
+    let bootstrap = bootstrap.relocate();
+    crate::page_size::set_page_size(auxv_info.page_size);
     bootstrap
-        .relocate()
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
