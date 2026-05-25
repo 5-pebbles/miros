@@ -21,9 +21,9 @@ fn non_null_or_map_failed(pointer: *mut u8, size: usize) -> Result<NonNull<[u8]>
     }
 }
 
-pub struct MremapAllocator;
+pub struct MreMapAllocator;
 
-unsafe impl Allocator for MremapAllocator {
+unsafe impl Allocator for MreMapAllocator {
     fn allocate(&self, layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
         debug_assert!(layout.align() <= get_page_size());
 
@@ -61,7 +61,7 @@ unsafe impl Allocator for MremapAllocator {
     }
 }
 
-impl MremapAllocator {
+impl MreMapAllocator {
     unsafe fn remap(
         &self,
         pointer: NonNull<u8>,

@@ -1,4 +1,4 @@
-use crate::{tls::template::TlsTemplate, utils::mremap_allocator::MremapAllocator};
+use crate::{tls::template::TlsTemplate, utils::mremap_allocator::MreMapAllocator};
 
 pub struct ModuleAllocation {
     pub block_offset: isize,
@@ -7,13 +7,13 @@ pub struct ModuleAllocation {
 }
 
 pub struct ModuleRegistry {
-    modules: Vec<ModuleAllocation, MremapAllocator>,
+    modules: Vec<ModuleAllocation, MreMapAllocator>,
 }
 
 impl ModuleRegistry {
     pub fn new() -> Self {
         Self {
-            modules: Vec::new_in(MremapAllocator),
+            modules: Vec::new_in(MreMapAllocator),
         }
     }
 
