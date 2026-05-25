@@ -131,7 +131,10 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         &init_array,
     ];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
-    let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
+    if let Err(error) = executable_pipeline.run_pipeline(&mut executable_and_dependencies) {
+        eprintln!("miros: {error:?}");
+        crate::syscall::exit::exit(1);
+    }
 
     auxv_info.entry.addr()
 }
