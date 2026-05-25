@@ -1,4 +1,4 @@
-mod clone;
+pub mod clone;
 mod libc_start_main;
 
 #[cfg_attr(not(test), no_mangle)]

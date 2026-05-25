@@ -109,7 +109,7 @@ pub unsafe extern "C" fn clone(
     result as i32
 }
 
-unsafe fn clone3(
+pub unsafe fn clone3(
     args: *const Clone3Args,
     entry_function: unsafe extern "C" fn(*mut c_void) -> i32,
     entry_argument: *mut c_void,

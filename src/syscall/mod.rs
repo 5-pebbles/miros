@@ -16,6 +16,7 @@ pub enum Syscall {
     Clone = 56,
     Exit = 60,
     ArchPrctl = 158,
+    Futex = 202,
     GetTid = 186,
     TgKill = 234,
     OpenAt = 257,
@@ -62,6 +63,9 @@ macro_rules! syscall {
 }
 
 pub(crate) use syscall;
+
+pub const FUTEX_WAIT: usize = 0;
+pub const FUTEX_WAKE: usize = 1;
 
 pub mod exit;
 pub mod thread_pointer;
