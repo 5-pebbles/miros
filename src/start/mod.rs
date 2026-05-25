@@ -12,7 +12,7 @@ use crate::{
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
-            Stratagem,
+            thread_local_storage::ThreadLocalStorage, Stratagem,
         },
     },
     start::{
@@ -122,8 +122,14 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     let load_dependencies = LoadDependencies::new();
     let relocate = Relocate::new();
+    let thread_local_storage = ThreadLocalStorage::new();
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
-    let executable_stratagems: &[&dyn Stratagem] = &[&load_dependencies, &relocate, &init_array];
+    let executable_stratagems: &[&dyn Stratagem] = &[
+        &load_dependencies,
+        &relocate,
+        &thread_local_storage,
+        &init_array,
+    ];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
     let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
 

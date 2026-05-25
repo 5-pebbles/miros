@@ -8,9 +8,3 @@ pub struct ThreadControlBlock {
     pub _padding: [usize; 3],
     pub canary: usize,
 }
-
-#[repr(C)]
-pub union DynamicThreadVectorItem {
-    pub pointer: *mut c_void,
-    pub generation_counter: usize,
-}

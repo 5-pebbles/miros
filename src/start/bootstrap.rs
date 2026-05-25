@@ -2,7 +2,7 @@ use std::{
     arch::asm,
     ffi::c_void,
     marker::PhantomData,
-    mem::{size_of, MaybeUninit},
+    mem::size_of,
     ptr::{self, null, null_mut},
     slice,
 };
@@ -22,18 +22,12 @@ use crate::{
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
-    tls::{template::TlsTemplate, thread_control_block::ThreadControlBlock, TLS_RESERVE_SIZE},
+    tls::{
+        set_tls_allocator, template::TlsTemplate, thread_control_block::ThreadControlBlock,
+        TLS_RESERVE_SIZE,
+    },
     utils::round_up_to_boundary,
 };
-
-static mut BOOTSTRAP_TLS_TEMPLATE: MaybeUninit<Option<TlsTemplate>> = MaybeUninit::uninit();
-
-pub fn get_bootstrap_tls_template() -> Option<TlsTemplate> {
-    #[allow(static_mut_refs)]
-    unsafe {
-        BOOTSTRAP_TLS_TEMPLATE.assume_init_read()
-    }
-}
 
 pub struct Relocate;
 pub struct AllocateTls;
@@ -260,10 +254,9 @@ impl Bootstrap<AllocateTls> {
             )),
         };
 
-        if let Some(tls_header) = self.tls_program_header {
+        let miros_template = self.tls_program_header.map(|tls_header| {
             let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
             let template_size = tls_header.p_filesz;
-
             let block_size = tls_header.p_memsz;
             let alignment = tls_header.p_align;
 
@@ -274,19 +267,11 @@ impl Bootstrap<AllocateTls> {
             slice::from_raw_parts_mut(miros_tls_destination as *mut u8, template_size)
                 .copy_from_slice(slice::from_raw_parts(template_pointer, template_size));
 
-            #[allow(static_mut_refs)]
-            BOOTSTRAP_TLS_TEMPLATE.write(Some(TlsTemplate::new(
-                template_pointer,
-                template_size,
-                block_size,
-                alignment,
-            )));
-        } else {
-            #[allow(static_mut_refs)]
-            BOOTSTRAP_TLS_TEMPLATE.write(None);
-        }
+            TlsTemplate::new(template_pointer, template_size, block_size, alignment)
+        });
 
         set_thread_pointer(thread_pointer_register);
+        set_tls_allocator(miros_template);
 
         self.transition()
     }

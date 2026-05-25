@@ -14,7 +14,7 @@ use std::{
 };
 
 pub use dynamic_fields::DynamicFields;
-pub use thread_local::ThreadLocalData;
+pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 
 use crate::{
     elf::{

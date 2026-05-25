@@ -35,4 +35,8 @@ impl ModuleRegistry {
     pub fn count(&self) -> usize {
         self.modules.len()
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = &ModuleAllocation> {
+        self.modules.iter()
+    }
 }
