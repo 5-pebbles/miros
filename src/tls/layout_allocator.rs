@@ -10,13 +10,13 @@ use crate::{
 };
 
 struct FreeChunk {
-    offset: isize,
+    offset: usize,
     size: usize,
 }
 
 impl FreeChunk {
-    fn top(&self) -> isize {
-        self.offset + self.size as isize
+    fn top(&self) -> usize {
+        self.offset + self.size
     }
 }
 
@@ -29,8 +29,6 @@ pub struct TlsLayoutAllocator {
 }
 
 impl TlsLayoutAllocator {
-    const RESERVE_BASE_OFFSET: isize = -(TLS_RESERVE_SIZE as isize);
-
     pub fn new() -> Self {
         let mut metadata = MetadataAllocator::new();
         let mut free = LinkedList::new();
@@ -38,7 +36,7 @@ impl TlsLayoutAllocator {
         let initial_chunk = metadata.alloc();
         unsafe {
             *initial_chunk = LinkedListNode::new(FreeChunk {
-                offset: Self::RESERVE_BASE_OFFSET,
+                offset: 0,
                 size: TLS_RESERVE_SIZE,
             });
             free.push_front(initial_chunk);
@@ -57,8 +55,8 @@ impl TlsLayoutAllocator {
             .max_by_key(|&node| (*node).value.top())?;
 
         let chunk = &mut (*node).value;
-        let aligned_start = chunk.top() - aligned_size as isize;
-        let remaining = (aligned_start - chunk.offset) as usize;
+        let aligned_start = chunk.top() - aligned_size;
+        let remaining = aligned_start - chunk.offset;
 
         if remaining == 0 {
             (*node).remove();
@@ -67,17 +65,18 @@ impl TlsLayoutAllocator {
             chunk.size = remaining;
         }
 
-        Some(aligned_start)
+        Some(aligned_start as isize - TLS_RESERVE_SIZE as isize)
     }
 
     pub unsafe fn deallocate_block(&mut self, offset: isize, block_size: usize, alignment: usize) {
         let size = round_up_to_boundary(block_size, alignment);
-        self.release(offset, size);
+        let region_offset = (offset + TLS_RESERVE_SIZE as isize) as usize;
+        self.release(region_offset, size);
     }
 
     /// Returns a region to the free list, coalescing with adjacent free chunks.
-    unsafe fn release(&mut self, offset: isize, size: usize) {
-        let end = offset + size as isize;
+    unsafe fn release(&mut self, offset: usize, size: usize) {
+        let end = offset + size;
 
         let mut prev: *mut LinkedListNode<FreeChunk> = ptr::null_mut();
         let mut next: *mut LinkedListNode<FreeChunk> = ptr::null_mut();
@@ -95,7 +94,7 @@ impl TlsLayoutAllocator {
 
         match (merge_prev, merge_next) {
             (true, true) => {
-                (*prev).value.size = ((*next).value.top() - (*prev).value.offset) as usize;
+                (*prev).value.size = (*next).value.top() - (*prev).value.offset;
                 (*next).remove();
                 self.metadata.dealloc(next);
             }
