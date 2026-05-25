@@ -1,4 +1,4 @@
-use std::ptr::null_mut;
+use std::ptr::{self, null_mut};
 
 use super::{
     non_crypto_rng::Xoroshiro128PlusPlus, size_classes::SizeClass, span::Span,
@@ -101,7 +101,7 @@ impl ClassRegion {
             0,
         );
         assert!((span_index_base as isize) > 0, "span index mmap failed");
-        let span_index = core::ptr::slice_from_raw_parts_mut(
+        let span_index = ptr::slice_from_raw_parts_mut(
             span_index_base as *mut *mut LinkedListNode<Span>,
             max_spans,
         );

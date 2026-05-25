@@ -80,9 +80,13 @@ impl TlsAllocator {
     pub unsafe fn initialize_thread_tls(&self, thread_pointer: *mut c_void) {
         if let Some(template) = &self.miros_template {
             let miros_offset = size_of::<ThreadControlBlock>() as isize;
+
+            debug_assert_eq!(
+                thread_pointer.byte_offset(miros_offset) as usize % template.alignment,
+                0
+            );
             Self::initialize_block(template, miros_offset, thread_pointer);
         }
-        // TODO: Init thread control block...
 
         for allocation in self.registry.iter() {
             Self::initialize_block(

@@ -15,7 +15,7 @@ pub type ProcessID = i32;
 pub type SignalNumber = i32;
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn getpid() -> ProcessID {
+pub unsafe extern "C" fn getpid() -> ProcessID {
     signature_matches_libc!(std::mem::transmute(libc::getpid()));
 
     let result = syscall!(Syscall::GetPid);

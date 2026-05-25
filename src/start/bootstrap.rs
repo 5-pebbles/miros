@@ -4,7 +4,6 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ptr::{self, null, null_mut},
-    slice,
 };
 
 #[cfg(debug_assertions)]
@@ -18,12 +17,17 @@ use crate::{
     },
     error::MirosError,
     io_macros::syscall_debug_assert,
-    libc::mem::{mmap, MapFlags, ProtectionFlags},
+    libc::{
+        mem::{mmap, MapFlags, ProtectionFlags},
+        process::getpid,
+    },
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
     tls::{
-        set_tls_allocator, template::TlsTemplate, thread_control_block::ThreadControlBlock,
+        get_tls_allocator, set_tls_allocator,
+        template::TlsTemplate,
+        thread_control_block::{DynamicThreadVector, ThreadControlBlock},
         TLS_RESERVE_SIZE,
     },
     utils::round_up_to_boundary,
@@ -228,16 +232,33 @@ impl Bootstrap<AllocateTls> {
             .map(|h| round_up_to_boundary(h.p_memsz, h.p_align))
             .unwrap_or(0);
 
+        let miros_template = self.tls_program_header.map(|tls_header| {
+            let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
+            let template_size = tls_header.p_filesz;
+            let block_size = tls_header.p_memsz;
+            let alignment = tls_header.p_align;
+
+            TlsTemplate::new(template_pointer, template_size, block_size, alignment)
+        });
+        set_tls_allocator(miros_template);
+
         // [~8 MiB reserve (exe TLS allocated)][TCB][miros TLS]
         //                                     ^TP (fs:0)
-        let total_size = TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>() + miros_tls_size;
+        let region_total_size = TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>() + miros_tls_size;
 
         let protection_flags = ProtectionFlags::ZERO
             .with_readable(true)
             .with_writable(true);
         let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
 
-        let region_pointer = mmap(null_mut(), total_size, protection_flags, map_flags, -1, 0);
+        let region_pointer = mmap(
+            null_mut(),
+            region_total_size,
+            protection_flags,
+            map_flags,
+            -1,
+            0,
+        );
 
         let thread_control_block =
             region_pointer.byte_add(TLS_RESERVE_SIZE) as *mut ThreadControlBlock;
@@ -247,31 +268,20 @@ impl Bootstrap<AllocateTls> {
         *thread_control_block = ThreadControlBlock {
             thread_pointee: [],
             thread_pointer_register,
-            dynamic_thread_vector: null_mut(),
-            _padding: [0; 3],
+            tid: getpid(),
+            _padding: Default::default(),
+            region: ptr::slice_from_raw_parts_mut(region_pointer, region_total_size),
             canary: usize::from_ne_bytes(ptr::read(
                 pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
             )),
+            dynamic_thread_vector: DynamicThreadVector::new(),
         };
 
-        let miros_template = self.tls_program_header.map(|tls_header| {
-            let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
-            let template_size = tls_header.p_filesz;
-            let block_size = tls_header.p_memsz;
-            let alignment = tls_header.p_align;
-
-            let miros_tls_destination =
-                region_pointer.byte_add(TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>());
-            debug_assert_eq!(miros_tls_destination.addr() % alignment, 0);
-
-            slice::from_raw_parts_mut(miros_tls_destination as *mut u8, template_size)
-                .copy_from_slice(slice::from_raw_parts(template_pointer, template_size));
-
-            TlsTemplate::new(template_pointer, template_size, block_size, alignment)
-        });
-
         set_thread_pointer(thread_pointer_register);
-        set_tls_allocator(miros_template);
+        get_tls_allocator()
+            .lock()
+            .unwrap_unchecked()
+            .initialize_thread_tls(thread_pointer_register);
 
         self.transition()
     }

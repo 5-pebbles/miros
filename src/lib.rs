@@ -7,6 +7,7 @@
 #![feature(thread_local)]
 #![feature(stmt_expr_attributes)]
 #![feature(maybe_uninit_array_assume_init)]
+#![feature(ptr_metadata)]
 #![allow(dead_code)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
 // (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
