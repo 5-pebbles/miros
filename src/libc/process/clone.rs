@@ -20,6 +20,16 @@ pub struct Clone3Flags {
     share_file_descriptors: bool,
     #[bit(11, rw)]
     share_signal_handlers: bool,
+    #[bit(16, rw)]
+    thread: bool,
+    #[bit(18, rw)]
+    share_sysvsem: bool,
+    #[bit(19, rw)]
+    set_tls: bool,
+    #[bit(20, rw)]
+    parent_set_tid: bool,
+    #[bit(21, rw)]
+    child_clear_tid: bool,
 }
 
 /// Kernel's `struct clone_args` — every field is u64-sized.
