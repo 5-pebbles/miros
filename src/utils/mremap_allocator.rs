@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    libc::mem::{mmap, mremap, munmap, MapFlags, MremapFlags, ProtectionFlags},
+    libc::mem::{mmap, mremap, munmap, MapFlags, MreMapFlags, ProtectionFlags},
     page_size::{get_page_size, round_up_to_page_size},
 };
 
@@ -79,7 +79,7 @@ impl MreMapAllocator {
             )));
         }
 
-        let flags = MremapFlags::ZERO.with_may_move(true);
+        let flags = MreMapFlags::ZERO.with_may_move(true);
         let result = mremap(pointer.as_ptr(), old_size, new_size, flags);
         non_null_or_map_failed(result, new_size)
     }

@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[bitfield(u32)]
-pub struct MremapFlags {
+pub struct MreMapFlags {
     #[bit(0, rw)]
     may_move: bool,
     #[bit(1, rw)]
@@ -21,7 +21,7 @@ pub unsafe extern "C" fn mremap(
     old_address: *mut u8,
     old_size: usize,
     new_size: usize,
-    flags: MremapFlags,
+    flags: MreMapFlags,
     mut args: ...
 ) -> *mut u8 {
     signature_matches_libc!(libc::mremap(
