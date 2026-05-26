@@ -1,4 +1,8 @@
-use std::{ffi::c_void, mem::size_of, ptr};
+use std::{
+    ffi::c_void,
+    mem::size_of,
+    ptr::{self, null_mut, NonNull},
+};
 
 use crate::{
     libc::{
@@ -6,7 +10,7 @@ use crate::{
         process::clone::{clone3, Clone3Args, Clone3Flags},
     },
     page_size, signature_matches_libc,
-    syscall::{syscall, thread_pointer::get_thread_pointer, Syscall, FUTEX_WAIT},
+    syscall::{exit, syscall, thread_pointer::get_thread_pointer, Syscall, FUTEX_WAIT},
     tls::{
         get_tls_allocator,
         thread_control_block::{DynamicThreadVector, ThreadControlBlock},
@@ -19,6 +23,20 @@ const DEFAULT_STACK_SIZE: usize = 8 * 1024 * 1024;
 type PthreadT = usize;
 type PthreadAttrT = *const c_void;
 
+unsafe extern "C" fn pthread_entry(context: *mut c_void) -> ! {
+    let context = &*(context as *const PthreadContext);
+    let return_value = (context.entry_function)(context.entry_argument);
+    let thread_pointer = get_thread_pointer() as *mut ThreadControlBlock;
+    (*thread_pointer).return_value = return_value;
+    exit::exit(0);
+}
+
+#[repr(C)]
+struct PthreadContext {
+    entry_function: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+    entry_argument: *mut c_void,
+}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __stack_chk_fail() {
     // TODO: Actually implement me!!!!!!!!
@@ -26,13 +44,13 @@ unsafe extern "C" fn __stack_chk_fail() {
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_create(
-    thread_out: *mut PthreadT,
+    thread_addr_out: *mut PthreadT,
     _attr: PthreadAttrT,
     entry_function: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
     entry_argument: *mut c_void,
 ) -> i32 {
     signature_matches_libc!(libc::pthread_create(
-        thread_out as *mut _,
+        thread_addr_out as *mut _,
         _attr as *const _,
         std::mem::transmute(entry_function),
         entry_argument,
@@ -78,6 +96,7 @@ unsafe extern "C" fn pthread_create(
         thread_pointer_register: thread_pointer,
         tid: 0,
         _padding: Default::default(),
+        return_value: null_mut(),
         region: ptr::slice_from_raw_parts_mut(region, total_size),
         canary: (*current_tcb).canary,
         dynamic_thread_vector: DynamicThreadVector::new(),
@@ -90,6 +109,12 @@ unsafe extern "C" fn pthread_create(
 
     let tid_pointer = ptr::addr_of_mut!((*thread_control_block).tid);
     let child_stack = region.add(guard_size);
+
+    let context = child_stack as *mut PthreadContext;
+    *context = PthreadContext {
+        entry_function,
+        entry_argument,
+    };
 
     let clone_args = Clone3Args {
         flags: Clone3Flags::ZERO
@@ -114,28 +139,21 @@ unsafe extern "C" fn pthread_create(
         target_control_group: 0,
     };
 
-    // pthread entry returns *mut c_void; clone trampoline expects fn(*mut c_void) -> i32.
-    // Both are register-width values in RAX on x86_64. The exit code is meaningless for
-    // threads — join retrieves the return value separately (future work).
-    let trampoline: unsafe extern "C" fn(*mut c_void) -> i32 =
-        std::mem::transmute(entry_function as usize);
-
-    let result = clone3(&clone_args, trampoline, entry_argument);
+    let result = clone3(&clone_args, pthread_entry, context as *mut c_void);
     if result < 0 {
         crate::libc::mem::munmap(region, total_size);
         return libc::EAGAIN;
     }
 
-    *thread_out = thread_pointer as PthreadT;
+    *thread_addr_out = thread_pointer as PthreadT;
     0
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn pthread_join(thread: PthreadT, _retval: *mut *mut c_void) -> i32 {
-    // TODO: retrieve and store the thread's return value into _retval
-    signature_matches_libc!(libc::pthread_join(thread as _, _retval));
+unsafe extern "C" fn pthread_join(thread_addr: PthreadT, return_value: *mut *mut c_void) -> i32 {
+    signature_matches_libc!(libc::pthread_join(thread_addr as _, return_value));
 
-    let thread_control_block = thread as *const ThreadControlBlock;
+    let thread_control_block = thread_addr as *const ThreadControlBlock;
     let tid_pointer = ptr::addr_of!((*thread_control_block).tid);
 
     loop {
@@ -152,6 +170,10 @@ unsafe extern "C" fn pthread_join(thread: PthreadT, _retval: *mut *mut c_void) -
             0usize,
             0usize
         );
+    }
+
+    if let Some(return_value) = NonNull::new(return_value) {
+        *return_value.as_ptr() = (*thread_control_block).return_value;
     }
 
     let region = (*thread_control_block).region;

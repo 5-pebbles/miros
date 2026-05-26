@@ -48,6 +48,38 @@ pub struct Clone3Args {
     pub target_control_group: u64,
 }
 
+pub unsafe fn clone3(
+    args: *const Clone3Args,
+    entry_function: unsafe extern "C" fn(*mut c_void) -> !,
+    entry_argument: *mut c_void,
+) -> isize {
+    let result: isize;
+    asm!(
+        "syscall",
+        "test eax, eax",
+        "jnz 2f",
+
+        // child: call entry_function(entry_argument) directly
+        "mov rdi, {entry_argument}",
+        "xor ebp, ebp",
+        "call {entry_function}",
+        "ud2",
+
+        // parent: result already in rax
+        "2:",
+        entry_function = in(reg) entry_function,
+        entry_argument = in(reg) entry_argument,
+        inlateout("rax") Syscall::Clone3 as usize => result,
+        in("rdi") args,
+        in("rsi") size_of::<Clone3Args>(),
+        out("rcx") _,
+        out("r11") _,
+        options(nostack),
+    );
+
+    result
+}
+
 #[cfg_attr(not(test), no_mangle)]
 pub unsafe extern "C" fn clone(
     entry_function: extern "C" fn(*mut c_void) -> i32,
@@ -82,22 +114,22 @@ pub unsafe extern "C" fn clone(
         "mov rdi, {entry_function}",
         "mov rsi, {entry_argument}",
         "xor ebp, ebp",
-        "call {clone_entry_point}",
+        "call {clone_entry_trampoline}",
         "ud2",
 
         // parent
         "2:",
         entry_function = in(reg) entry_function,
         entry_argument = in(reg) entry_argument,
-        clone_entry_point = sym clone_entry_point_trampoline,
+        clone_entry_trampoline = sym clone_entry_trampoline,
         inlateout("rax") Syscall::Clone as usize => result,
         in("rdi") flags as u32 as usize,
         in("rsi") ((child_stack as usize) & !0xF),
         in("rdx") parent_tid_pointer,
         in("r10") child_tid_pointer,
         in("r8") thread_local_storage,
-        lateout("rcx") _,
-        lateout("r11") _,
+        out("rcx") _,
+        out("r11") _,
         options(nostack),
     );
 
@@ -109,42 +141,8 @@ pub unsafe extern "C" fn clone(
     result as i32
 }
 
-pub unsafe fn clone3(
-    args: *const Clone3Args,
-    entry_function: unsafe extern "C" fn(*mut c_void) -> i32,
-    entry_argument: *mut c_void,
-) -> isize {
-    let result: isize;
-    asm!(
-        "syscall",
-        "test eax, eax",
-        "jnz 2f",
-
-        // child: pass the entry function and argument, then jump to the trampoline
-        "mov rdi, {entry_function}",
-        "mov rsi, {entry_argument}",
-        "xor ebp, ebp",
-        "call {clone_entry_point}",
-        "ud2",
-
-        // parent: result already in rax
-        "2:",
-        entry_function = in(reg) entry_function,
-        entry_argument = in(reg) entry_argument,
-        clone_entry_point = sym clone_entry_point_trampoline,
-        inlateout("rax") Syscall::Clone3 as usize => result,
-        in("rdi") args,
-        in("rsi") size_of::<Clone3Args>(),
-        lateout("rcx") _,
-        lateout("r11") _,
-        options(nostack),
-    );
-
-    result
-}
-
-unsafe extern "C" fn clone_entry_point_trampoline(
-    entry_function: unsafe extern "C" fn(*mut c_void) -> i32,
+unsafe extern "C" fn clone_entry_trampoline(
+    entry_function: extern "C" fn(*mut c_void) -> i32,
     entry_argument: *mut c_void,
 ) -> ! {
     let exit_code = entry_function(entry_argument);
