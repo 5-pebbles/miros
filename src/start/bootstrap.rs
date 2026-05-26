@@ -270,6 +270,7 @@ impl Bootstrap<AllocateTls> {
             thread_pointer_register,
             tid: getpid(),
             _padding: Default::default(),
+            return_value: null_mut(),
             region: ptr::slice_from_raw_parts_mut(region_pointer, region_total_size),
             canary: usize::from_ne_bytes(ptr::read(
                 pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
