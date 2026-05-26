@@ -38,11 +38,6 @@ struct PthreadContext {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn __stack_chk_fail() {
-    // TODO: Actually implement me!!!!!!!!
-}
-
-#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_create(
     thread_addr_out: *mut PthreadT,
     _attr: PthreadAttrT,

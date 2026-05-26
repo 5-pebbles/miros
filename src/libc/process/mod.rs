@@ -39,6 +39,18 @@ unsafe extern "C" fn raise(signal_number: SignalNumber) -> i32 {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __stack_chk_fail() -> ! {
+    const STACK_SMASH_MESSAGE: &[u8] = b"Stack Smashing Detected... Terminating!\n";
+    syscall!(
+        Syscall::Write,
+        2usize, // stderr
+        STACK_SMASH_MESSAGE.as_ptr(),
+        STACK_SMASH_MESSAGE.len()
+    );
+    abort();
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn abort() -> ! {
     #[thread_local]
     static ABORT_IN_PROGRESS: Cell<bool> = const { Cell::new(false) };
