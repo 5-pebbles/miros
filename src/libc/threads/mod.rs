@@ -6,6 +6,7 @@ use crate::{
 };
 
 mod create;
+mod join;
 mod key;
 
 // TODO: Store and invoke destructors when thread support is implemented.

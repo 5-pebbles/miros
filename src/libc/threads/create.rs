@@ -1,16 +1,16 @@
 use std::{
     ffi::c_void,
     mem::size_of,
-    ptr::{self, null_mut, NonNull},
+    ptr::{self, null_mut},
 };
 
 use crate::{
     libc::{
-        mem::{mmap, mprotect, munmap, MapFlags, ProtectionFlags},
+        mem::{mmap, mprotect, MapFlags, ProtectionFlags},
         process::clone::{clone3, Clone3Args, Clone3Flags},
     },
     page_size, signature_matches_libc,
-    syscall::{exit, syscall, thread_pointer::get_thread_pointer, Syscall, FUTEX_WAIT},
+    syscall::{exit, thread_pointer::get_thread_pointer},
     tls::{
         get_tls_allocator,
         thread_control_block::{DynamicThreadVector, ThreadControlBlock},
@@ -141,39 +141,5 @@ unsafe extern "C" fn pthread_create(
     }
 
     *thread_addr_out = thread_pointer as PthreadT;
-    0
-}
-
-#[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn pthread_join(thread_addr: PthreadT, return_value: *mut *mut c_void) -> i32 {
-    signature_matches_libc!(libc::pthread_join(thread_addr as _, return_value));
-
-    let thread_control_block = thread_addr as *const ThreadControlBlock;
-    let tid_pointer = ptr::addr_of!((*thread_control_block).tid);
-
-    loop {
-        let current_tid = ptr::read_volatile(tid_pointer);
-        if current_tid == 0 {
-            break;
-        }
-        syscall!(
-            Syscall::Futex,
-            tid_pointer,
-            FUTEX_WAIT,
-            current_tid as usize,
-            0usize,
-            0usize,
-            0usize
-        );
-    }
-
-    if let Some(return_value) = NonNull::new(return_value) {
-        *return_value.as_ptr() = (*thread_control_block).return_value;
-    }
-
-    let region = (*thread_control_block).region;
-    let (region_base, region_size) = region.to_raw_parts();
-    munmap(region_base as *mut u8, region_size);
-
     0
 }
