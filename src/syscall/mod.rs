@@ -64,8 +64,6 @@ macro_rules! syscall {
 
 pub(crate) use syscall;
 
-pub const FUTEX_WAIT: usize = 0;
-pub const FUTEX_WAKE: usize = 1;
-
 pub mod exit;
+pub mod futex;
 pub mod thread_pointer;

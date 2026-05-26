@@ -6,7 +6,7 @@ use std::{
 use crate::{
     libc::mem::munmap,
     signature_matches_libc,
-    syscall::{syscall, Syscall, FUTEX_WAIT},
+    syscall::{futex::FutexOperation, syscall, Syscall},
     tls::thread_control_block::ThreadControlBlock,
 };
 
@@ -27,7 +27,7 @@ unsafe extern "C" fn pthread_join(thread_addr: PthreadT, return_value: *mut *mut
         syscall!(
             Syscall::Futex,
             tid_pointer,
-            FUTEX_WAIT,
+            FutexOperation::Wait,
             current_tid as usize,
             0usize,
             0usize,
