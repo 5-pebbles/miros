@@ -1,4 +1,3 @@
-// gcc -o ./examples/thread_local ./examples/thread_local.c -Wl,--dynamic-linker=./target/x86_64-unknown-linux-gnu/release/libmiros.so
 #include <stdio.h>
 
 __thread int counter = 42;

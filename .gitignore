@@ -2,3 +2,5 @@
 /.claude/
 CLAUDE.md
 /benchmarks/bin/
+/examples/bin/
+/examples/*/target

@@ -14,3 +14,14 @@ test *args:
 
 bench *args:
     cargo xtask bench {{args}}
+
+miros := "./target/x86_64-unknown-linux-gnu/release/libmiros.so"
+linker_flag := "--dynamic-linker=" + miros
+
+examples: build_release
+    mkdir -p examples/bin
+    gcc -o examples/bin/print_deadbeef examples/print_deadbeef.c -lm -Wl,{{linker_flag}}
+    gcc -o examples/bin/sqrt_with_libm examples/sqrt_with_libm.c -lm -Wl,{{linker_flag}}
+    gcc -o examples/bin/thread_local examples/thread_local.c -Wl,{{linker_flag}}
+    gcc -o examples/bin/pthread_basic examples/pthread_basic.c -lpthread -Wl,{{linker_flag}}
+    cargo build --release --manifest-path examples/hello_world/Cargo.toml
