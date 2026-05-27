@@ -365,7 +365,7 @@ pub fn run(args: BenchArgs) {
     let root = project_root();
     let bench_dir = root.join("benchmarks");
     let bin_dir = bench_dir.join("bin");
-    let miros = root.join("target/x86_64-unknown-linux-gnu/release/miros");
+    let miros = root.join("target/x86_64-unknown-linux-gnu/release/libmiros.so");
 
     let log_color = std::io::stderr().is_terminal();
     let table_color = std::io::stdout().is_terminal();
