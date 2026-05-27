@@ -14,6 +14,8 @@ use format::Formatter;
 use parse::PrintfItem;
 use specifier::ResolvedSpecifier;
 
+use crate::signature_matches_libc;
+
 /// Writes bytes sequentially to a raw pointer with no bounds checking.
 /// Used by `sprintf` / `vsprintf` to write into caller-provided buffers.
 struct UncheckedBufWriter {
@@ -44,6 +46,7 @@ impl Write for UncheckedBufWriter {
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn printf(format: *const i8, args: ...) -> i32 {
+    signature_matches_libc!(libc::printf(format, args));
     vdprintf(stdout().as_raw_fd(), format, args)
 }
 

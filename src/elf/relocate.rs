@@ -92,8 +92,17 @@ pub mod relocations {
     /// The returned value from the function located at (B + A) | u64
     pub const R_X86_64_IRELATIVE: u32 = 37; // This one is fucking awesome... I mean, it's a little annoying but really cool.
 
-    // You may notice some are missing values; those are part of the Thread-Local Storage ABI see "ELF Handling for Thread-Local Storage":
+    // Thread-Local Storage ABI — see "ELF Handling for Thread-Local Storage":
+    /// Module index for TLS | u64
     pub const R_X86_64_DTPMOD64: u32 = 16;
+    /// Offset within TLS module | u64
+    pub const R_X86_64_DTPOFF64: u32 = 17;
+    /// TP-relative offset (variant II: negative from TP) | u64
+    pub const R_X86_64_TPOFF64: u32 = 18;
+    /// TP-relative offset (32-bit, local-exec only) | u32
+    pub const R_X86_64_TPOFF32: u32 = 23;
+    /// GOT entry for GOTTPOFF (initial-exec TP offset via GOT) | u32
+    pub const R_X86_64_GOTTPOFF: u32 = 22;
 }
 
 pub use relocations::*;

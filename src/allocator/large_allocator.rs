@@ -1,11 +1,14 @@
 use core::ptr;
 use std::{alloc::Layout, ptr::null_mut};
 
-use super::{metadata_allocator::MetadataAllocator, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
+use super::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{
     libc::mem::{mmap, munmap},
-    linked_list::{LinkedList, LinkedListNode},
     page_size,
+    utils::{
+        linked_list::{LinkedList, LinkedListNode},
+        metadata_allocator::MetadataAllocator,
+    },
 };
 
 const CAPACITY: usize = 8;
@@ -78,7 +81,7 @@ impl LargeAllocator {
         let record = self.metadata.alloc();
         unsafe {
             ptr::write(record, LinkedListNode::new(region));
-            self.allocations.list_push_front(record);
+            self.allocations.push_front(record);
         }
         region.pointer
     }
@@ -88,7 +91,7 @@ impl LargeAllocator {
             let node = self.region_from_ptr(pointer);
 
             let region = (*node).value;
-            (*node).list_remove();
+            (*node).remove();
             self.metadata.dealloc(node);
 
             if !self.cache.park(region) {

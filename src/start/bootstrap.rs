@@ -1,10 +1,9 @@
 use std::{
     arch::asm,
-    cmp::max,
     ffi::c_void,
     marker::PhantomData,
+    mem::size_of,
     ptr::{self, null, null_mut},
-    slice,
 };
 
 #[cfg(debug_assertions)]
@@ -15,14 +14,22 @@ use crate::{
         header::ElfHeader,
         program_header::{ProgramHeader, PT_DYNAMIC, PT_PHDR, PT_TLS},
         relocate::Rela,
-        thread_local_storage::ThreadControlBlock,
     },
     error::MirosError,
     io_macros::syscall_debug_assert,
-    libc::mem::{mmap, MapFlags, ProtectionFlags},
+    libc::{
+        mem::{mmap, MapFlags, ProtectionFlags},
+        process::getpid,
+    },
     objects::strategies::init_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
+    tls::{
+        get_tls_allocator, set_tls_allocator,
+        template::TlsTemplate,
+        thread_control_block::{DynamicThreadVector, ThreadControlBlock},
+        TLS_RESERVE_SIZE,
+    },
     utils::round_up_to_boundary,
 };
 
@@ -30,7 +37,7 @@ pub struct Relocate;
 pub struct AllocateTls;
 pub struct InitArray;
 
-pub struct Miros<Stage> {
+pub struct Bootstrap<Stage> {
     base: *const c_void,
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
@@ -39,9 +46,9 @@ pub struct Miros<Stage> {
     _marker: PhantomData<Stage>,
 }
 
-impl<Stage> Miros<Stage> {
-    fn transition<NextStage>(self) -> Miros<NextStage> {
-        Miros {
+impl<Stage> Bootstrap<Stage> {
+    fn transition<NextStage>(self) -> Bootstrap<NextStage> {
+        Bootstrap {
             base: self.base,
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
@@ -52,7 +59,7 @@ impl<Stage> Miros<Stage> {
     }
 }
 
-impl Miros<Relocate> {
+impl Bootstrap<Relocate> {
     pub unsafe fn from_base(base: *const c_void) -> Result<Self, MirosError> {
         let header = &*(base as *const ElfHeader);
         syscall_debug_assert!(header.e_phentsize == size_of::<ProgramHeader>() as u16);
@@ -172,8 +179,8 @@ impl Miros<Relocate> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub unsafe fn relocate(self) -> Miros<AllocateTls> {
-        use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE};
+    pub unsafe fn relocate(self) -> Bootstrap<AllocateTls> {
+        use crate::elf::relocate::{R_X86_64_IRELATIVE, R_X86_64_RELATIVE, R_X86_64_TPOFF64};
 
         let base_address = self.base.addr();
         for rela in &*self.rela_slice {
@@ -200,6 +207,16 @@ impl Miros<Relocate> {
                         options(nostack, preserves_flags),
                     );
                 }
+                R_X86_64_TPOFF64 => {
+                    let tpoff_value =
+                        (size_of::<ThreadControlBlock>() as isize).wrapping_add(rela.r_addend);
+                    asm!(
+                        "mov qword ptr [{}], {}",
+                        in(reg) relocate_address,
+                        in(reg) tpoff_value,
+                        options(nostack, preserves_flags),
+                    );
+                }
                 _ => (),
             }
         }
@@ -208,66 +225,70 @@ impl Miros<Relocate> {
     }
 }
 
-impl Miros<AllocateTls> {
-    pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Miros<InitArray> {
-        if let Some(tls_header) = self.tls_program_header {
-            let max_required_align = max(align_of::<ThreadControlBlock>(), tls_header.p_align);
-            let tls_block_size = round_up_to_boundary(tls_header.p_memsz, tls_header.p_align);
-            let tcb_size = size_of::<ThreadControlBlock>() + max_required_align;
+impl Bootstrap<AllocateTls> {
+    pub unsafe fn allocate_tls(self, pseudorandom_bytes: *const [u8; 16]) -> Bootstrap<InitArray> {
+        let miros_tls_size = self
+            .tls_program_header
+            .map(|h| round_up_to_boundary(h.p_memsz, h.p_align))
+            .unwrap_or(0);
 
-            let protection_flags = ProtectionFlags::ZERO
-                .with_readable(true)
-                .with_writable(true);
-            let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
+        let miros_template = self.tls_program_header.map(|tls_header| {
+            let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
+            let template_size = tls_header.p_filesz;
+            let block_size = tls_header.p_memsz;
+            let alignment = tls_header.p_align;
 
-            let tls_block_pointer = mmap(
-                null_mut(),
-                tls_block_size + tcb_size,
-                protection_flags,
-                map_flags,
-                -1,
-                0,
-            );
-            assert_eq!(tls_block_pointer.addr() % max_required_align, 0);
+            TlsTemplate::new(template_pointer, template_size, block_size, alignment)
+        });
+        set_tls_allocator(miros_template);
 
-            // Copy TLS template image
-            slice::from_raw_parts_mut(tls_block_pointer as *mut u8, tls_header.p_filesz)
-                .copy_from_slice(slice::from_raw_parts(
-                    self.base.byte_add(tls_header.p_offset) as *const u8,
-                    tls_header.p_filesz,
-                ));
+        // [~8 MiB reserve (exe TLS allocated)][TCB][miros TLS]
+        //                                     ^TP (fs:0)
+        let region_total_size = TLS_RESERVE_SIZE + size_of::<ThreadControlBlock>() + miros_tls_size;
 
-            // Zero TLS BSS
-            slice::from_raw_parts_mut(
-                tls_block_pointer.byte_add(tls_header.p_filesz) as *mut u8,
-                tls_header.p_memsz - tls_header.p_filesz,
-            )
-            .fill(0);
+        let protection_flags = ProtectionFlags::ZERO
+            .with_readable(true)
+            .with_writable(true);
+        let map_flags = MapFlags::ZERO.with_private(true).with_anonymous(true);
 
-            // Thread Control Block
-            let thread_control_block =
-                tls_block_pointer.byte_add(tls_block_size) as *mut ThreadControlBlock;
-            let thread_pointer_register: *mut c_void =
-                (*thread_control_block).thread_pointee.as_mut_ptr().cast();
+        let region_pointer = mmap(
+            null_mut(),
+            region_total_size,
+            protection_flags,
+            map_flags,
+            -1,
+            0,
+        );
 
-            *thread_control_block = ThreadControlBlock {
-                thread_pointee: [],
-                thread_pointer_register,
-                dynamic_thread_vector: null_mut(),
-                _padding: [0; 3],
-                canary: usize::from_ne_bytes(ptr::read(
-                    pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
-                )),
-            };
+        let thread_control_block =
+            region_pointer.byte_add(TLS_RESERVE_SIZE) as *mut ThreadControlBlock;
+        let thread_pointer_register: *mut c_void =
+            (*thread_control_block).thread_pointee.as_mut_ptr().cast();
 
-            set_thread_pointer(thread_pointer_register);
-        }
+        *thread_control_block = ThreadControlBlock {
+            thread_pointee: [],
+            thread_pointer_register,
+            tid: getpid(),
+            _padding: Default::default(),
+            return_value: null_mut(),
+            region: ptr::slice_from_raw_parts_mut(region_pointer, region_total_size),
+            canary: usize::from_ne_bytes(ptr::read(
+                pseudorandom_bytes.cast::<[u8; size_of::<usize>()]>(),
+            )),
+            dynamic_thread_vector: DynamicThreadVector::new(),
+        };
+
+        set_thread_pointer(thread_pointer_register);
+        get_tls_allocator()
+            .lock()
+            .unwrap_unchecked()
+            .initialize_thread_tls(thread_pointer_register);
 
         self.transition()
     }
 }
 
-impl Miros<InitArray> {
+impl Bootstrap<InitArray> {
     pub unsafe fn init_array(
         self,
         arg_count: usize,

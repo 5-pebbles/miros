@@ -12,18 +12,18 @@ use crate::{
         object_pipeline::ObjectPipeline,
         strategies::{
             init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
-            Stratagem,
+            thread_local_storage::ThreadLocalStorage, Stratagem,
         },
     },
     start::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
-        miros::Miros,
+        bootstrap::Bootstrap,
     },
 };
 
 pub mod auxiliary_vector;
+pub mod bootstrap;
 pub mod environment_variables;
-pub mod miros;
 
 #[unsafe(naked)]
 #[cfg_attr(not(test), no_mangle)]
@@ -93,14 +93,15 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     );
 
     // Relocate ourselves, initialize TLS, and call init functions:
-    let miros = if auxv_info.base.is_null() {
-        Miros::from_program_headers(program_header_table).unwrap()
+    let bootstrap = if auxv_info.base.is_null() {
+        Bootstrap::from_program_headers(program_header_table).unwrap()
     } else {
-        Miros::from_base(auxv_info.base).unwrap()
+        Bootstrap::from_base(auxv_info.base).unwrap()
     };
 
-    miros
-        .relocate()
+    let bootstrap = bootstrap.relocate();
+    crate::page_size::set_page_size(auxv_info.page_size);
+    bootstrap
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
@@ -121,10 +122,19 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     let load_dependencies = LoadDependencies::new();
     let relocate = Relocate::new();
+    let thread_local_storage = ThreadLocalStorage::new();
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
-    let executable_stratagems: &[&dyn Stratagem] = &[&load_dependencies, &relocate, &init_array];
+    let executable_stratagems: &[&dyn Stratagem] = &[
+        &load_dependencies,
+        &relocate,
+        &thread_local_storage,
+        &init_array,
+    ];
     let executable_pipeline = ObjectPipeline::new(executable_stratagems);
-    let _ = executable_pipeline.run_pipeline(&mut executable_and_dependencies);
+    if let Err(error) = executable_pipeline.run_pipeline(&mut executable_and_dependencies) {
+        eprintln!("miros: {error:?}");
+        crate::syscall::exit::exit(1);
+    }
 
     auxv_info.entry.addr()
 }

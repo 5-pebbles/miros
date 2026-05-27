@@ -1,3 +1,4 @@
+#![feature(allocator_api)]
 #![feature(c_variadic)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
@@ -6,6 +7,7 @@
 #![feature(thread_local)]
 #![feature(stmt_expr_attributes)]
 #![feature(maybe_uninit_array_assume_init)]
+#![feature(ptr_metadata)]
 #![allow(dead_code)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
 // (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
@@ -19,11 +21,11 @@ mod elf;
 mod error;
 mod io_macros;
 mod libc;
-mod linked_list;
 mod objects;
 mod page_size;
 mod start;
 mod syscall;
 #[cfg(test)]
 mod test_macros;
+mod tls;
 mod utils;

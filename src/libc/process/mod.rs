@@ -1,3 +1,4 @@
+pub mod clone;
 mod libc_start_main;
 
 #[cfg_attr(not(test), no_mangle)]
@@ -10,16 +11,19 @@ use crate::{
     syscall::{syscall, Syscall},
 };
 
+pub type ProcessID = i32;
+pub type SignalNumber = i32;
+
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn getpid() -> i32 {
+pub unsafe extern "C" fn getpid() -> ProcessID {
     signature_matches_libc!(std::mem::transmute(libc::getpid()));
 
     let result = syscall!(Syscall::GetPid);
-    result as i32
+    result as ProcessID
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn raise(signal_number: i32) -> i32 {
+unsafe extern "C" fn raise(signal_number: SignalNumber) -> i32 {
     signature_matches_libc!(libc::raise(signal_number));
 
     let process_id = process::id();
@@ -32,6 +36,18 @@ unsafe extern "C" fn raise(signal_number: i32) -> i32 {
         signal_number
     );
     result as i32
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __stack_chk_fail() -> ! {
+    const STACK_SMASH_MESSAGE: &[u8] = b"Stack Smashing Detected... Terminating!\n";
+    syscall!(
+        Syscall::Write,
+        2usize, // stderr
+        STACK_SMASH_MESSAGE.as_ptr(),
+        STACK_SMASH_MESSAGE.len()
+    );
+    abort();
 }
 
 #[cfg_attr(not(test), no_mangle)]

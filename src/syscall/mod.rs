@@ -11,13 +11,17 @@ pub enum Syscall {
     MMap = 9,
     MProtect = 10,
     MunMap = 11,
+    MreMap = 25,
     GetPid = 39,
+    Clone = 56,
     Exit = 60,
     ArchPrctl = 158,
+    Futex = 202,
     GetTid = 186,
     TgKill = 234,
     OpenAt = 257,
     GetRandom = 318,
+    Clone3 = 435,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
@@ -61,4 +65,5 @@ macro_rules! syscall {
 pub(crate) use syscall;
 
 pub mod exit;
+pub mod futex;
 pub mod thread_pointer;

@@ -1,2 +1,5 @@
 imports_granularity = "Crate"
 group_imports = "StdExternalCrate"
+format_macro_matchers = true
+format_macro_bodies = true
+overflow_delimited_expr = true

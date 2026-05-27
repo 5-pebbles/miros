@@ -12,6 +12,9 @@ use crate::{
 mod mmap;
 pub use mmap::mmap;
 
+mod mremap;
+pub use mremap::{mremap, MreMapFlags};
+
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]
 pub enum GrowthDirection {
@@ -123,6 +126,62 @@ unsafe extern "C" fn memset(
 
     );
     destination
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn memmove(
+    destination: *mut u8,
+    source: *const u8,
+    number_of_bytes_to_copy: usize,
+) -> *mut u8 {
+    signature_matches_libc!(std::mem::transmute(libc::memmove(
+        std::mem::transmute(destination),
+        std::mem::transmute(source),
+        std::mem::transmute(number_of_bytes_to_copy)
+    )));
+
+    let overlapping = (destination > source as *mut u8)
+        && (destination < source.byte_add(number_of_bytes_to_copy) as *mut u8);
+    if overlapping {
+        asm!(
+            "std",
+            "rep movsb",
+            "cld",
+            inout("rdi") destination.add(number_of_bytes_to_copy - 1) => _,
+            inout("rsi") source.add(number_of_bytes_to_copy - 1) => _,
+            inout("rcx") number_of_bytes_to_copy => _,
+            options(nostack)
+        );
+    } else {
+        asm!(
+            "rep movsb",
+            inout("rdi") destination => _,
+            inout("rsi") source => _,
+            inout("rcx") number_of_bytes_to_copy => _,
+            options(nostack, preserves_flags)
+        );
+    }
+    destination
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn bcmp(
+    left_pointer: *const u8,
+    right_pointer: *const u8,
+    length_of_comparison: usize,
+) -> i32 {
+    let ordering: i32;
+    asm!(
+        "repe cmpsb",
+        "seta {ordering:l}",
+        "sbb {ordering:e}, 0",
+        inout("rdi") left_pointer => _,
+        inout("rsi") right_pointer => _,
+        inout("rcx") length_of_comparison => _,
+        ordering = out(reg) ordering,
+        options(nostack)
+    );
+    ordering
 }
 
 #[cfg_attr(not(test), no_mangle)]
