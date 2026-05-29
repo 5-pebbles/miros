@@ -151,7 +151,7 @@ impl ClassRegion {
         let slot_pointer = span.allocate_slot(random).unwrap_unchecked();
 
         if span.is_full() {
-            (*span_node).remove();
+            self.partial_spans.remove(span_node);
             self.full_spans.push_front(span_node);
         }
 
@@ -213,14 +213,14 @@ impl ClassRegion {
         span.dealloc_slot(pointer);
 
         if was_full {
-            (*span_node).remove();
+            self.full_spans.remove(span_node);
             if span.is_empty() {
                 self.release_empty_span(span_node);
             } else {
                 self.partial_spans.push_front(span_node);
             }
         } else if span.is_empty() {
-            (*span_node).remove();
+            self.partial_spans.remove(span_node);
             self.release_empty_span(span_node);
         }
     }
@@ -228,8 +228,7 @@ impl ClassRegion {
     // TODO: when release_empty_span gains madvise(MADV_DONTNEED), this must
     // re-mprotect the data pages RW before reuse — keep these two in sync.
     unsafe fn reactivate_span(&mut self) {
-        let span_node = self.empty_spans.front();
-        (*span_node).remove();
+        let span_node = self.empty_spans.pop_front();
         (*span_node).value.reinitialize();
         self.partial_spans.push_front(span_node);
     }

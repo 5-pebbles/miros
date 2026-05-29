@@ -91,7 +91,7 @@ impl LargeAllocator {
             let node = self.region_from_ptr(pointer);
 
             let region = (*node).value;
-            (*node).remove();
+            self.allocations.remove(node);
             self.metadata.dealloc(node);
 
             if !self.cache.park(region) {

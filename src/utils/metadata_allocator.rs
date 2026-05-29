@@ -72,7 +72,7 @@ impl<T> MetadataAllocator<T> {
             (*region).value.slots_occupied += 1;
 
             if (*region).value.slots_occupied == self.slots_per_region {
-                (*region).remove();
+                self.partial_regions.remove(region);
                 self.full_regions.push_front(region);
             }
 
@@ -110,14 +110,14 @@ impl<T> MetadataAllocator<T> {
             (*region).value.slots_occupied -= 1;
 
             if was_full {
-                (*region).remove();
+                self.full_regions.remove(region);
                 if (*region).value.slots_occupied == 0 {
                     self.cache_or_destroy_region(region);
                 } else {
                     self.partial_regions.push_front(region);
                 }
             } else if (*region).value.slots_occupied == 0 {
-                (*region).remove();
+                self.partial_regions.remove(region);
                 self.cache_or_destroy_region(region);
             }
         }

@@ -59,7 +59,7 @@ impl TlsLayoutAllocator {
         let remaining = aligned_start - chunk.offset;
 
         if remaining == 0 {
-            (*node).remove();
+            self.free.remove(node);
             self.metadata.dealloc(node);
         } else {
             chunk.size = remaining;
@@ -95,7 +95,7 @@ impl TlsLayoutAllocator {
         match (merge_prev, merge_next) {
             (true, true) => {
                 (*prev).value.size = (*next).value.top() - (*prev).value.offset;
-                (*next).remove();
+                self.free.remove(next);
                 self.metadata.dealloc(next);
             }
             (true, false) => {
@@ -111,7 +111,7 @@ impl TlsLayoutAllocator {
                 if prev.is_null() {
                     self.free.push_front(new_node);
                 } else {
-                    (*prev).insert_after(new_node);
+                    self.free.insert_after(prev, new_node);
                 }
             }
         }
