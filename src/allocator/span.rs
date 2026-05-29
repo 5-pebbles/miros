@@ -47,9 +47,15 @@ impl Span {
                 .wrapping_shl(full_words as u32)
                 .wrapping_sub(1)
         };
-        let partial_bit = (trailing_bits > 0)
-            .then_some((1 as BitmapWord) << full_words)
-            .unwrap_or(0);
+
+        // Mark the partially-filled final word as having free slots.
+        // Only set when the slot count doesn't fill the last word exactly.
+        // An exact multiple has no partial word, and skipping the branch keeps the shift below the word width.
+        let partial_bit = if trailing_bits > 0 {
+            (1 as BitmapWord) << full_words
+        } else {
+            0
+        };
 
         Self {
             data_pointer,
