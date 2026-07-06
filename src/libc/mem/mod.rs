@@ -47,6 +47,8 @@ pub struct MapFlags {
     fixed: bool,
     #[bit(5, rw)]
     anonymous: bool,
+    #[bit(14, rw)]
+    noreserve: bool,
 }
 
 // TODO: add error handling

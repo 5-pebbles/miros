@@ -2,9 +2,11 @@ mod occupancy;
 
 use std::{cell::UnsafeCell, sync::atomic::Ordering};
 
+pub use occupancy::{BitmapWord, MAX_SLOTS_PER_SPAN};
+
 use super::size_classes::SizeClass;
 use crate::allocator::{
-    heap::heap::HeapId,
+    heap::heap::{AtomicHeapId, HeapId},
     span::occupancy::{LocalOccupancy, RemoteOccupancy, SlotIndex},
 };
 
@@ -12,7 +14,7 @@ use crate::allocator::{
 pub struct Span {
     data_pointer: *mut u8,
     size_class: SizeClass,
-    owner: HeapId,
+    owner: AtomicHeapId,
     /// Bit N = 0 iff `bitmap[N]` has a free slot.
     /// Bits beyond `slots_per_span` are pre-set to 1 so scans don't need range checks.
     local: UnsafeCell<LocalOccupancy>,
@@ -26,43 +28,66 @@ impl Span {
         Self {
             data_pointer,
             size_class,
-            owner,
+            owner: AtomicHeapId::new(owner),
             local: UnsafeCell::new(LocalOccupancy::new(size_class)),
             remote: RemoteOccupancy::new(),
         }
     }
 
-    pub unsafe fn adopt(&self, owner: u64) {
+    pub unsafe fn set_owner(&self, owner: HeapId) {
         self.owner.store(owner, Ordering::Relaxed);
     }
 
-    pub unsafe fn allocate_slot(&self, random: u64) -> Option<*mut u8> {
-        unsafe {
-            let slot_index = (*self.local.get()).claim_random_slot(random)?;
+    /// A routing hint only — the remote bitmap's `Release`/`Acquire` carries the cross-thread ordering, not this.
+    pub fn owner(&self) -> HeapId {
+        self.owner.load(Ordering::Relaxed)
+    }
 
-            // SAFETY: slot_index < slots_per_span, so the offset is within the span's backing allocation.
-            Some(
-                self.data_pointer
-                    .byte_add((slot_index as usize) << self.size_class.slot_shift()),
-            )
-        }
+    pub fn is_full(&self) -> bool {
+        unsafe { (*self.local.get()).slots_occupied == self.slots_per_span() }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        unsafe { (*self.local.get()).slots_occupied == 0 }
+    }
+
+    pub fn has_remote_frees(&self) -> bool {
+        self.remote.has_remote_frees()
+    }
+
+    /// Reset owner-side occupancy only —
+    /// overwriting `remote` would clobber the atomics a non-owner may be writing this instant.
+    pub fn reinitialize(&self) {
+        unsafe { *self.local.get() = LocalOccupancy::new(self.size_class) }
+    }
+
+    /// Claim up to `max` free slots from a random word for a magazine refill; `random` scatters them across the span.
+    #[inline(always)]
+    pub unsafe fn claim_up_to(&self, max: u32, random: u64) -> Option<ClaimedSlots> {
+        let (word_index, mask) = (*self.local.get()).claim_up_to(max, random)?;
+
+        // SAFETY: word_index < BITMAP_WORD_COUNT, so the word's first slot is within the span.
+        let base = self
+            .data_pointer
+            .byte_add((word_index * BitmapWord::BITS as usize) << self.size_class.slot_shift());
+        Some(ClaimedSlots {
+            base,
+            slot_shift: self.size_class.slot_shift(),
+            mask,
+        })
     }
 
     pub unsafe fn dealloc_slot(&self, pointer: *const u8) {
-        unsafe {
-            let slot_index = self.slot_index_of(pointer);
-            debug_assert!((*self.local.get()).occupancy.is_slot_occupied(slot_index));
+        let slot_index = self.slot_index_of(pointer);
+        debug_assert!((*self.local.get()).occupancy.is_slot_occupied(slot_index));
 
-            (*self.local.get()).release_slot(slot_index);
-        }
+        (*self.local.get()).release_slot(slot_index);
     }
 
     pub unsafe fn remote_dealloc_slot(&self, pointer: *const u8) {
-        unsafe {
-            let slot_index = self.slot_index_of(pointer);
+        let slot_index = self.slot_index_of(pointer);
 
-            self.remote.remote_dealloc_slot(slot_index)
-        }
+        self.remote.remote_dealloc_slot(slot_index)
     }
 
     pub fn reclaim_remote_frees(&self) {
@@ -90,5 +115,29 @@ impl Span {
 
     fn slots_per_span(&self) -> SlotIndex {
         self.size_class.slots_per_span() as SlotIndex
+    }
+}
+
+/// Expands a claimed word into pointers, keeping the bitmap's bit polarity sealed in the span.
+pub struct ClaimedSlots {
+    base: *mut u8,
+    slot_shift: u32,
+    mask: BitmapWord,
+}
+
+impl Iterator for ClaimedSlots {
+    type Item = *mut u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<*mut u8> {
+        (self.mask != 0).then(|| {
+            let offset_into_word = self.mask.trailing_zeros();
+            self.mask &= self.mask - 1;
+            // SAFETY: offset_into_word < 64 and the word lies within the span's backing allocation.
+            unsafe {
+                self.base
+                    .byte_add((offset_into_word as usize) << self.slot_shift)
+            }
+        })
     }
 }

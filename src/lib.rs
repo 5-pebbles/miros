@@ -2,7 +2,6 @@
 #![feature(c_variadic)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
-#![feature(const_option_ops)]
 #![feature(generic_atomic)]
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]

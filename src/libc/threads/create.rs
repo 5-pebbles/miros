@@ -25,7 +25,12 @@ type PthreadAttrT = *const c_void;
 
 unsafe extern "C" fn pthread_entry(context: *mut c_void) -> ! {
     let context = &*(context as *const PthreadContext);
+    crate::allocator::install_heap();
+
+    // Userland:
     let return_value = (context.entry_function)(context.entry_argument);
+
+    crate::allocator::abandon_heap();
     let thread_pointer = get_thread_pointer() as *mut ThreadControlBlock;
     (*thread_pointer).return_value = return_value;
     exit::exit(0);

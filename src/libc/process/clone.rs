@@ -146,5 +146,6 @@ unsafe extern "C" fn clone_entry_trampoline(
     entry_argument: *mut c_void,
 ) -> ! {
     let exit_code = entry_function(entry_argument);
+
     exit::exit(exit_code as usize);
 }

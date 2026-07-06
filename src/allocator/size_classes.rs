@@ -45,6 +45,14 @@ impl SizeClass {
         self.0 as usize
     }
 
+    /// Spans pack contiguously: `span_length` is a power of two,
+    /// so the stride is exactly the span length and pointer-to-span stays a single shift.
+    pub const fn span_stride_shift(&self) -> u32 {
+        self.span_length_in_bytes()
+            .next_power_of_two()
+            .trailing_zeros()
+    }
+
     #[inline(always)]
     pub const fn slot_size_in_bytes(&self) -> usize {
         SIZE_CLASSES[self.0 as usize].slot_size_in_bytes
@@ -67,12 +75,12 @@ impl SizeClass {
 }
 
 pub struct SizeClassInfo {
-    slot_size_in_bytes: usize,
+    pub(crate) slot_size_in_bytes: usize,
     /// Allows shifting offset instead of an expensive div instruction.
     // SAFETY: This only works as long as all size classes are powers of 2...
     slot_shift: u32,
     slots_per_span: u32,
-    pub span_length_in_bytes: usize,
+    span_length_in_bytes: usize,
 }
 
 impl SizeClassInfo {

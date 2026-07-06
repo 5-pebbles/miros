@@ -1,4 +1,5 @@
 use std::{
+    arch::x86_64::_pdep_u64,
     iter::from_fn,
     ops::Deref,
     sync::atomic::{Atomic, Ordering},
@@ -21,7 +22,7 @@ fn word_and_bit(slot_index: u16) -> (usize, usize) {
     )
 }
 
-struct Occupancy<T> {
+pub struct Occupancy<T> {
     summary: T,
     bitmap: [T; BITMAP_WORD_COUNT],
 }
@@ -49,30 +50,39 @@ impl Occupancy<BitmapWord> {
         Self { summary, bitmap }
     }
 
-    pub fn claim_random_slot(&mut self, random: u64) -> Option<SlotIndex> {
-        if self.summary == BitmapWord::MAX {
+    /// Claim up to `max` free slots from a *random* free word, taking a random window of its bits.
+    /// Randomizing the claim (not just the draw) keeps placement unpredictable for big classes, whose span is a single short word.
+    /// Returns the word index and a mask of claimed slots (set bit = claimed).
+    pub fn claim_up_to(&mut self, max: u32, random: u64) -> Option<(usize, BitmapWord)> {
+        if self.summary == BitmapWord::MAX || max == 0 {
             return None;
         }
 
-        let rotation = (random >> 16) as u32;
+        // Random free word: free words are the zero bits of summary; rotate the scan start.
+        let free_words = !self.summary;
+        let word_rotation = (random & 63) as u32;
+        let word_index = (word_rotation
+            .wrapping_add(free_words.rotate_right(word_rotation).trailing_zeros())
+            & 63) as usize;
 
-        // We rotate the bits a random amount then pick the first free bit (0), before deriving the original index pre rotation.
-        fn random_free_bit(word: BitmapWord, rotation: u32) -> u32 {
-            let rotated = word.rotate_right(rotation);
-            rotation.wrapping_add(rotated.trailing_ones()) % BitmapWord::BITS
-        }
-        let word_index = random_free_bit(self.summary, rotation) as usize;
+        let free = !self.bitmap[word_index];
+        debug_assert_ne!(free, 0, "summary clear but word is full");
 
-        let word_bits = self.bitmap[word_index];
-        debug_assert_ne!(word_bits, BitmapWord::MAX, "summary clear but word is full");
-        let bit_index = random_free_bit(word_bits, rotation);
+        // Whole word if it fits in `max`; else a random window: rotate, take the lowest `max` set bits (PDEP), rotate back.
+        let claimed = if max >= free.count_ones() {
+            free
+        } else {
+            let bit_rotation = ((random >> 6) & 63) as u32;
+            let rotated = free.rotate_right(bit_rotation);
+            let window = unsafe { _pdep_u64((1 << max) - 1, rotated) };
+            window.rotate_left(bit_rotation)
+        };
 
-        self.bitmap[word_index] |= (1 as BitmapWord) << bit_index;
+        self.bitmap[word_index] |= claimed;
         if self.bitmap[word_index] == BitmapWord::MAX {
             self.summary |= (1 as BitmapWord) << word_index;
         }
-
-        Some((word_index as u32 * BitmapWord::BITS + bit_index) as SlotIndex)
+        Some((word_index, claimed))
     }
 
     pub fn release_slot(&mut self, slot_index: SlotIndex) {
@@ -128,7 +138,6 @@ impl Occupancy<Atomic<BitmapWord>> {
                 return None;
             }
             let word_index = pending_words.trailing_zeros() as usize;
-            // Lazy way to drop the last set bit (1)
             pending_words &= pending_words - 1;
 
             let word = self.bitmap[word_index].swap(0, Ordering::Acquire);
@@ -151,10 +160,10 @@ impl LocalOccupancy {
         }
     }
 
-    pub fn claim_random_slot(&mut self, random: u64) -> Option<SlotIndex> {
-        let slot_index = self.occupancy.claim_random_slot(random)?;
-        self.slots_occupied += 1;
-        Some(slot_index)
+    pub fn claim_up_to(&mut self, max: u32, random: u64) -> Option<(usize, BitmapWord)> {
+        let (word_index, claimed) = self.occupancy.claim_up_to(max, random)?;
+        self.slots_occupied += claimed.count_ones() as u16;
+        Some((word_index, claimed))
     }
 
     pub fn release_slot(&mut self, slot_index: SlotIndex) {
