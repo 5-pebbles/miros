@@ -126,7 +126,6 @@ impl<T> LinkedList<T> {
     }
 
     /// Membership walk backing the debug-only safety assertions.
-    #[cfg(debug_assertions)]
     fn contains(&self, node: *mut LinkedListNode<T>) -> bool {
         // SAFETY:  Compares pointers only, never dereferences `node`, so it stays safe even when `node` is stale or from another list.
         !node.is_null() && self.iter().any(|candidate| candidate == node)
