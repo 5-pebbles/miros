@@ -103,7 +103,7 @@ impl ObjectData {
 
     pub unsafe fn from_file(mut file: File) -> Result<Self, MirosError> {
         // Read the ELF header from file:
-        let mut header_from_file: ElfHeader = unsafe { std::mem::zeroed() };
+        let mut header_from_file: ElfHeader = std::mem::zeroed();
         let as_bytes = slice::from_raw_parts_mut(
             &mut header_from_file as *mut ElfHeader as *mut u8,
             size_of::<ElfHeader>(),

@@ -65,9 +65,7 @@ unsafe extern "C" fn abort() -> ! {
     let _ = io::stdout().flush();
     let _ = io::stderr().flush();
 
-    unsafe {
-        raise(libc::SIGABRT);
-    }
+    raise(libc::SIGABRT);
 
     // SAFETY: POSIX states that we should unregister the sigabort handler and try again...
     // But why the fuck would you return normally from a sigabort?!?
