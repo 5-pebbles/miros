@@ -1,5 +1,5 @@
 use std::{
-    ptr::null_mut,
+    ptr::NonNull,
     sync::atomic::{Atomic, AtomicU64, Ordering},
 };
 
@@ -70,15 +70,12 @@ impl Heap {
         &mut self,
         global_regions: &[ClassRegion; SIZE_CLASS_COUNT],
         size_class: SizeClass,
-    ) -> *mut u8 {
+    ) -> Option<NonNull<u8>> {
         // Refill at the low-water mark so the draw always has a wide pool to randomize over.
         if self.magazines.needs_refill(size_class) {
             self.refill_class(size_class, &global_regions[size_class.index()]);
         }
-        self.magazines
-            .class(size_class)
-            .draw_random(&mut self.rng)
-            .unwrap_or(null_mut())
+        self.magazines.class(size_class).draw_random(&mut self.rng)
     }
 
     #[cold]

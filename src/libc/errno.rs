@@ -21,6 +21,7 @@ pub fn set_errno(new_errno: Errno) {
 impl Errno {
     pub const INVAL: Self = Self(linux_raw_sys::errno::EINVAL);
     pub const BADF: Self = Self(linux_raw_sys::errno::EBADF);
+    pub const NOMEM: Self = Self(linux_raw_sys::errno::ENOMEM);
 }
 
 impl Into<u32> for &Errno {
@@ -36,6 +37,7 @@ impl Display for Errno {
         let message = match *self {
             Errno::INVAL => "Invalid argument",
             Errno::BADF => "Bad file descriptor",
+            Errno::NOMEM => "Not enough space",
             ref unknown_errno => {
                 return write!(f, "Unknown error: {}", Into::<u32>::into(unknown_errno))
             }

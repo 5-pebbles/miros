@@ -1,7 +1,7 @@
 use std::{
     alloc::Layout,
     mem::MaybeUninit,
-    ptr::{self, null_mut},
+    ptr::{self, null_mut, NonNull},
     sync::Mutex,
 };
 
@@ -85,7 +85,7 @@ impl PrimaryAllocator {
     }
 
     #[inline(always)]
-    pub unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+    pub unsafe fn alloc(&self, layout: Layout) -> Option<NonNull<u8>> {
         match SizeClass::from_layout(layout.size(), layout.align()) {
             Some(size_class) => self.alloc_small(size_class),
             None => self.alloc_large(layout),
@@ -93,17 +93,19 @@ impl PrimaryAllocator {
     }
 
     #[inline(always)]
-    unsafe fn alloc_small(&self, size_class: SizeClass) -> *mut u8 {
-        let result = get_heap().alloc_small(&self.class_regions, size_class);
-        if !result.is_null() {
-            return result;
-        }
-        let fallback_layout = Layout::from_size_align_unchecked(size_class.slot_size_in_bytes(), 1);
-        self.alloc_large(fallback_layout)
+    unsafe fn alloc_small(&self, size_class: SizeClass) -> Option<NonNull<u8>> {
+        get_heap()
+            .alloc_small(&self.class_regions, size_class)
+            .or_else(|| {
+                // Window exhausted: satisfy the request from the large path instead of failing.
+                let fallback_layout =
+                    Layout::from_size_align_unchecked(size_class.slot_size_in_bytes(), 1);
+                self.alloc_large(fallback_layout)
+            })
     }
 
     #[inline(always)]
-    unsafe fn alloc_large(&self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc_large(&self, layout: Layout) -> Option<NonNull<u8>> {
         self.large_allocator
             .lock()
             .unwrap_unchecked()
@@ -111,21 +113,19 @@ impl PrimaryAllocator {
     }
 
     #[inline(always)]
-    pub unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+    pub unsafe fn alloc_zeroed(&self, layout: Layout) -> Option<NonNull<u8>> {
         match SizeClass::from_layout(layout.size(), layout.align()) {
             Some(size_class) => {
-                let pointer = self.alloc_small(size_class);
-                if !pointer.is_null() {
-                    ptr::write_bytes(pointer, 0, size_class.slot_size_in_bytes());
-                }
-                pointer
+                let pointer = self.alloc_small(size_class)?;
+                ptr::write_bytes(pointer.as_ptr(), 0, size_class.slot_size_in_bytes());
+                Some(pointer)
             }
             None => self.alloc_large_zeroed(layout),
         }
     }
 
     #[inline(always)]
-    unsafe fn alloc_large_zeroed(&self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc_large_zeroed(&self, layout: Layout) -> Option<NonNull<u8>> {
         self.large_allocator
             .lock()
             .unwrap_unchecked()
@@ -169,29 +169,27 @@ impl PrimaryAllocator {
             .dealloc_large(pointer)
     }
 
-    pub unsafe fn realloc(&self, pointer: *mut u8, new_size: usize) -> *mut u8 {
+    pub unsafe fn realloc(&self, pointer: *mut u8, new_size: usize) -> Option<NonNull<u8>> {
         if pointer.is_null() {
             return self.alloc(Layout::from_size_align_unchecked(new_size, 1));
         }
         if new_size == 0 {
             self.free(pointer);
-            return null_mut();
+            return None;
         }
 
         let old_class = self.class_from_pointer(pointer);
         let new_class = SizeClass::from_layout(new_size, 1);
 
         if old_class.is_some() && old_class == new_class {
-            return pointer;
+            // Same class: the existing block already satisfies the request.
+            return Some(NonNull::new_unchecked(pointer));
         }
 
         let new_pointer = match new_class {
             Some(size_class) => self.alloc_small(size_class),
             None => self.alloc_large(Layout::from_size_align_unchecked(new_size, 1)),
-        };
-        if new_pointer.is_null() {
-            return null_mut();
-        }
+        }?;
 
         let old_usable = match old_class {
             Some(class) => class.slot_size_in_bytes(),
@@ -202,13 +200,18 @@ impl PrimaryAllocator {
                 .allocation_size(pointer),
         };
 
-        copy_realloc_payload(pointer, new_pointer, old_usable.min(new_size), old_class);
+        copy_realloc_payload(
+            pointer,
+            new_pointer.as_ptr(),
+            old_usable.min(new_size),
+            old_class,
+        );
 
         match old_class {
             Some(size_class) => self.dealloc_small(pointer, size_class),
             None => self.dealloc_large(pointer),
         }
-        new_pointer
+        Some(new_pointer)
     }
 
     #[inline(always)]

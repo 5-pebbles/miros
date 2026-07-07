@@ -1,4 +1,4 @@
-use std::ptr::null_mut;
+use std::ptr::{null_mut, NonNull};
 
 use crate::allocator::{
     non_crypto_rng::HeapRng,
@@ -125,7 +125,7 @@ impl<'a> Magazine<'a> {
 
     /// Random cached slot via swap-remove: breaks the `free(p); malloc()` reuse primitive without touching the span bitmap. None when empty.
     #[inline(always)]
-    pub fn draw_random(&mut self, rng: &mut HeapRng) -> Option<*mut u8> {
+    pub fn draw_random(&mut self, rng: &mut HeapRng) -> Option<NonNull<u8>> {
         let count = *self.count as usize;
         if count == 0 {
             return None;
@@ -139,7 +139,8 @@ impl<'a> Magazine<'a> {
             let top = *self.view.get_unchecked(*self.count as usize);
             *self.view.get_unchecked_mut(index) = top;
         }
-        Some(chosen)
+        // SAFETY: entries in `[0..count)` are non-null by the magazine's push invariant.
+        Some(unsafe { NonNull::new_unchecked(chosen) })
     }
 
     /// Hand back the most-recently-staged slot; None when empty.
