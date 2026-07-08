@@ -232,14 +232,9 @@ impl Bootstrap<AllocateTls> {
             .map(|h| round_up_to_boundary(h.p_memsz, h.p_align))
             .unwrap_or(0);
 
-        let miros_template = self.tls_program_header.map(|tls_header| {
-            let template_pointer = self.base.byte_add(tls_header.p_offset) as *const u8;
-            let template_size = tls_header.p_filesz;
-            let block_size = tls_header.p_memsz;
-            let alignment = tls_header.p_align;
-
-            TlsTemplate::new(template_pointer, template_size, block_size, alignment)
-        });
+        let miros_template = self
+            .tls_program_header
+            .map(|tls_header| TlsTemplate::from_program_header(self.base, &tls_header));
         set_tls_allocator(miros_template);
 
         // [~8 MiB reserve (exe TLS allocated)][TCB][miros TLS]
