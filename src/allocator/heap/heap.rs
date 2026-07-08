@@ -96,7 +96,9 @@ impl Heap {
         let mut magazine = self.magazines.class(size_class);
         if !magazine.try_push(pointer) {
             self.classes[size_class.index()].flush_to_span(&mut magazine, region);
-            magazine.try_push(pointer);
+            // Flush drains to the low-water mark, so a slot is always free here.
+            let pushed = magazine.try_push(pointer);
+            debug_assert!(pushed, "magazine full immediately after flush");
         }
     }
 
