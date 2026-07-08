@@ -9,7 +9,7 @@ mod create;
 mod join;
 mod key;
 
-pub(crate) use key::run_key_destructors;
+use key::{run_key_destructor_round, PTHREAD_DESTRUCTOR_ITERATIONS};
 
 struct TlsDestructor {
     function: unsafe extern "C" fn(*mut c_void),
@@ -36,9 +36,7 @@ unsafe extern "C" fn __cxa_thread_atexit_impl(
     0
 }
 
-/// Drains this thread's `thread_local` destructors in LIFO order; a destructor registering another lands on the stack and runs in the same drain.
 pub unsafe fn call_tls_destructors() {
-    // `let else` ends the borrow before the call, so destructors can re-enter registration.
     loop {
         let Some(TlsDestructor { function, object }) = TLS_DESTRUCTORS.borrow_mut().pop() else {
             break;
@@ -47,6 +45,18 @@ pub unsafe fn call_tls_destructors() {
     }
     // Nothing runs drop for `#[thread_local]` statics, and `abandon_heap` would pin the buffer in the abandoned heap.
     TLS_DESTRUCTORS.take();
+}
+
+/// Thread-exit teardown: `thread_local` destructors, then key destructors capped at PTHREAD_DESTRUCTOR_ITERATIONS rounds.
+/// The drain trails each round so a `thread_local` destructor a key destructor registers still runs; the cap is all that bounds a self-re-arming key.
+pub unsafe fn run_at_thread_exit_destructors() {
+    call_tls_destructors();
+    for _ in 0..PTHREAD_DESTRUCTOR_ITERATIONS {
+        if !run_key_destructor_round() {
+            break;
+        }
+        call_tls_destructors();
+    }
 }
 
 #[cfg_attr(not(test), no_mangle)]

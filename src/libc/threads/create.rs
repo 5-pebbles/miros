@@ -33,14 +33,8 @@ unsafe extern "C" fn pthread_entry(context: *mut c_void) -> ! {
     let thread_pointer = get_thread_pointer() as *mut ThreadControlBlock;
     (*thread_pointer).return_value = return_value;
 
-    // glibc teardown order: `thread_local` dtors, key dtors, then the allocator cause dtors may malloc/free.
-    // A key destructor may register new `thread_local` dtors via `__cxa_thread_atexit_impl`; re-drain until quiescent.
-    loop {
-        super::call_tls_destructors();
-        if !super::run_key_destructors() {
-            break;
-        }
-    }
+    // Destructors run before `abandon_heap` because they may malloc/free.
+    super::run_at_thread_exit_destructors();
     crate::allocator::abandon_heap();
     exit::exit(0);
 }

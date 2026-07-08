@@ -10,7 +10,7 @@ use crate::signature_matches_libc;
 #[cfg_attr(not(test), no_mangle)]
 static PTHREAD_KEYS_MAX: usize = 128;
 
-const PTHREAD_DESTRUCTOR_ITERATIONS: usize = 4;
+pub(super) const PTHREAD_DESTRUCTOR_ITERATIONS: usize = 4;
 
 #[derive(Default, Copy, Clone)]
 enum GlobalEntryState {
@@ -106,18 +106,18 @@ fn live_destructor(
     }
 }
 
-fn run_destructor_round() -> bool {
-    entry_cells(&THREAD_LOCAL_ENTRIES)
-        .iter()
-        .enumerate()
-        .any(|(key_index, entry_cell)| {
+/// One scan of every key. A destructor that re-arms its key defers to the next round, each key runs at most once per scan.
+pub fn run_key_destructor_round() -> bool {
+    entry_cells(&THREAD_LOCAL_ENTRIES).iter().enumerate().fold(
+        false,
+        |ran_any, (key_index, entry_cell)| {
             let local_entry = entry_cell.get();
             if local_entry.value.is_null() {
-                return false;
+                return ran_any;
             }
 
             let Some(destructor) = live_destructor(key_index, local_entry.generation) else {
-                return false;
+                return ran_any;
             };
 
             entry_cell.set(ThreadLocalEntry {
@@ -127,14 +127,8 @@ fn run_destructor_round() -> bool {
             unsafe { destructor(local_entry.value) };
 
             true
-        })
-}
-
-pub unsafe fn run_key_destructors() -> bool {
-    let productive_rounds = (0..PTHREAD_DESTRUCTOR_ITERATIONS)
-        .take_while(|_| run_destructor_round())
-        .count();
-    productive_rounds > 0
+        },
+    )
 }
 
 #[cfg_attr(not(test), no_mangle)]
