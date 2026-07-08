@@ -1,6 +1,6 @@
 mod occupancy;
 
-use std::{cell::UnsafeCell, sync::atomic::Ordering};
+use std::{cell::UnsafeCell, ptr::NonNull, sync::atomic::Ordering};
 
 pub use occupancy::{BitmapWord, MAX_SLOTS_PER_SPAN};
 
@@ -12,7 +12,7 @@ use crate::allocator::{
 
 // PERF: The remotes are separate because atomics are slow (10x), and I don't want to add that strain to the hotpath.
 pub struct Span {
-    data_pointer: *mut u8,
+    data_pointer: NonNull<u8>,
     size_class: SizeClass,
     owner: AtomicHeapId,
     /// Bit N = 0 iff `bitmap[N]` has a free slot.
@@ -24,7 +24,7 @@ pub struct Span {
 }
 
 impl Span {
-    pub unsafe fn new(data_pointer: *mut u8, size_class: SizeClass, owner: HeapId) -> Self {
+    pub unsafe fn new(data_pointer: NonNull<u8>, size_class: SizeClass, owner: HeapId) -> Self {
         Self {
             data_pointer,
             size_class,
@@ -69,6 +69,7 @@ impl Span {
         // SAFETY: word_index < BITMAP_WORD_COUNT, so the word's first slot is within the span.
         let base = self
             .data_pointer
+            .as_ptr()
             .byte_add((word_index * BitmapWord::BITS as usize) << self.size_class.slot_shift());
         Some(ClaimedSlots {
             base,
@@ -100,14 +101,14 @@ impl Span {
 
     pub fn contains_pointer(&self, pointer: *const u8) -> bool {
         let pointer_address = pointer.addr();
-        let self_data_address = self.data_pointer.addr();
+        let self_data_address = self.data_pointer.addr().get();
         let span_length = self.size_class.span_length_in_bytes();
         (self_data_address..self_data_address + span_length).contains(&pointer_address)
     }
 
     fn slot_index_of(&self, pointer: *const u8) -> SlotIndex {
         debug_assert!(self.contains_pointer(pointer));
-        let pointer_delta = pointer.addr() - self.data_pointer.addr();
+        let pointer_delta = pointer.addr() - self.data_pointer.addr().get();
         let slot_index = (pointer_delta >> self.size_class.slot_shift()) as SlotIndex;
         debug_assert!(slot_index < self.slots_per_span());
         slot_index

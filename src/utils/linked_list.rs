@@ -1,4 +1,4 @@
-use std::ptr::null_mut;
+use std::ptr::NonNull;
 
 /// An intrusive doubly-linked list.
 ///
@@ -17,138 +17,131 @@ use std::ptr::null_mut;
 ///   (debug builds verify this by walking the chain);
 /// - the list's structure is not mutated while an [`iter`](Self::iter) walk is in flight.
 pub struct LinkedList<T> {
-    head: *mut LinkedListNode<T>,
+    head: Option<NonNull<LinkedListNode<T>>>,
 }
 
 impl<T> LinkedList<T> {
     pub const fn new() -> Self {
-        Self { head: null_mut() }
+        Self { head: None }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.head.is_null()
+        self.head.is_none()
     }
 
-    /// The front node, or null if the list is empty.
-    pub fn front(&self) -> *mut LinkedListNode<T> {
+    /// The front node, or None if the list is empty.
+    pub fn front(&self) -> Option<NonNull<LinkedListNode<T>>> {
         self.head
     }
 
     /// Link `node` at the front of the list.
-    pub unsafe fn push_front(&mut self, node: *mut LinkedListNode<T>) {
-        let old_head = self.head;
-        (*node).prev = null_mut();
-        (*node).next = old_head;
-        if !old_head.is_null() {
-            (*old_head).prev = node;
+    pub unsafe fn push(&mut self, mut node: NonNull<LinkedListNode<T>>) {
+        node.as_mut().prev = None;
+        node.as_mut().next = self.head;
+        if let Some(mut old_head) = self.head {
+            old_head.as_mut().prev = Some(node);
         }
-        self.head = node;
+        self.head = Some(node);
     }
 
     /// Insert `node` immediately after `anchor`, which must already be in the list.
     pub unsafe fn insert_after(
         &mut self,
-        anchor: *mut LinkedListNode<T>,
-        node: *mut LinkedListNode<T>,
+        mut anchor: NonNull<LinkedListNode<T>>,
+        mut node: NonNull<LinkedListNode<T>>,
     ) {
         debug_assert!(
             self.contains(anchor),
             "insert_after: anchor not in this list"
         );
-        let old_next = (*anchor).next;
-        (*node).prev = anchor;
-        (*node).next = old_next;
-        (*anchor).next = node;
-        if !old_next.is_null() {
-            (*old_next).prev = node;
+        let old_next = anchor.as_ref().next;
+        node.as_mut().prev = Some(anchor);
+        node.as_mut().next = old_next;
+        anchor.as_mut().next = Some(node);
+        if let Some(mut old_next) = old_next {
+            old_next.as_mut().prev = Some(node);
         }
     }
 
     /// Unlink `node`, which must currently belong to this list.
-    pub unsafe fn remove(&mut self, node: *mut LinkedListNode<T>) {
+    pub unsafe fn remove(&mut self, mut node: NonNull<LinkedListNode<T>>) {
         debug_assert!(self.contains(node), "remove: node not in this list");
-        let prev = (*node).prev;
-        let next = (*node).next;
+        let prev = node.as_ref().prev;
+        let next = node.as_ref().next;
 
         // Node links live outside the list; only the `self.head` write aliases `&mut self`.
-        if prev.is_null() {
-            self.head = next;
-        } else {
-            (*prev).next = next;
+        match prev {
+            Some(mut prev) => prev.as_mut().next = next,
+            None => self.head = next,
         }
-        if !next.is_null() {
-            (*next).prev = prev;
+        if let Some(mut next) = next {
+            next.as_mut().prev = prev;
         }
 
-        (*node).prev = null_mut();
-        (*node).next = null_mut();
+        node.as_mut().prev = None;
+        node.as_mut().next = None;
     }
 
-    /// Unlink and return the front node, or null if the list is empty.
-    pub unsafe fn pop_front(&mut self) -> *mut LinkedListNode<T> {
-        let node = self.head;
-        if !node.is_null() {
-            self.remove(node);
-        }
-        node
+    /// Unlink and return the front node, or None if the list is empty.
+    pub unsafe fn pop(&mut self) -> Option<NonNull<LinkedListNode<T>>> {
+        let node = self.head?;
+        self.remove(node);
+        Some(node)
     }
 
     /// Splice every node of `other` onto the front of this list, leaving `other` empty.
     pub unsafe fn prepend_adopt(&mut self, other: &mut LinkedList<T>) {
-        let other_head = other.head;
-        other.head = null_mut();
-        if other_head.is_null() {
+        let Some(other_head) = other.head.take() else {
             return;
-        }
+        };
 
         let mut tail = other_head;
-        while !(*tail).next.is_null() {
-            tail = (*tail).next;
+        while let Some(next) = tail.as_ref().next {
+            tail = next;
         }
 
-        (*tail).next = self.head;
-        if !self.head.is_null() {
-            (*self.head).prev = tail;
+        tail.as_mut().next = self.head;
+        if let Some(mut old_head) = self.head {
+            old_head.as_mut().prev = Some(tail);
         }
-        self.head = other_head;
+        self.head = Some(other_head);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = *mut LinkedListNode<T>> {
+    pub fn iter(&self) -> impl Iterator<Item = NonNull<LinkedListNode<T>>> {
         let mut current = self.head;
         std::iter::from_fn(move || {
-            let node = current;
-            if node.is_null() {
+            let Some(node) = current else {
                 return None;
-            }
-            current = unsafe { (*node).next };
+            };
+            current = unsafe { node.as_ref().next };
             Some(node)
         })
     }
 
     /// Membership walk backing the debug-only safety assertions.
-    fn contains(&self, node: *mut LinkedListNode<T>) -> bool {
+    fn contains(&self, node: NonNull<LinkedListNode<T>>) -> bool {
         // SAFETY:  Compares pointers only, never dereferences `node`, so it stays safe even when `node` is stale or from another list.
-        !node.is_null() && self.iter().any(|candidate| candidate == node)
+        self.iter().any(|candidate| candidate == node)
     }
 }
 
 #[repr(C)]
 pub struct LinkedListNode<T> {
     pub value: T,
-    prev: *mut LinkedListNode<T>,
-    next: *mut LinkedListNode<T>,
+    prev: Option<NonNull<LinkedListNode<T>>>,
+    next: Option<NonNull<LinkedListNode<T>>>,
 }
 
 impl<T> LinkedListNode<T> {
     pub const fn new(data: T) -> Self {
         Self {
             value: data,
-            prev: null_mut(),
-            next: null_mut(),
+            prev: None,
+            next: None,
         }
     }
 
-    pub fn next(&self) -> *mut LinkedListNode<T> {
+    pub fn next(&self) -> Option<NonNull<LinkedListNode<T>>> {
         self.next
     }
 }
@@ -157,11 +150,11 @@ impl<T> LinkedListNode<T> {
 mod tests {
     use super::*;
 
-    /// Owns the nodes and hands out one raw pointer per node, derived exactly once —
+    /// Owns the nodes and hands out one `NonNull` per node, derived exactly once —
     /// re-borrowing a node would invalidate the list's stored pointer under Miri.
     struct Arena {
         _nodes: Vec<Box<LinkedListNode<i32>>>,
-        pointers: Vec<*mut LinkedListNode<i32>>,
+        pointers: Vec<NonNull<LinkedListNode<i32>>>,
     }
 
     impl Arena {
@@ -169,7 +162,10 @@ mod tests {
             let mut nodes: Vec<Box<LinkedListNode<i32>>> = (0..count)
                 .map(|value| Box::new(LinkedListNode::new(value as i32)))
                 .collect();
-            let pointers = nodes.iter_mut().map(|node| &mut **node as *mut _).collect();
+            let pointers = nodes
+                .iter_mut()
+                .map(|node| NonNull::from(&mut **node))
+                .collect();
             Self {
                 _nodes: nodes,
                 pointers,
@@ -178,19 +174,19 @@ mod tests {
     }
 
     unsafe fn values(list: &LinkedList<i32>) -> Vec<i32> {
-        list.iter().map(|node| (*node).value).collect()
+        list.iter().map(|node| node.as_ref().value).collect()
     }
 
     #[test]
-    fn push_front_is_lifo() {
+    fn push_is_lifo() {
         let arena = Arena::new(3);
         let mut list = LinkedList::new();
         unsafe {
             for &node in &arena.pointers {
-                list.push_front(node);
+                list.push(node);
             }
             assert_eq!(values(&list), [2, 1, 0]);
-            assert_eq!(list.front(), arena.pointers[2]);
+            assert_eq!(list.front(), Some(arena.pointers[2]));
         }
     }
 
@@ -200,7 +196,7 @@ mod tests {
         let mut list = LinkedList::new();
         unsafe {
             for &node in &arena.pointers {
-                list.push_front(node);
+                list.push(node);
             }
             // list is [3, 2, 1, 0]
             list.remove(arena.pointers[3]); // front
@@ -211,15 +207,15 @@ mod tests {
     }
 
     #[test]
-    fn pop_front_unlinks_then_empties() {
+    fn pop_unlinks_then_empties() {
         let arena = Arena::new(2);
         let mut list = LinkedList::new();
         unsafe {
-            list.push_front(arena.pointers[0]);
-            list.push_front(arena.pointers[1]);
-            assert_eq!(list.pop_front(), arena.pointers[1]);
-            assert_eq!(list.pop_front(), arena.pointers[0]);
-            assert!(list.pop_front().is_null());
+            list.push(arena.pointers[0]);
+            list.push(arena.pointers[1]);
+            assert_eq!(list.pop(), Some(arena.pointers[1]));
+            assert_eq!(list.pop(), Some(arena.pointers[0]));
+            assert!(list.pop().is_none());
             assert!(list.is_empty());
         }
     }
@@ -229,7 +225,7 @@ mod tests {
         let arena = Arena::new(3);
         let mut list = LinkedList::new();
         unsafe {
-            list.push_front(arena.pointers[0]);
+            list.push(arena.pointers[0]);
             list.insert_after(arena.pointers[0], arena.pointers[1]); // [0, 1]
             list.insert_after(arena.pointers[0], arena.pointers[2]); // [0, 2, 1]
             assert_eq!(values(&list), [0, 2, 1]);
@@ -243,10 +239,10 @@ mod tests {
         let mut target = LinkedList::new();
         let mut source = LinkedList::new();
         unsafe {
-            target.push_front(first.pointers[0]);
-            target.push_front(first.pointers[1]); // [1, 0]
-            source.push_front(second.pointers[0]);
-            source.push_front(second.pointers[1]); // [1, 0]
+            target.push(first.pointers[0]);
+            target.push(first.pointers[1]); // [1, 0]
+            source.push(second.pointers[0]);
+            source.push(second.pointers[1]); // [1, 0]
 
             target.prepend_adopt(&mut source);
             assert!(source.is_empty());
@@ -264,7 +260,7 @@ mod tests {
             target.prepend_adopt(&mut empty); // empty into empty
             assert!(target.is_empty());
 
-            target.push_front(arena.pointers[0]);
+            target.push(arena.pointers[0]);
             target.prepend_adopt(&mut empty); // empty into non-empty
             assert_eq!(values(&target), [0]);
         }
@@ -279,17 +275,17 @@ mod tests {
         let mut moved = LinkedList::new();
         unsafe {
             for &node in &arena.pointers {
-                source.push_front(node);
+                source.push(node);
             }
             // source is [4, 3, 2, 1, 0]
-            let mut node = source.front();
-            while !node.is_null() {
-                let next = (*node).next();
-                if (*node).value % 2 == 0 {
+            let mut cursor = source.front();
+            while let Some(node) = cursor {
+                let next = node.as_ref().next();
+                if node.as_ref().value % 2 == 0 {
                     source.remove(node);
-                    moved.push_front(node);
+                    moved.push(node);
                 }
-                node = next;
+                cursor = next;
             }
             assert_eq!(values(&source), [3, 1]);
             assert_eq!(values(&moved), [0, 2, 4]);

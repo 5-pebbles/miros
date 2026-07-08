@@ -108,7 +108,7 @@ impl Heap {
             let mut magazine = self.magazines.class(SizeClass::from_raw(class_index as u8));
             while let Some(pointer) = magazine.pop() {
                 let span_node = global.span_for_pointer(pointer);
-                (*span_node).value.dealloc_slot(pointer);
+                span_node.as_ref().value.dealloc_slot(pointer);
             }
 
             self.classes[class_index].abandon_all(global);

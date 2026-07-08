@@ -17,7 +17,7 @@ use crate::libc::mem::{mmap, munmap};
 const SUPER_REGION_WINDOW_COUNT: usize = SIZE_CLASS_COUNT.next_power_of_two();
 const SUPER_REGION_SIZE: usize = CLASS_REGION_SIZE * SUPER_REGION_WINDOW_COUNT;
 
-unsafe fn reserve_super_region() -> *mut u8 {
+unsafe fn reserve_super_region() -> NonNull<u8> {
     let raw = mmap(
         null_mut(),
         SUPER_REGION_SIZE * 2,
@@ -42,12 +42,12 @@ unsafe fn reserve_super_region() -> *mut u8 {
 
     let aligned = raw.add(leading_slack);
     debug_assert!(aligned.addr() % SUPER_REGION_SIZE == 0);
-    aligned
+    NonNull::new_unchecked(aligned)
 }
 
 /// The shared half: every mutable field sits behind a lock, so threads route through `&self`.
 pub struct PrimaryAllocator {
-    super_base: *mut u8,
+    super_base: NonNull<u8>,
     class_regions: [ClassRegion; SIZE_CLASS_COUNT],
     large_allocator: Mutex<LargeAllocator>,
     pseudorandom_bytes: u128,
@@ -62,7 +62,9 @@ impl PrimaryAllocator {
 
         (0..SIZE_CLASS_COUNT).for_each(|class_index| {
             let size_class = SizeClass::from_raw(class_index as u8);
-            let base = unsafe { super_base.add(class_index * CLASS_REGION_SIZE) };
+            let base = unsafe {
+                NonNull::new_unchecked(super_base.as_ptr().add(class_index * CLASS_REGION_SIZE))
+            };
             class_regions[class_index].write(unsafe { ClassRegion::new(size_class, base) });
         });
 
@@ -151,7 +153,7 @@ impl PrimaryAllocator {
     unsafe fn dealloc_small(&self, pointer: *mut u8, size_class: SizeClass) {
         let region = &self.class_regions[size_class.index()];
         let span_node = region.span_for_pointer(pointer);
-        let span = &(*span_node).value;
+        let span = &span_node.as_ref().value;
 
         let heap = get_heap();
         if span.owner() == heap.id() {
@@ -216,7 +218,7 @@ impl PrimaryAllocator {
 
     #[inline(always)]
     fn class_from_pointer(&self, pointer: *mut u8) -> Option<SizeClass> {
-        let offset = pointer.addr().wrapping_sub(self.super_base.addr());
+        let offset = pointer.addr().wrapping_sub(self.super_base.as_ptr().addr());
         // One bound covers both the super-region edge and the unused padding windows past class 13.
         if offset >= SIZE_CLASS_COUNT * CLASS_REGION_SIZE {
             return None;

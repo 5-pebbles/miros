@@ -1,5 +1,5 @@
 use std::{
-    ptr::{self, null_mut},
+    ptr::{self, null_mut, NonNull},
     sync::Mutex,
 };
 
@@ -23,31 +23,31 @@ struct SharedSpanPool {
 // Both `malloc` and `free` hit this on every call.
 #[repr(C, align(256))]
 pub struct ClassRegion {
-    base: *mut u8,
+    base: NonNull<u8>,
     size_class: SizeClass,
     /// Each span occupies `1 << span_stride_shift` bytes,
     /// so spans tile the region and pointer-to-span number is a single shift.
     span_stride_shift: u32,
-    metadata_base: *mut LinkedListNode<Span>,
+    metadata_base: NonNull<LinkedListNode<Span>>,
     span_pool: Mutex<SharedSpanPool>,
 }
 
 impl ClassRegion {
-    pub unsafe fn new(size_class: SizeClass, base: *mut u8) -> Self {
+    pub unsafe fn new(size_class: SizeClass, base: NonNull<u8>) -> Self {
         let span_stride_shift = size_class.span_stride_shift();
 
         let max_spans = CLASS_REGION_SIZE >> span_stride_shift;
         // One inline node per span; NORESERVE keeps the range virtual until a span faults its page in.
         let metadata_byte_count = max_spans * core::mem::size_of::<LinkedListNode<Span>>();
-        let metadata_base = mmap(
+        let metadata_base = NonNull::new(mmap(
             null_mut(),
             metadata_byte_count,
             DATA_PAGE_PROTECTION,
             ANONYMOUS_PRIVATE_MAP.with_noreserve(true),
             -1,
             0,
-        ) as *mut LinkedListNode<Span>;
-        assert!((metadata_base as isize) > 0, "span metadata mmap failed");
+        ) as *mut LinkedListNode<Span>)
+        .expect("span metadata mmap failed");
 
         Self {
             base,
@@ -62,8 +62,8 @@ impl ClassRegion {
     }
 
     /// O(1) pointer -> span, lock-free. Called by `free` on any thread. Carries no native synchronization of its own.
-    pub unsafe fn span_for_pointer(&self, pointer: *mut u8) -> *mut LinkedListNode<Span> {
-        let offset = pointer.addr() - self.base.addr();
+    pub unsafe fn span_for_pointer(&self, pointer: *mut u8) -> NonNull<LinkedListNode<Span>> {
+        let offset = pointer.addr() - self.base.addr().get();
         let span_number = offset >> self.span_stride_shift;
         debug_assert!(
             span_number < CLASS_REGION_SIZE >> self.span_stride_shift,
@@ -72,7 +72,7 @@ impl ClassRegion {
 
         let span_node = self.metadata_base.add(span_number);
         debug_assert!(
-            (*span_node).value.contains_pointer(pointer),
+            span_node.as_ref().value.contains_pointer(pointer),
             "pointer outside its span's data range"
         );
         span_node
@@ -80,7 +80,7 @@ impl ClassRegion {
 
     /// Carve a fresh span owned by `owner`. `None` when the 16 GB window is exhausted.
     #[cold]
-    pub unsafe fn create_span(&self, owner: HeapId) -> Option<*mut LinkedListNode<Span>> {
+    pub unsafe fn create_span(&self, owner: HeapId) -> Option<NonNull<LinkedListNode<Span>>> {
         let padded_stride = 1usize << self.span_stride_shift;
         let next_span_offset = {
             let mut pool = self.span_pool.lock().unwrap_unchecked();
@@ -98,7 +98,7 @@ impl ClassRegion {
         let span_number = next_span_offset >> self.span_stride_shift;
 
         mprotect(
-            data_pointer,
+            data_pointer.as_ptr(),
             self.size_class.span_length_in_bytes(),
             DATA_PAGE_PROTECTION,
         );
@@ -107,7 +107,7 @@ impl ClassRegion {
         // the write faults its backing page in on first use.
         let span_node = self.metadata_base.add(span_number);
         ptr::write(
-            span_node,
+            span_node.as_ptr(),
             LinkedListNode::new(Span::new(data_pointer, self.size_class, owner)),
         );
         Some(span_node)
@@ -123,16 +123,16 @@ impl ClassRegion {
     }
 
     /// Claim one abandoned span for `new_owner` — exactly one thread can claim any span.
-    pub unsafe fn adopt_span(&self, new_owner: HeapId) -> Option<*mut LinkedListNode<Span>> {
+    pub unsafe fn adopt_span(&self, new_owner: HeapId) -> Option<NonNull<LinkedListNode<Span>>> {
         let span_node = {
             let mut pool = self.span_pool.lock().unwrap_unchecked();
             if pool.abandoned_spans.is_empty() {
                 return None;
             }
-            pool.abandoned_spans.pop_front()
-        };
+            pool.abandoned_spans.pop()
+        }?;
 
-        (*span_node).value.set_owner(new_owner);
+        span_node.as_ref().value.set_owner(new_owner);
         Some(span_node)
     }
 }

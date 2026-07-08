@@ -1,3 +1,5 @@
+use std::ptr::NonNull;
+
 use crate::{
     allocator::{
         class_region::ClassRegion,
@@ -38,8 +40,8 @@ impl ThreadClassHeap {
             if self.partial_spans.is_empty() && !self.replenish_partial(global, owner) {
                 return;
             }
-            let span_node = self.partial_spans.front();
-            let span = &(*span_node).value;
+            let span_node = self.partial_spans.front().unwrap_unchecked();
+            let span = &span_node.as_ref().value;
 
             // Fold in cross-thread frees first so their slots re-enter this batch instead of forcing fresh address space.
             // An idle thread still strands remote frees until its next refill or exit — only the owner may reuse them.
@@ -55,7 +57,7 @@ impl ThreadClassHeap {
 
             if span.is_full() {
                 self.partial_spans.remove(span_node);
-                self.full_spans.push_front(span_node);
+                self.full_spans.push(span_node);
             }
         }
     }
@@ -78,7 +80,7 @@ impl ThreadClassHeap {
                 continue;
             }
             match global.create_span(owner) {
-                Some(span_node) => self.partial_spans.push_front(span_node),
+                Some(span_node) => self.partial_spans.push(span_node),
                 None => return false,
             }
         }
@@ -95,10 +97,10 @@ impl ThreadClassHeap {
     /// Return one slot to its span bitmap and fix up list membership.
     pub(super) unsafe fn dealloc_to_span(
         &mut self,
-        span_node: *mut LinkedListNode<Span>,
+        span_node: NonNull<LinkedListNode<Span>>,
         pointer: *mut u8,
     ) {
-        let span = &(*span_node).value;
+        let span = &span_node.as_ref().value;
 
         let was_full = span.is_full();
         span.dealloc_slot(pointer);
@@ -113,14 +115,14 @@ impl ThreadClassHeap {
     }
 
     /// File a span with freshly-updated occupancy into the matching list. The node must be unlinked first.
-    unsafe fn place_span(&mut self, span_node: *mut LinkedListNode<Span>) {
-        let span = &(*span_node).value;
+    unsafe fn place_span(&mut self, span_node: NonNull<LinkedListNode<Span>>) {
+        let span = &span_node.as_ref().value;
         if span.is_empty() {
             self.release_empty_span(span_node);
         } else if span.is_full() {
-            self.full_spans.push_front(span_node);
+            self.full_spans.push(span_node);
         } else {
-            self.partial_spans.push_front(span_node);
+            self.partial_spans.push(span_node);
         }
     }
 
@@ -130,15 +132,15 @@ impl ThreadClassHeap {
         let mut made_progress = false;
         let mut node = self.full_spans.front();
 
-        while !node.is_null() {
-            let next = (*node).next();
-            let span = &(*node).value;
+        while let Some(current) = node {
+            let next = current.as_ref().next();
+            let span = &current.as_ref().value;
 
             if span.has_remote_frees() {
                 // Draining a full span frees >= 1 slot, so it is no longer full: relist it unconditionally.
                 span.reclaim_remote_frees();
-                self.full_spans.remove(node);
-                self.place_span(node);
+                self.full_spans.remove(current);
+                self.place_span(current);
                 made_progress = true;
             }
 
@@ -154,7 +156,7 @@ impl ThreadClassHeap {
             None => return false,
         };
 
-        let span = &(*span_node).value;
+        let span = &span_node.as_ref().value;
         span.reclaim_remote_frees();
         self.place_span(span_node);
         true
@@ -167,13 +169,13 @@ impl ThreadClassHeap {
     }
 
     unsafe fn reactivate_span(&mut self) {
-        let span_node = self.empty_spans.pop_front();
-        (*span_node).value.reinitialize();
-        self.partial_spans.push_front(span_node);
+        let span_node = self.empty_spans.pop().unwrap_unchecked();
+        span_node.as_ref().value.reinitialize();
+        self.partial_spans.push(span_node);
     }
 
-    unsafe fn release_empty_span(&mut self, span_node: *mut LinkedListNode<Span>) {
+    unsafe fn release_empty_span(&mut self, span_node: NonNull<LinkedListNode<Span>>) {
         // TODO: madvise(MADV_DONTNEED) the data pages; reactivate_span must then re-mprotect.
-        self.empty_spans.push_front(span_node);
+        self.empty_spans.push(span_node);
     }
 }

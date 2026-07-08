@@ -1,7 +1,7 @@
 use std::{
     marker::PhantomData,
     mem::size_of,
-    ptr::{self, null_mut},
+    ptr::{self, null_mut, NonNull},
 };
 
 use super::linked_list::{LinkedList, LinkedListNode};
@@ -14,7 +14,7 @@ use crate::{
 pub struct MetadataAllocator<T> {
     partial_regions: LinkedList<RegionHeader<T>>,
     full_regions: LinkedList<RegionHeader<T>>,
-    empty_region: *mut LinkedListNode<RegionHeader<T>>,
+    empty_region: Option<NonNull<LinkedListNode<RegionHeader<T>>>>,
     slots_per_region: u32,
     slots_offset: usize,
     _marker: PhantomData<T>,
@@ -35,20 +35,20 @@ impl<T> MetadataAllocator<T> {
         Self {
             partial_regions: LinkedList::new(),
             full_regions: LinkedList::new(),
-            empty_region: null_mut(),
+            empty_region: None,
             slots_per_region,
             slots_offset,
             _marker: PhantomData,
         }
     }
 
-    pub fn alloc(&mut self) -> *mut T {
+    pub fn alloc(&mut self) -> NonNull<T> {
         unsafe {
             if self.partial_regions.is_empty() {
                 self.activate_region();
             }
 
-            let region = self.partial_regions.front();
+            let region = self.partial_regions.front().unwrap_unchecked();
             let bitmap = RegionHeader::<T>::bitmap_start(region);
 
             let slot_index = RegionHeader::<T>::find_free_slot(
@@ -69,28 +69,28 @@ impl<T> MetadataAllocator<T> {
             let byte = bitmap.add(byte_index);
             *byte |= 1u8 << bit_index;
 
-            (*region).value.slots_occupied += 1;
+            (*region.as_ptr()).value.slots_occupied += 1;
 
-            if (*region).value.slots_occupied == self.slots_per_region {
+            if (*region.as_ptr()).value.slots_occupied == self.slots_per_region {
                 self.partial_regions.remove(region);
-                self.full_regions.push_front(region);
+                self.full_regions.push(region);
             }
 
-            let slot_address = (region as *mut u8)
+            let slot_address = (region.as_ptr() as *mut u8)
                 .add(self.slots_offset)
                 .add(slot_index as usize * size_of::<T>());
 
-            slot_address as *mut T
+            NonNull::new_unchecked(slot_address as *mut T)
         }
     }
 
-    pub fn dealloc(&mut self, pointer: *mut T) {
+    pub fn dealloc(&mut self, pointer: NonNull<T>) {
         unsafe {
-            let region = self.region_from_pointer(pointer);
+            let region = self.region_from_pointer(pointer.as_ptr());
             let bitmap = RegionHeader::<T>::bitmap_start(region);
 
-            let slots_start = (region as usize) + self.slots_offset;
-            let slot_index = ((pointer as usize) - slots_start) / size_of::<T>();
+            let slots_start = region.as_ptr().addr() + self.slots_offset;
+            let slot_index = ((pointer.as_ptr() as usize) - slots_start) / size_of::<T>();
 
             debug_assert!(
                 (slot_index as u32) < self.slots_per_region,
@@ -103,20 +103,20 @@ impl<T> MetadataAllocator<T> {
 
             debug_assert_ne!(*byte & (1u8 << bit_index), 0, "double free detected");
 
-            ptr::drop_in_place(pointer);
+            ptr::drop_in_place(pointer.as_ptr());
             *byte &= !(1u8 << bit_index);
 
-            let was_full = (*region).value.slots_occupied == self.slots_per_region;
-            (*region).value.slots_occupied -= 1;
+            let was_full = (*region.as_ptr()).value.slots_occupied == self.slots_per_region;
+            (*region.as_ptr()).value.slots_occupied -= 1;
 
             if was_full {
                 self.full_regions.remove(region);
-                if (*region).value.slots_occupied == 0 {
+                if (*region.as_ptr()).value.slots_occupied == 0 {
                     self.cache_or_destroy_region(region);
                 } else {
-                    self.partial_regions.push_front(region);
+                    self.partial_regions.push(region);
                 }
-            } else if (*region).value.slots_occupied == 0 {
+            } else if (*region.as_ptr()).value.slots_occupied == 0 {
                 self.partial_regions.remove(region);
                 self.cache_or_destroy_region(region);
             }
@@ -124,24 +124,22 @@ impl<T> MetadataAllocator<T> {
     }
 
     unsafe fn activate_region(&mut self) {
-        if !self.empty_region.is_null() {
-            let empty = self.empty_region;
-            self.empty_region = null_mut();
-
-            #[cfg(debug_assertions)]
-            {
-                let bitmap = RegionHeader::<T>::bitmap_start(empty);
-                let bitmap_bytes = ((self.slots_per_region + 7) / 8) as usize;
-                assert!(
-                    (0..bitmap_bytes).all(|index| *bitmap.add(index) == 0),
-                    "cached empty region has non-zero bitmap"
-                );
-            }
-
-            self.partial_regions.push_front(empty);
-        } else {
+        let Some(empty) = self.empty_region.take() else {
             self.create_region();
+            return;
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            let bitmap = RegionHeader::<T>::bitmap_start(empty);
+            let bitmap_bytes = ((self.slots_per_region + 7) / 8) as usize;
+            assert!(
+                (0..bitmap_bytes).all(|index| *bitmap.add(index) == 0),
+                "cached empty region has non-zero bitmap"
+            );
         }
+
+        self.partial_regions.push(empty);
     }
 
     unsafe fn create_region(&mut self) {
@@ -165,29 +163,34 @@ impl<T> MetadataAllocator<T> {
         // which represents all slots free.
         ptr::write(region, LinkedListNode::new(RegionHeader::new()));
 
-        self.partial_regions.push_front(region);
+        self.partial_regions.push(NonNull::new_unchecked(region));
     }
 
     // SAFETY: The region must have been removed from its list before calling this.
-    unsafe fn cache_or_destroy_region(&mut self, region: *mut LinkedListNode<RegionHeader<T>>) {
-        if self.empty_region.is_null() {
-            self.empty_region = region;
+    unsafe fn cache_or_destroy_region(&mut self, region: NonNull<LinkedListNode<RegionHeader<T>>>) {
+        if self.empty_region.is_none() {
+            self.empty_region = Some(region);
         } else {
             self.destroy_region(region);
         }
     }
 
-    unsafe fn destroy_region(&self, region: *mut LinkedListNode<RegionHeader<T>>) {
+    unsafe fn destroy_region(&self, region: NonNull<LinkedListNode<RegionHeader<T>>>) {
         let page_size = page_size::get_page_size();
-        let mmap_start = (region as *mut u8).sub(page_size);
+        let mmap_start = (region.as_ptr() as *mut u8).sub(page_size);
         let total_size = page_size * 3;
         munmap(mmap_start, total_size);
     }
 
     // Masking off the low bits of a slot pointer recovers the region header
     // because each region fits within a single page-aligned page.
-    unsafe fn region_from_pointer(&self, pointer: *mut T) -> *mut LinkedListNode<RegionHeader<T>> {
-        page_size::get_page_start(pointer.addr()) as *mut LinkedListNode<RegionHeader<T>>
+    unsafe fn region_from_pointer(
+        &self,
+        pointer: *mut T,
+    ) -> NonNull<LinkedListNode<RegionHeader<T>>> {
+        NonNull::new_unchecked(
+            page_size::get_page_start(pointer.addr()) as *mut LinkedListNode<RegionHeader<T>>
+        )
     }
 }
 
@@ -229,8 +232,8 @@ impl<T> RegionHeader<T> {
             .expect("type T is too large to fit in a single page")
     }
 
-    unsafe fn bitmap_start(region: *mut LinkedListNode<Self>) -> *mut u8 {
-        (region as *mut u8).add(size_of::<LinkedListNode<Self>>())
+    unsafe fn bitmap_start(region: NonNull<LinkedListNode<Self>>) -> *mut u8 {
+        (region.as_ptr() as *mut u8).add(size_of::<LinkedListNode<Self>>())
     }
 
     unsafe fn find_free_slot(

@@ -89,8 +89,8 @@ impl LargeAllocator {
     fn register_allocation(&mut self, region: LargeRegion) -> NonNull<u8> {
         let record = self.metadata.alloc();
         unsafe {
-            ptr::write(record, LinkedListNode::new(region));
-            self.allocations.push_front(record);
+            ptr::write(record.as_ptr(), LinkedListNode::new(region));
+            self.allocations.push(record);
             // SAFETY: `region.pointer` is a validated mmap result or cache entry, never null.
             NonNull::new_unchecked(region.pointer)
         }
@@ -100,7 +100,7 @@ impl LargeAllocator {
         unsafe {
             let node = self.region_from_ptr(pointer);
 
-            let region = (*node).value;
+            let region = node.as_ref().value;
             self.allocations.remove(node);
             self.metadata.dealloc(node);
 
@@ -112,14 +112,14 @@ impl LargeAllocator {
 
     /// Look up the mapped size of a live large allocation.
     pub fn allocation_size(&self, pointer: *mut u8) -> usize {
-        unsafe { (*self.region_from_ptr(pointer)).value.size_in_bytes }
+        unsafe { self.region_from_ptr(pointer).as_ref().value.size_in_bytes }
     }
 
-    fn region_from_ptr(&self, pointer: *mut u8) -> *mut LinkedListNode<LargeRegion> {
+    fn region_from_ptr(&self, pointer: *mut u8) -> NonNull<LinkedListNode<LargeRegion>> {
         unsafe {
             self.allocations
                 .iter()
-                .find(|&node| (*node).value.pointer == pointer)
+                .find(|node| node.as_ref().value.pointer == pointer)
                 .unwrap_unchecked()
         }
     }
