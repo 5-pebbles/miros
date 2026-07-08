@@ -1,267 +1,138 @@
-use std::ptr::{self, null_mut};
-
-use super::{
-    non_crypto_rng::Xoroshiro128PlusPlus, size_classes::SizeClass, span::Span,
-    ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
+use std::{
+    ptr::{self, null_mut, NonNull},
+    sync::Mutex,
 };
+
+use super::{size_classes::SizeClass, span::Span, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{
+    allocator::heap::heap::HeapId,
     libc::mem::{mmap, mprotect},
-    page_size,
-    utils::{
-        linked_list::{LinkedList, LinkedListNode},
-        metadata_allocator::MetadataAllocator,
-    },
+    utils::linked_list::{LinkedList, LinkedListNode},
 };
 
 /// Log2 of the per-class region size. 2^34 = 16 GB per class.
 pub(super) const CLASS_REGION_SHIFT: u32 = 34;
 pub(super) const CLASS_REGION_SIZE: usize = 1 << CLASS_REGION_SHIFT;
 
-const RECENT_FREE_CAPACITY: usize = 16;
-
-type EntryIndex = u8;
-const _: () = assert!(RECENT_FREE_CAPACITY <= EntryIndex::MAX as usize);
-
-struct RecentFreeStack {
-    entries: [*mut u8; RECENT_FREE_CAPACITY],
-    entry_count: EntryIndex,
-}
-
-impl RecentFreeStack {
-    const fn new() -> Self {
-        Self {
-            entries: [null_mut(); RECENT_FREE_CAPACITY],
-            entry_count: 0,
-        }
-    }
-
-    fn pop(&mut self) -> *mut u8 {
-        if self.entry_count == 0 {
-            return null_mut();
-        }
-
-        self.entry_count -= 1;
-        // SAFETY: `try_push` is the only writer and caps `entry_count` at `RECENT_FREE_CAPACITY`.
-        // Every pushed pointer came from a prior allocation, so slots `[0..entry_count)` are non-null.
-        unsafe { *self.entries.get_unchecked(self.entry_count as usize) }
-    }
-
-    fn try_push(&mut self, entry: *mut u8) -> bool {
-        if self.entry_count as usize >= RECENT_FREE_CAPACITY {
-            return false;
-        }
-
-        unsafe {
-            *self.entries.get_unchecked_mut(self.entry_count as usize) = entry;
-        }
-        self.entry_count += 1;
-        true
-    }
-}
-
-// PERF: Padded to 256 bytes so `class_regions[i]` indexing compiles to a shift instead of a 3-cycle `imul`. Both `malloc` and `free` hit this on every call.
-#[repr(C, align(256))]
-/// Per-size-class state managing a contiguous virtual address region subdivided into spans.
-/// Each class region occupies [`CLASS_REGION_SIZE`] bytes within the super-region and lays spans back-to-back via a bump pointer.
-pub struct ClassRegion {
-    size_class: SizeClass,
-    base: *mut u8,
-    /// Each span occupies `1 << span_stride_shift` bytes of virtual address
-    /// space. The stride is the raw span size (2 * guard + data) rounded to
-    /// the next power of two so pointer-to-span-number is a single shift.
-    span_stride_shift: u32,
+struct SharedSpanPool {
     next_span_offset: usize,
-    /// Dense lookup table: `span_index[offset >> span_stride_shift]` yields the
-    /// span metadata pointer. Stored as a fat pointer carrying the array length
-    /// for debug bounds checks.
-    span_index: *mut [*mut LinkedListNode<Span>],
-    span_metadata: MetadataAllocator<LinkedListNode<Span>>,
-    partial_spans: LinkedList<Span>,
-    full_spans: LinkedList<Span>,
-    empty_spans: LinkedList<Span>,
-    recent_free: RecentFreeStack,
+    abandoned_spans: LinkedList<Span>,
+}
+
+// PERF: Padded to 256 bytes so `class_regions[i]` indexing compiles to a shift instead of a 3-cycle `imul`.
+// Both `malloc` and `free` hit this on every call.
+#[repr(C, align(256))]
+pub struct ClassRegion {
+    base: NonNull<u8>,
+    size_class: SizeClass,
+    /// Each span occupies `1 << span_stride_shift` bytes,
+    /// so spans tile the region and pointer-to-span number is a single shift.
+    span_stride_shift: u32,
+    metadata_base: NonNull<LinkedListNode<Span>>,
+    span_pool: Mutex<SharedSpanPool>,
 }
 
 impl ClassRegion {
-    pub unsafe fn new(size_class: SizeClass, base: *mut u8) -> Self {
-        let guard_size = size_class
-            .slot_size_in_bytes()
-            .max(page_size::get_page_size());
-        let raw_stride = 2 * guard_size + size_class.span_length_in_bytes();
-        let span_stride_shift = raw_stride.next_power_of_two().trailing_zeros();
+    pub unsafe fn new(size_class: SizeClass, base: NonNull<u8>) -> Self {
+        let span_stride_shift = size_class.span_stride_shift();
 
         let max_spans = CLASS_REGION_SIZE >> span_stride_shift;
-        let index_byte_count = max_spans * core::mem::size_of::<*mut LinkedListNode<Span>>();
-        let span_index_base = mmap(
+        // One inline node per span; NORESERVE keeps the range virtual until a span faults its page in.
+        let metadata_byte_count = max_spans * core::mem::size_of::<LinkedListNode<Span>>();
+        let metadata_base = NonNull::new(mmap(
             null_mut(),
-            index_byte_count,
+            metadata_byte_count,
             DATA_PAGE_PROTECTION,
-            ANONYMOUS_PRIVATE_MAP,
+            ANONYMOUS_PRIVATE_MAP.with_noreserve(true),
             -1,
             0,
-        );
-        assert!((span_index_base as isize) > 0, "span index mmap failed");
-        let span_index = ptr::slice_from_raw_parts_mut(
-            span_index_base as *mut *mut LinkedListNode<Span>,
-            max_spans,
-        );
+        ) as *mut LinkedListNode<Span>)
+        .expect("span metadata mmap failed");
 
         Self {
-            size_class,
             base,
+            size_class,
             span_stride_shift,
-            next_span_offset: 0,
-            span_index,
-            span_metadata: MetadataAllocator::new(),
-            partial_spans: LinkedList::new(),
-            full_spans: LinkedList::new(),
-            empty_spans: LinkedList::new(),
-            recent_free: RecentFreeStack::new(),
+            metadata_base,
+            span_pool: Mutex::new(SharedSpanPool {
+                next_span_offset: 0,
+                abandoned_spans: LinkedList::new(),
+            }),
         }
     }
 
-    /// Allocate a slot from this class region.
-    /// Returns null only if the region's 16 GB address space is exhausted — the caller should fall back to the large allocation path.
-    #[inline(always)]
-    pub unsafe fn alloc_slot(&mut self, rng: &mut Xoroshiro128PlusPlus) -> *mut u8 {
-        let cached = self.recent_free.pop();
-        if !cached.is_null() {
-            return cached;
-        }
+    /// O(1) pointer -> span, lock-free. Called by `free` on any thread. Carries no native synchronization of its own.
+    pub unsafe fn span_for_pointer(&self, pointer: *mut u8) -> NonNull<LinkedListNode<Span>> {
+        let offset = pointer.addr() - self.base.addr().get();
+        let span_number = offset >> self.span_stride_shift;
+        debug_assert!(
+            span_number < CLASS_REGION_SIZE >> self.span_stride_shift,
+            "span number exceeds window capacity"
+        );
 
-        self.alloc_slot_slow(rng)
+        let span_node = self.metadata_base.add(span_number);
+        debug_assert!(
+            span_node.as_ref().value.contains_pointer(pointer),
+            "pointer outside its span's data range"
+        );
+        span_node
     }
 
+    /// Carve a fresh span owned by `owner`. `None` when the 16 GB window is exhausted.
     #[cold]
-    unsafe fn alloc_slot_slow(&mut self, rng: &mut Xoroshiro128PlusPlus) -> *mut u8 {
-        if self.partial_spans.is_empty() {
-            if !self.empty_spans.is_empty() {
-                self.reactivate_span();
-            } else if !self.create_span() {
-                return null_mut();
-            }
-        }
-
-        let random = rng.next_u64();
-        let span_node = self.partial_spans.front();
-        let span = &mut (*span_node).value;
-
-        // SAFETY: we only reach here when partial_spans is non-empty, so the
-        // front span is guaranteed to have at least one free slot.
-        let slot_pointer = span.allocate_slot(random).unwrap_unchecked();
-
-        if span.is_full() {
-            (*span_node).remove();
-            self.full_spans.push_front(span_node);
-        }
-
-        slot_pointer
-    }
-
-    /// Deallocate a slot by user pointer.
-    pub unsafe fn dealloc_slot(&mut self, pointer: *mut u8) {
-        if !self.recent_free.try_push(pointer) {
-            self.dealloc_slot_slow(pointer);
-        }
-    }
-
-    /* Private */
-
-    /// Commit a fresh span within this region's virtual address space: mprotect
-    /// the data pages RW, allocate span metadata, and push onto partial_spans.
-    /// Returns false if the region is exhausted.
-    unsafe fn create_span(&mut self) -> bool {
+    pub unsafe fn create_span(&self, owner: HeapId) -> Option<NonNull<LinkedListNode<Span>>> {
         let padded_stride = 1usize << self.span_stride_shift;
-        if self.next_span_offset + padded_stride > CLASS_REGION_SIZE {
-            return false;
-        }
+        let next_span_offset = {
+            let mut pool = self.span_pool.lock().unwrap_unchecked();
+            let next_span_offset = pool.next_span_offset;
 
-        // Guard region between spans: at least one page (for mprotect
-        // granularity), but scaled to slot size for larger classes so a
-        // single off-by-one doesn't silently land in the next span's data.
-        let guard_size = self
-            .size_class
-            .slot_size_in_bytes()
-            .max(page_size::get_page_size());
-        let data_pointer = self.base.byte_add(self.next_span_offset + guard_size);
-        let span_number = self.next_span_offset >> self.span_stride_shift;
-        self.next_span_offset += padded_stride;
+            // Test before advancing so an exhausted window never bumps the offset past the end.
+            if next_span_offset + padded_stride > CLASS_REGION_SIZE {
+                return None;
+            }
+            pool.next_span_offset += padded_stride;
+            next_span_offset
+        };
+
+        let data_pointer = self.base.byte_add(next_span_offset);
+        let span_number = next_span_offset >> self.span_stride_shift;
 
         mprotect(
-            data_pointer,
+            data_pointer.as_ptr(),
             self.size_class.span_length_in_bytes(),
             DATA_PAGE_PROTECTION,
         );
 
-        let span_node = self.span_metadata.alloc();
-        core::ptr::write(
-            span_node,
-            LinkedListNode::new(Span::new(data_pointer, self.size_class)),
+        // Span N's node lives at a fixed offset in the metadata region;
+        // the write faults its backing page in on first use.
+        let span_node = self.metadata_base.add(span_number);
+        ptr::write(
+            span_node.as_ptr(),
+            LinkedListNode::new(Span::new(data_pointer, self.size_class, owner)),
         );
-
-        (&mut *self.span_index)[span_number] = span_node;
-        self.partial_spans.push_front(span_node);
-        true
+        Some(span_node)
     }
 
-    #[cold]
-    unsafe fn dealloc_slot_slow(&mut self, pointer: *mut u8) {
-        let span_node = self.span_for_pointer(pointer);
-        let span = &mut (*span_node).value;
+    /// Hand an exiting heap's per-class `list` to the abandoned pool, emptying it.
+    pub unsafe fn abandon_list(&self, list: &mut LinkedList<Span>) {
+        self.span_pool
+            .lock()
+            .unwrap_unchecked()
+            .abandoned_spans
+            .prepend_adopt(list);
+    }
 
-        let was_full = span.is_full();
-        span.dealloc_slot(pointer);
-
-        if was_full {
-            (*span_node).remove();
-            if span.is_empty() {
-                self.release_empty_span(span_node);
-            } else {
-                self.partial_spans.push_front(span_node);
+    /// Claim one abandoned span for `new_owner` — exactly one thread can claim any span.
+    pub unsafe fn adopt_span(&self, new_owner: HeapId) -> Option<NonNull<LinkedListNode<Span>>> {
+        let span_node = {
+            let mut pool = self.span_pool.lock().unwrap_unchecked();
+            if pool.abandoned_spans.is_empty() {
+                return None;
             }
-        } else if span.is_empty() {
-            (*span_node).remove();
-            self.release_empty_span(span_node);
-        }
-    }
+            pool.abandoned_spans.pop()
+        }?;
 
-    // TODO: when release_empty_span gains madvise(MADV_DONTNEED), this must
-    // re-mprotect the data pages RW before reuse — keep these two in sync.
-    unsafe fn reactivate_span(&mut self) {
-        let span_node = self.empty_spans.front();
-        (*span_node).remove();
-        (*span_node).value.reinitialize();
-        self.partial_spans.push_front(span_node);
-    }
-
-    unsafe fn release_empty_span(&mut self, span_node: *mut LinkedListNode<Span>) {
-        // TODO: madvise(MADV_DONTNEED) on data pages to release physical memory
-        self.empty_spans.push_front(span_node);
-    }
-
-    /// O(1) pointer-to-span lookup via the span index. Debug builds add bounds,
-    /// null, and containment checks.
-    unsafe fn span_for_pointer(&self, pointer: *mut u8) -> *mut LinkedListNode<Span> {
-        let offset = pointer.addr() - self.base.addr();
-        debug_assert!(
-            offset < self.next_span_offset,
-            "dealloc of pointer beyond allocated spans"
-        );
-
-        let span_number = offset >> self.span_stride_shift;
-        let index = &*self.span_index;
-        debug_assert!(
-            span_number < index.len(),
-            "span number exceeds index length"
-        );
-
-        let span_node = index[span_number];
-        debug_assert!(!span_node.is_null(), "span_index entry is null");
-        debug_assert!(
-            (*span_node).value.contains_pointer(pointer),
-            "pointer lands in guard page, not span data"
-        );
-
-        span_node
+        span_node.as_ref().value.set_owner(new_owner);
+        Some(span_node)
     }
 }

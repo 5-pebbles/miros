@@ -1,5 +1,8 @@
 use core::ptr;
-use std::{alloc::Layout, ptr::null_mut};
+use std::{
+    alloc::Layout,
+    ptr::{null_mut, NonNull},
+};
 
 use super::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{
@@ -33,65 +36,72 @@ impl LargeAllocator {
     }
 
     #[cold]
-    pub fn alloc_large(&mut self, layout: Layout) -> *mut u8 {
+    pub fn alloc_large(&mut self, layout: Layout) -> Option<NonNull<u8>> {
         if layout.align() > MAX_ALIGNMENT {
-            return null_mut();
+            return None;
         }
         let total_bytes = page_size::get_page_end(layout.size());
-        let region = self.acquire_region(total_bytes);
-        self.register_allocation(region)
+        let region = self.acquire_region(total_bytes)?;
+        Some(self.register_allocation(region))
     }
 
-    pub fn alloc_large_zeroed(&mut self, layout: Layout) -> *mut u8 {
+    pub fn alloc_large_zeroed(&mut self, layout: Layout) -> Option<NonNull<u8>> {
         if layout.align() > MAX_ALIGNMENT {
-            return null_mut();
+            return None;
         }
         let total_bytes = page_size::get_page_end(layout.size());
-        let mut region = self.acquire_region(total_bytes);
+        let mut region = self.acquire_region(total_bytes)?;
         if !region.zeroed {
             unsafe {
                 ptr::write_bytes(region.pointer, 0, region.size_in_bytes);
             }
         }
         region.zeroed = true;
-        self.register_allocation(region)
+        Some(self.register_allocation(region))
     }
 
-    fn acquire_region(&mut self, total_bytes: usize) -> LargeRegion {
-        self.cache.take(total_bytes).unwrap_or_else(|| {
-            let pointer = unsafe {
-                mmap(
-                    null_mut(),
-                    total_bytes,
-                    DATA_PAGE_PROTECTION,
-                    ANONYMOUS_PRIVATE_MAP,
-                    -1, /* file_descriptor */
-                    0,  /* file_offset */
-                )
-            };
-            LargeRegion {
-                pointer,
-                size_in_bytes: total_bytes,
-                zeroed: true,
-            }
+    /// `None` when the kernel refuses the mapping — the error must surface as a clean null, never `MAP_FAILED`.
+    fn acquire_region(&mut self, total_bytes: usize) -> Option<LargeRegion> {
+        if let Some(region) = self.cache.take(total_bytes) {
+            return Some(region);
+        }
+        let pointer = unsafe {
+            mmap(
+                null_mut(),
+                total_bytes,
+                DATA_PAGE_PROTECTION,
+                ANONYMOUS_PRIVATE_MAP,
+                -1, /* file_descriptor */
+                0,  /* file_offset */
+            )
+        };
+        // The kernel returns `-errno` (a small negative) on failure; a valid mapping is always a positive address.
+        if (pointer as isize) <= 0 {
+            return None;
+        }
+        Some(LargeRegion {
+            pointer,
+            size_in_bytes: total_bytes,
+            zeroed: true,
         })
     }
 
-    fn register_allocation(&mut self, region: LargeRegion) -> *mut u8 {
+    fn register_allocation(&mut self, region: LargeRegion) -> NonNull<u8> {
         let record = self.metadata.alloc();
         unsafe {
-            ptr::write(record, LinkedListNode::new(region));
-            self.allocations.push_front(record);
+            ptr::write(record.as_ptr(), LinkedListNode::new(region));
+            self.allocations.push(record);
+            // SAFETY: `region.pointer` is a validated mmap result or cache entry, never null.
+            NonNull::new_unchecked(region.pointer)
         }
-        region.pointer
     }
 
     pub fn dealloc_large(&mut self, pointer: *mut u8) {
         unsafe {
             let node = self.region_from_ptr(pointer);
 
-            let region = (*node).value;
-            (*node).remove();
+            let region = node.as_ref().value;
+            self.allocations.remove(node);
             self.metadata.dealloc(node);
 
             if !self.cache.park(region) {
@@ -102,14 +112,14 @@ impl LargeAllocator {
 
     /// Look up the mapped size of a live large allocation.
     pub fn allocation_size(&self, pointer: *mut u8) -> usize {
-        unsafe { (*self.region_from_ptr(pointer)).value.size_in_bytes }
+        unsafe { self.region_from_ptr(pointer).as_ref().value.size_in_bytes }
     }
 
-    fn region_from_ptr(&self, pointer: *mut u8) -> *mut LinkedListNode<LargeRegion> {
+    fn region_from_ptr(&self, pointer: *mut u8) -> NonNull<LinkedListNode<LargeRegion>> {
         unsafe {
             self.allocations
                 .iter()
-                .find(|&node| (*node).value.pointer == pointer)
+                .find(|node| node.as_ref().value.pointer == pointer)
                 .unwrap_unchecked()
         }
     }

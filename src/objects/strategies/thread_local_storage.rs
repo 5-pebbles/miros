@@ -24,13 +24,7 @@ impl ThreadLocalStorage {
         base: *const c_void,
         thread_pointer: *mut c_void,
     ) -> Result<(), MirosError> {
-        let tls_header = &tls_data.tls_program_header;
-        let template = TlsTemplate::new(
-            base.byte_add(tls_header.p_offset) as *const u8,
-            tls_header.p_filesz,
-            tls_header.p_memsz,
-            tls_header.p_align,
-        );
+        let template = TlsTemplate::from_program_header(base, &tls_data.tls_program_header);
 
         let module_id = allocator
             .register_module(template, thread_pointer)

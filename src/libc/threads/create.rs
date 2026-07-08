@@ -25,9 +25,17 @@ type PthreadAttrT = *const c_void;
 
 unsafe extern "C" fn pthread_entry(context: *mut c_void) -> ! {
     let context = &*(context as *const PthreadContext);
+    crate::allocator::install_heap();
+
+    // Userland:
     let return_value = (context.entry_function)(context.entry_argument);
+
     let thread_pointer = get_thread_pointer() as *mut ThreadControlBlock;
     (*thread_pointer).return_value = return_value;
+
+    // Destructors run before `abandon_heap` because they may malloc/free.
+    super::run_at_thread_exit_destructors();
+    crate::allocator::abandon_heap();
     exit::exit(0);
 }
 

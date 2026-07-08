@@ -1,27 +1,23 @@
 use std::{
     alloc::Layout,
     mem::MaybeUninit,
-    ptr::{self, null_mut},
+    ptr::{self, null_mut, NonNull},
+    sync::Mutex,
 };
 
 use super::{
     class_region::{ClassRegion, CLASS_REGION_SHIFT, CLASS_REGION_SIZE},
+    heap::get_heap,
     large_allocator::LargeAllocator,
-    non_crypto_rng::Xoroshiro128PlusPlus,
     size_classes::{SizeClass, SIZE_CLASS_COUNT},
     ANONYMOUS_PRIVATE_MAP, GUARD_PAGE_PROTECTION,
 };
 use crate::libc::mem::{mmap, munmap};
 
-/// Number of class-region windows in the super-region.
-/// Rounded to the next power of two so pointer→class is a single shift.
-/// (the padding window is never touched — pure virtual address space)
 const SUPER_REGION_WINDOW_COUNT: usize = SIZE_CLASS_COUNT.next_power_of_two();
 const SUPER_REGION_SIZE: usize = CLASS_REGION_SIZE * SUPER_REGION_WINDOW_COUNT;
 
-/// Reserve a `SUPER_REGION_SIZE` + aligned block of virtual address space.
-unsafe fn reserve_super_region() -> *mut u8 {
-    // Over-allocate 2x the target, so we can find the aligned base within that.
+unsafe fn reserve_super_region() -> NonNull<u8> {
     let raw = mmap(
         null_mut(),
         SUPER_REGION_SIZE * 2,
@@ -46,171 +42,192 @@ unsafe fn reserve_super_region() -> *mut u8 {
 
     let aligned = raw.add(leading_slack);
     debug_assert!(aligned.addr() % SUPER_REGION_SIZE == 0);
-    aligned
+    NonNull::new_unchecked(aligned)
 }
 
+/// The shared half: every mutable field sits behind a lock, so threads route through `&self`.
 pub struct PrimaryAllocator {
-    super_base: *mut u8,
+    super_base: NonNull<u8>,
     class_regions: [ClassRegion; SIZE_CLASS_COUNT],
-    large_allocator: LargeAllocator,
-    rng: Xoroshiro128PlusPlus,
+    large_allocator: Mutex<LargeAllocator>,
+    pseudorandom_bytes: u128,
 }
 
 impl PrimaryAllocator {
-    pub unsafe fn new(seed: [u8; 16]) -> Self {
+    pub unsafe fn new(pseudorandom_bytes: [u8; 16]) -> Self {
         let super_base = reserve_super_region();
 
-        // Can't use array::from_fn because ClassRegion::new is unsafe.
         let mut class_regions: [MaybeUninit<ClassRegion>; SIZE_CLASS_COUNT] =
             [const { MaybeUninit::uninit() }; SIZE_CLASS_COUNT];
 
         (0..SIZE_CLASS_COUNT).for_each(|class_index| {
             let size_class = SizeClass::from_raw(class_index as u8);
-            let base = super_base.add(class_index * CLASS_REGION_SIZE);
-            class_regions[class_index].write(ClassRegion::new(size_class, base));
+            let base = unsafe {
+                NonNull::new_unchecked(super_base.as_ptr().add(class_index * CLASS_REGION_SIZE))
+            };
+            class_regions[class_index].write(unsafe { ClassRegion::new(size_class, base) });
         });
 
-        // SAFETY: every element was initialized in the loop above.
         let class_regions = MaybeUninit::array_assume_init(class_regions);
 
         Self {
             super_base,
             class_regions,
-            large_allocator: LargeAllocator::new(),
-            rng: Xoroshiro128PlusPlus::from_bytes(u128::from_ne_bytes(seed)),
+            large_allocator: Mutex::new(LargeAllocator::new()),
+            pseudorandom_bytes: u128::from_ne_bytes(pseudorandom_bytes),
         }
     }
 
-    // ── allocation ──────────────────────────────────────────────────────
+    pub fn class_regions(&self) -> &[ClassRegion; SIZE_CLASS_COUNT] {
+        &self.class_regions
+    }
+
+    pub fn pseudorandom_bytes(&self) -> u128 {
+        self.pseudorandom_bytes
+    }
 
     #[inline(always)]
-    pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8 {
+    pub unsafe fn alloc(&self, layout: Layout) -> Option<NonNull<u8>> {
         match SizeClass::from_layout(layout.size(), layout.align()) {
             Some(size_class) => self.alloc_small(size_class),
-            None => self.large_allocator.alloc_large(layout),
+            None => self.alloc_large(layout),
         }
     }
 
     #[inline(always)]
-    unsafe fn alloc_small(&mut self, size_class: SizeClass) -> *mut u8 {
-        // PERF: Raw pointer avoids destructuring self, which would keep &mut large_allocator alive across the alloc_slot call and force LLVM to spill it to the stack.
-        let rng = &raw mut self.rng;
-        let result = self.class_regions[size_class.index()].alloc_slot(&mut *rng);
-        if !result.is_null() {
-            return result;
-        }
-        // Region's 16 GB address space exhausted - fall back to large path.
-        let fallback_layout = Layout::from_size_align_unchecked(size_class.slot_size_in_bytes(), 1);
-        self.large_allocator.alloc_large(fallback_layout)
+    unsafe fn alloc_small(&self, size_class: SizeClass) -> Option<NonNull<u8>> {
+        get_heap()
+            .alloc_small(&self.class_regions, size_class)
+            .or_else(|| {
+                // Window exhausted: satisfy the request from the large path instead of failing.
+                let fallback_layout =
+                    Layout::from_size_align_unchecked(size_class.slot_size_in_bytes(), 1);
+                self.alloc_large(fallback_layout)
+            })
     }
 
     #[inline(always)]
-    pub unsafe fn alloc_zeroed(&mut self, layout: Layout) -> *mut u8 {
+    unsafe fn alloc_large(&self, layout: Layout) -> Option<NonNull<u8>> {
+        self.large_allocator
+            .lock()
+            .unwrap_unchecked()
+            .alloc_large(layout)
+    }
+
+    #[inline(always)]
+    pub unsafe fn alloc_zeroed(&self, layout: Layout) -> Option<NonNull<u8>> {
         match SizeClass::from_layout(layout.size(), layout.align()) {
             Some(size_class) => {
-                let pointer = self.alloc_small(size_class);
-                if !pointer.is_null() {
-                    ptr::write_bytes(pointer, 0, size_class.slot_size_in_bytes());
-                }
-                pointer
+                let pointer = self.alloc_small(size_class)?;
+                ptr::write_bytes(pointer.as_ptr(), 0, size_class.slot_size_in_bytes());
+                Some(pointer)
             }
-            None => self.large_allocator.alloc_large_zeroed(layout),
+            None => self.alloc_large_zeroed(layout),
         }
     }
 
-    // ── deallocation ────────────────────────────────────────────────────
-
-    /// Entry point for the C `free(ptr)` — no layout information available,
-    /// so the class is derived entirely from the pointer's address.
     #[inline(always)]
-    pub unsafe fn free(&mut self, pointer: *mut u8) {
+    unsafe fn alloc_large_zeroed(&self, layout: Layout) -> Option<NonNull<u8>> {
+        self.large_allocator
+            .lock()
+            .unwrap_unchecked()
+            .alloc_large_zeroed(layout)
+    }
+
+    #[inline(always)]
+    pub unsafe fn free(&self, pointer: *mut u8) {
         if pointer.is_null() {
             return;
         }
         match self.class_from_pointer(pointer) {
             Some(size_class) => self.dealloc_small(pointer, size_class),
-            None => self.large_allocator.dealloc_large(pointer),
+            None => self.dealloc_large(pointer),
         }
     }
 
-    /// Entry point for Rust's `GlobalAlloc::dealloc` — has layout but we route
-    /// by pointer address for consistency with `free`.
-    pub unsafe fn dealloc(&mut self, pointer: *mut u8, _layout: Layout) {
-        self.free(pointer);
+    pub unsafe fn dealloc(&self, pointer: *mut u8, _layout: Layout) {
+        self.free(pointer)
     }
 
     #[inline(always)]
-    unsafe fn dealloc_small(&mut self, pointer: *mut u8, size_class: SizeClass) {
-        self.class_regions[size_class.index()].dealloc_slot(pointer);
+    unsafe fn dealloc_small(&self, pointer: *mut u8, size_class: SizeClass) {
+        let region = &self.class_regions[size_class.index()];
+        let span_node = region.span_for_pointer(pointer);
+        let span = &span_node.as_ref().value;
+
+        let heap = get_heap();
+        if span.owner() == heap.id() {
+            heap.dealloc_local(region, size_class, pointer);
+        } else {
+            span.remote_dealloc_slot(pointer);
+        }
     }
 
-    // ── reallocation ────────────────────────────────────────────────────
+    #[inline(always)]
+    unsafe fn dealloc_large(&self, pointer: *mut u8) {
+        self.large_allocator
+            .lock()
+            .unwrap_unchecked()
+            .dealloc_large(pointer)
+    }
 
-    /// C-ABI `realloc(ptr, new_size)` — derives old layout entirely from the pointer.
-    pub unsafe fn realloc(&mut self, pointer: *mut u8, new_size: usize) -> *mut u8 {
+    pub unsafe fn realloc(&self, pointer: *mut u8, new_size: usize) -> Option<NonNull<u8>> {
         if pointer.is_null() {
             return self.alloc(Layout::from_size_align_unchecked(new_size, 1));
         }
         if new_size == 0 {
             self.free(pointer);
-            return null_mut();
+            return None;
         }
 
         let old_class = self.class_from_pointer(pointer);
         let new_class = SizeClass::from_layout(new_size, 1);
 
-        // Same size class — the existing slot already fits.
         if old_class.is_some() && old_class == new_class {
-            return pointer;
+            // Same class: the existing block already satisfies the request.
+            return Some(NonNull::new_unchecked(pointer));
         }
 
-        // Allocate from new_class directly — avoids recomputing the class inside alloc().
         let new_pointer = match new_class {
             Some(size_class) => self.alloc_small(size_class),
-            None => self
-                .large_allocator
-                .alloc_large(Layout::from_size_align_unchecked(new_size, 1)),
-        };
-        if new_pointer.is_null() {
-            return null_mut();
-        }
+            None => self.alloc_large(Layout::from_size_align_unchecked(new_size, 1)),
+        }?;
 
         let old_usable = match old_class {
             Some(class) => class.slot_size_in_bytes(),
-            None => self.large_allocator.allocation_size(pointer),
+            None => self
+                .large_allocator
+                .lock()
+                .unwrap_unchecked()
+                .allocation_size(pointer),
         };
 
-        copy_realloc_payload(pointer, new_pointer, old_usable.min(new_size), old_class);
+        copy_realloc_payload(
+            pointer,
+            new_pointer.as_ptr(),
+            old_usable.min(new_size),
+            old_class,
+        );
 
-        // Dealloc using old_class directly — avoids re-deriving class_from_pointer inside free().
         match old_class {
             Some(size_class) => self.dealloc_small(pointer, size_class),
-            None => self.large_allocator.dealloc_large(pointer),
+            None => self.dealloc_large(pointer),
         }
-        new_pointer
+        Some(new_pointer)
     }
 
-    // ── pointer classification ──────────────────────────────────────────
-
-    /// O(1) pointer → size class.
-    /// Returns `None` for pointers outside the super-region (i.e. large allocations or foreign pointers).
     #[inline(always)]
     fn class_from_pointer(&self, pointer: *mut u8) -> Option<SizeClass> {
-        let offset = pointer.addr().wrapping_sub(self.super_base.addr());
-        if offset >= SUPER_REGION_SIZE {
+        let offset = pointer.addr().wrapping_sub(self.super_base.as_ptr().addr());
+        // One bound covers both the super-region edge and the unused padding windows past class 13.
+        if offset >= SIZE_CLASS_COUNT * CLASS_REGION_SIZE {
             return None;
         }
         let class_index = offset >> CLASS_REGION_SHIFT;
-        if class_index >= SIZE_CLASS_COUNT {
-            return None;
-        }
         Some(SizeClass::from_raw(class_index as u8))
     }
 }
 
-/// Copy `copy_bytes` from `source` to `dest`. When `copy_bytes` matches the
-/// old class's full slot size, dispatches through `SizeClass::copy_slot` for
-/// inline SIMD loads/stores; otherwise falls back to `copy_nonoverlapping`.
 #[inline(always)]
 unsafe fn copy_realloc_payload(
     source: *const u8,

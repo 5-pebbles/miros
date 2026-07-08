@@ -1,4 +1,5 @@
 mod class_region;
+mod heap;
 mod large_allocator;
 mod non_crypto_rng;
 mod primary;
@@ -7,7 +8,8 @@ mod span;
 
 use std::mem::MaybeUninit;
 
-use self::primary::PrimaryAllocator;
+pub(crate) use self::heap::{abandon_heap, install_heap};
+use self::{class_region::ClassRegion, primary::PrimaryAllocator, size_classes::SIZE_CLASS_COUNT};
 use crate::{
     libc::mem::{MapFlags, ProtectionFlags},
     objects::strategies::init_array::InitArrayFunction,
@@ -42,3 +44,17 @@ extern "C" fn init_allocator(
 }
 
 pub(crate) static mut PRIMARY: MaybeUninit<PrimaryAllocator> = MaybeUninit::uninit();
+
+#[inline(always)]
+pub(crate) unsafe fn primary() -> &'static PrimaryAllocator {
+    #[allow(static_mut_refs)]
+    PRIMARY.assume_init_ref()
+}
+
+unsafe fn global_class_regions() -> &'static [ClassRegion; SIZE_CLASS_COUNT] {
+    primary().class_regions()
+}
+
+unsafe fn pseudorandom_bytes() -> u128 {
+    primary().pseudorandom_bytes()
+}

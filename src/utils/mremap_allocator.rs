@@ -8,10 +8,9 @@ use crate::{
     page_size::{get_page_size, round_up_to_page_size},
 };
 
-const MAP_FAILED: *mut u8 = usize::MAX as *mut u8;
-
 fn non_null_or_map_failed(pointer: *mut u8, size: usize) -> Result<NonNull<[u8]>, AllocError> {
-    if pointer == MAP_FAILED {
+    // Miros's wrappers return the kernel's `-errno` verbatim — never `MAP_FAILED` (-1) alone.
+    if (pointer as isize) <= 0 {
         return Err(AllocError);
     }
     unsafe {

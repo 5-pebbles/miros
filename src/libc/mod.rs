@@ -8,6 +8,7 @@ pub mod mem;
 pub mod process;
 mod random;
 mod str;
+mod syscall;
 mod threads;
 
 mod errno;

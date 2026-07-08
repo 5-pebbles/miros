@@ -2,6 +2,7 @@
 #![feature(c_variadic)]
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
+#![feature(generic_atomic)]
 #![feature(type_changing_struct_update)]
 #![feature(thread_id_value)]
 #![feature(thread_local)]
@@ -9,6 +10,8 @@
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![allow(dead_code)]
+// Pervasively-unsafe crate (linker + libc + allocator) almost every line is the unsafe operation.
+#![allow(unsafe_op_in_unsafe_fn)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.
 // (e.g. strlen's byte-scanning loop) and replacing them with calls to those same functions.
 // Avoiding infinite recursion → UB → ud2 in optimized builds.

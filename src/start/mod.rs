@@ -105,6 +105,8 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
 
+    crate::allocator::install_heap();
+
     set_environ_pointer(env_pointer as *mut *mut u8);
 
     let miros_object_data = if auxv_info.base.is_null() {

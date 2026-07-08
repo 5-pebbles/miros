@@ -1,4 +1,4 @@
-use std::ptr;
+use std::ptr::{self, NonNull};
 
 use crate::{
     tls::TLS_RESERVE_SIZE,
@@ -35,11 +35,14 @@ impl TlsLayoutAllocator {
 
         let initial_chunk = metadata.alloc();
         unsafe {
-            *initial_chunk = LinkedListNode::new(FreeChunk {
-                offset: 0,
-                size: TLS_RESERVE_SIZE,
-            });
-            free.push_front(initial_chunk);
+            ptr::write(
+                initial_chunk.as_ptr(),
+                LinkedListNode::new(FreeChunk {
+                    offset: 0,
+                    size: TLS_RESERVE_SIZE,
+                }),
+            );
+            free.push(initial_chunk);
         }
 
         Self { free, metadata }
@@ -51,15 +54,15 @@ impl TlsLayoutAllocator {
         let node = self
             .free
             .iter()
-            .filter(|&node| (*node).value.size >= aligned_size)
-            .max_by_key(|&node| (*node).value.top())?;
+            .filter(|node| node.as_ref().value.size >= aligned_size)
+            .max_by_key(|node| node.as_ref().value.top())?;
 
-        let chunk = &mut (*node).value;
+        let chunk = &mut (*node.as_ptr()).value;
         let aligned_start = chunk.top() - aligned_size;
         let remaining = aligned_start - chunk.offset;
 
         if remaining == 0 {
-            (*node).remove();
+            self.free.remove(node);
             self.metadata.dealloc(node);
         } else {
             chunk.size = remaining;
@@ -78,40 +81,43 @@ impl TlsLayoutAllocator {
     unsafe fn release(&mut self, offset: usize, size: usize) {
         let end = offset + size;
 
-        let mut prev: *mut LinkedListNode<FreeChunk> = ptr::null_mut();
-        let mut next: *mut LinkedListNode<FreeChunk> = ptr::null_mut();
+        let mut prev: Option<NonNull<LinkedListNode<FreeChunk>>> = None;
+        let mut next: Option<NonNull<LinkedListNode<FreeChunk>>> = None;
 
         for node in self.free.iter() {
-            if (*node).value.offset >= end {
-                next = node;
+            if node.as_ref().value.offset >= end {
+                next = Some(node);
                 break;
             }
-            prev = node;
+            prev = Some(node);
         }
 
-        let merge_prev = !prev.is_null() && (*prev).value.top() == offset;
-        let merge_next = !next.is_null() && (*next).value.offset == end;
+        let merge_prev = prev.filter(|p| unsafe { p.as_ref().value.top() == offset });
+        let merge_next = next.filter(|n| unsafe { n.as_ref().value.offset == end });
 
         match (merge_prev, merge_next) {
-            (true, true) => {
-                (*prev).value.size = (*next).value.top() - (*prev).value.offset;
-                (*next).remove();
+            (Some(prev), Some(next)) => {
+                (*prev.as_ptr()).value.size =
+                    next.as_ref().value.top() - prev.as_ref().value.offset;
+                self.free.remove(next);
                 self.metadata.dealloc(next);
             }
-            (true, false) => {
-                (*prev).value.size += size;
+            (Some(prev), None) => {
+                (*prev.as_ptr()).value.size += size;
             }
-            (false, true) => {
-                (*next).value.offset = offset;
-                (*next).value.size += size;
+            (None, Some(next)) => {
+                (*next.as_ptr()).value.offset = offset;
+                (*next.as_ptr()).value.size += size;
             }
-            (false, false) => {
+            (None, None) => {
                 let new_node = self.metadata.alloc();
-                ptr::write(new_node, LinkedListNode::new(FreeChunk { offset, size }));
-                if prev.is_null() {
-                    self.free.push_front(new_node);
-                } else {
-                    (*prev).insert_after(new_node);
+                ptr::write(
+                    new_node.as_ptr(),
+                    LinkedListNode::new(FreeChunk { offset, size }),
+                );
+                match prev {
+                    None => self.free.push(new_node),
+                    Some(prev) => self.free.insert_after(prev, new_node),
                 }
             }
         }

@@ -47,6 +47,8 @@ pub struct MapFlags {
     fixed: bool,
     #[bit(5, rw)]
     anonymous: bool,
+    #[bit(14, rw)]
+    noreserve: bool,
 }
 
 // TODO: add error handling
@@ -170,18 +172,7 @@ unsafe extern "C" fn bcmp(
     right_pointer: *const u8,
     length_of_comparison: usize,
 ) -> i32 {
-    let ordering: i32;
-    asm!(
-        "repe cmpsb",
-        "seta {ordering:l}",
-        "sbb {ordering:e}, 0",
-        inout("rdi") left_pointer => _,
-        inout("rsi") right_pointer => _,
-        inout("rcx") length_of_comparison => _,
-        ordering = out(reg) ordering,
-        options(nostack)
-    );
-    ordering
+    memcmp(left_pointer, right_pointer, length_of_comparison)
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -198,11 +189,14 @@ unsafe extern "C" fn memcmp(
 
     let ordering: i32;
     asm!(
+        // `seta` writes only the low byte; the `sbb` is full-width, so the register must start zeroed.
+        "xor {ordering:e}, {ordering:e}",
+        // `cmpsb` sets flags for `[rsi] - [rdi]`, so left rides in rsi to get sign(left - right).
         "repe cmpsb",
         "seta {ordering:l}",
         "sbb {ordering:e}, 0",
-        inout("rdi") left_pointer => _,
-        inout("rsi") right_pointer => _,
+        inout("rsi") left_pointer => _,
+        inout("rdi") right_pointer => _,
         inout("rcx") length_of_comparison => _,
         ordering = out(reg) ordering,
         options(nostack)
