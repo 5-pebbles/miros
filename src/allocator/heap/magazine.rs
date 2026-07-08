@@ -143,13 +143,24 @@ impl<'a> Magazine<'a> {
         Some(unsafe { NonNull::new_unchecked(chosen) })
     }
 
-    /// Hand back the most-recently-staged slot; None when empty.
     #[inline(always)]
-    pub fn pop(&mut self) -> Option<*mut u8> {
-        (*self.count != 0).then(|| {
+    fn pop_above(&mut self, threshold: u16) -> Option<*mut u8> {
+        (*self.count > threshold).then(|| {
             *self.count -= 1;
             unsafe { *self.view.get_unchecked(*self.count as usize) }
         })
+    }
+
+    /// Hand back the most-recently-staged slot; None when empty.
+    #[inline(always)]
+    pub fn pop(&mut self) -> Option<*mut u8> {
+        self.pop_above(0)
+    }
+
+    /// LIFO pop while above the low-water mark, for draining the overflow back to spans.
+    #[inline(always)]
+    pub fn pop_above_low_water(&mut self) -> Option<*mut u8> {
+        self.pop_above(self.low_water)
     }
 
     /// Stage a freed slot for handout; false when full, signalling a bulk flush is due.
@@ -163,14 +174,6 @@ impl<'a> Magazine<'a> {
         }
         *self.count += 1;
         true
-    }
-
-    /// LIFO pop while above the low-water mark, for draining the overflow back to spans.
-    pub fn pop_above_low_water(&mut self) -> Option<*mut u8> {
-        (*self.count > self.low_water).then(|| {
-            *self.count -= 1;
-            unsafe { *self.view.get_unchecked(*self.count as usize) }
-        })
     }
 
     /// Caller guarantees the claimed count fits the remaining capacity.
