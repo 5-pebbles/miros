@@ -10,6 +10,8 @@ use crate::signature_matches_libc;
 #[cfg_attr(not(test), no_mangle)]
 static PTHREAD_KEYS_MAX: usize = 128;
 
+const PTHREAD_DESTRUCTOR_ITERATIONS: usize = 4;
+
 #[derive(Default, Copy, Clone)]
 enum GlobalEntryState {
     #[default]
@@ -39,7 +41,7 @@ static GLOBAL_ENTRIES: RwLock<[GlobalEntry; 128]> = RwLock::new(
 );
 
 #[thread_local]
-static mut THREAD_LOCAL_ENTRIES: Cell<[ThreadLocalEntry; 128]> = Cell::new(
+static THREAD_LOCAL_ENTRIES: Cell<[ThreadLocalEntry; 128]> = Cell::new(
     [ThreadLocalEntry {
         generation: 0,
         value: null_mut(),
@@ -83,6 +85,58 @@ unsafe extern "C" fn pthread_key_delete(key_index: u32) -> i32 {
         .unwrap_or(libc::EINVAL)
 }
 
+fn entry_cells(entries: &Cell<[ThreadLocalEntry; 128]>) -> &[Cell<ThreadLocalEntry>] {
+    let entries: &Cell<[ThreadLocalEntry]> = entries;
+    entries.as_slice_of_cells()
+}
+
+fn live_destructor(
+    key_index: usize,
+    generation: usize,
+) -> Option<unsafe extern "C" fn(*mut c_void)> {
+    // Re-read at call time: an earlier destructor this round may have deleted the key.
+    let global_entry = *GLOBAL_ENTRIES.read().unwrap().get(key_index)?;
+    match global_entry.state {
+        GlobalEntryState::Allocated { destructor }
+            if global_entry.current_generation == generation =>
+        {
+            destructor
+        }
+        _ => None,
+    }
+}
+
+fn run_destructor_round() -> bool {
+    entry_cells(&THREAD_LOCAL_ENTRIES)
+        .iter()
+        .enumerate()
+        .any(|(key_index, entry_cell)| {
+            let local_entry = entry_cell.get();
+            if local_entry.value.is_null() {
+                return false;
+            }
+
+            let Some(destructor) = live_destructor(key_index, local_entry.generation) else {
+                return false;
+            };
+
+            entry_cell.set(ThreadLocalEntry {
+                value: null_mut(),
+                ..local_entry
+            });
+            unsafe { destructor(local_entry.value) };
+
+            true
+        })
+}
+
+pub unsafe fn run_key_destructors() -> bool {
+    let productive_rounds = (0..PTHREAD_DESTRUCTOR_ITERATIONS)
+        .take_while(|_| run_destructor_round())
+        .count();
+    productive_rounds > 0
+}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_getspecific(key_index: u32) -> *mut c_void {
     signature_matches_libc!(libc::pthread_getspecific(key_index));
@@ -97,12 +151,9 @@ unsafe extern "C" fn pthread_getspecific(key_index: u32) -> *mut c_void {
              }| *current_generation,
         )
         .and_then(|current_generation| {
-            // SAFETY: It's thread local, and this code is interfacing with c code anyway...
-            #[allow(static_mut_refs)]
-            THREAD_LOCAL_ENTRIES
-                .get()
+            entry_cells(&THREAD_LOCAL_ENTRIES)
                 .get(key_index as usize)
-                .cloned()
+                .map(Cell::get)
                 .filter(|ThreadLocalEntry { generation, .. }| *generation == current_generation)
                 .map(|ThreadLocalEntry { value, .. }| value)
         })
@@ -112,14 +163,6 @@ unsafe extern "C" fn pthread_getspecific(key_index: u32) -> *mut c_void {
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_setspecific(key_index: u32, value: *const c_void) -> i32 {
     signature_matches_libc!(libc::pthread_setspecific(key_index, value));
-
-    #[thread_local]
-    static HAS_REGISTERED_CLEANUP: Cell<bool> = Cell::new(false);
-
-    if !HAS_REGISTERED_CLEANUP.get() {
-        // TODO: register cleanup
-        HAS_REGISTERED_CLEANUP.set(true);
-    }
 
     GLOBAL_ENTRIES
         .read()
@@ -131,16 +174,13 @@ unsafe extern "C" fn pthread_setspecific(key_index: u32, value: *const c_void) -
              }| *current_generation,
         )
         .and_then(|current_generation| {
-            // SAFETY: This is a thread local; it should be fine... ¯\_(ツ)_/¯
-            #[allow(static_mut_refs)]
-            THREAD_LOCAL_ENTRIES
-                .get_mut()
-                .get_mut(key_index as usize)
-                .map(|thread_local_entry| {
-                    *thread_local_entry = ThreadLocalEntry {
+            entry_cells(&THREAD_LOCAL_ENTRIES)
+                .get(key_index as usize)
+                .map(|entry_cell| {
+                    entry_cell.set(ThreadLocalEntry {
                         generation: current_generation,
                         value: value.cast_mut(),
-                    };
+                    });
                     0
                 })
         })

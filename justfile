@@ -24,4 +24,5 @@ examples: build_release
     gcc -o examples/bin/sqrt_with_libm examples/sqrt_with_libm.c -lm -Wl,{{linker_flag}}
     gcc -o examples/bin/thread_local examples/thread_local.c -Wl,{{linker_flag}}
     gcc -o examples/bin/pthread_basic examples/pthread_basic.c -lpthread -Wl,{{linker_flag}}
+    gcc -fno-builtin -o examples/bin/thread_dtors examples/thread_dtors.c -lpthread -Wl,{{linker_flag}}
     cargo build --release --manifest-path examples/hello_world/Cargo.toml
