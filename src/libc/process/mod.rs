@@ -1,10 +1,11 @@
 pub mod clone;
+mod exit;
 mod libc_start_main;
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn rtld_fini() {}
 
-use std::{arch::asm, cell::Cell, io, io::Write, process, thread};
+use std::{arch::asm, cell::Cell, process, thread};
 
 use crate::{
     signature_matches_libc,
@@ -60,10 +61,6 @@ unsafe extern "C" fn abort() -> ! {
         // I think I was called recursively; bye. o7
         asm!("ud2", options(noreturn, nostack));
     }
-
-    // Flush stdio streams per POSIX requirements:
-    let _ = io::stdout().flush();
-    let _ = io::stderr().flush();
 
     raise(libc::SIGABRT);
 

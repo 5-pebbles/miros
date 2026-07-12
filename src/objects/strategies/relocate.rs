@@ -28,7 +28,8 @@ impl Relocate {
         // dword | 32 bits (4 bytes) | "double word"
         // qword | 64 bits (8 bytes) | "quad word"
         use crate::elf::relocate::{
-            R_X86_64_GLOB_DAT, R_X86_64_IRELATIVE, R_X86_64_JUMP_SLOT, R_X86_64_RELATIVE,
+            R_X86_64_COPY, R_X86_64_GLOB_DAT, R_X86_64_IRELATIVE, R_X86_64_JUMP_SLOT,
+            R_X86_64_RELATIVE,
         };
         match rela.r_type() {
             R_X86_64_RELATIVE => {
@@ -71,6 +72,28 @@ impl Relocate {
                     in(reg) relocate_address,
                     in(reg) remote_address,
                     options(nostack, preserves_flags),
+                );
+            }
+            R_X86_64_COPY => {
+                use std::ptr;
+
+                let local_symbol = object_data
+                    .dynamic_fields
+                    .symbol_table
+                    .get(rela.r_sym() as usize);
+                let symbol_name = object_data
+                    .dynamic_fields
+                    .string_table
+                    .get(local_symbol.st_name as usize);
+
+                let (source_symbol, source_address) = object_data_map
+                    .resolve_symbol_outside_program(symbol_name)
+                    .ok_or_else(|| MirosError::UndefinedSymbol(symbol_name.to_string()))?;
+
+                ptr::copy_nonoverlapping(
+                    source_address as *const u8,
+                    relocate_address as *mut u8,
+                    source_symbol.st_size,
                 );
             }
 

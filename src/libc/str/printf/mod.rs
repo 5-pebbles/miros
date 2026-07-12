@@ -5,16 +5,19 @@ mod specifier;
 use std::{
     ffi::VaList,
     fs::File,
-    io::{self, stdout, BufWriter, Write},
+    io::{self, BufWriter, Write},
     mem::ManuallyDrop,
-    os::fd::{AsRawFd, FromRawFd},
+    os::fd::FromRawFd,
 };
 
 use format::Formatter;
-use parse::PrintfItem;
+use parse::{PrintfItem, PrintfParser};
 use specifier::ResolvedSpecifier;
 
-use crate::signature_matches_libc;
+use crate::{
+    libc::stdio::{stdout_ptr, vfprintf},
+    signature_matches_libc,
+};
 
 /// Writes bytes sequentially to a raw pointer with no bounds checking.
 /// Used by `sprintf` / `vsprintf` to write into caller-provided buffers.
@@ -44,10 +47,29 @@ impl Write for UncheckedBufWriter {
     }
 }
 
+/// The shared `v*printf` engine: parse `format`, drive `writer`, return `finish`'s byte count.
+pub(crate) unsafe fn format_into<W: Write>(
+    writer: W,
+    format: *const i8,
+    mut args: VaList<'_>,
+) -> i32 {
+    let mut formatter = Formatter::new(writer);
+    for item in PrintfParser::new(format) {
+        match item {
+            PrintfItem::Literal(bytes) => formatter.write_bytes(bytes),
+            PrintfItem::Specifier(spec) => {
+                let resolved = ResolvedSpecifier::from_parsed(spec, &mut args);
+                formatter.format(&resolved, &mut args);
+            }
+        }
+    }
+    formatter.finish()
+}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn printf(format: *const i8, args: ...) -> i32 {
     signature_matches_libc!(libc::printf(format, args));
-    vdprintf(stdout().as_raw_fd(), format, args)
+    vfprintf(stdout_ptr(), format, args)
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -56,51 +78,17 @@ unsafe extern "C" fn sprintf(destination: *mut i8, format: *const i8, args: ...)
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn vsprintf(
-    destination: *mut i8,
-    format: *const i8,
-    mut args: VaList<'_>,
-) -> i32 {
-    let writer = UncheckedBufWriter::new(destination);
-    let mut formatter = Formatter::new(writer);
-
-    for item in parse::PrintfParser::new(format) {
-        match item {
-            PrintfItem::Literal(bytes) => formatter.write_bytes(bytes),
-            PrintfItem::Specifier(spec) => {
-                let resolved = ResolvedSpecifier::from_parsed(spec, &mut args);
-                formatter.format(&resolved, &mut args);
-            }
-        }
-    }
-
-    let bytes_written = formatter.finish();
-    // WARN: Null-terminate even on error — glibc does this, and callers may read the buffer regardless of the return value.
+unsafe extern "C" fn vsprintf(destination: *mut i8, format: *const i8, args: VaList<'_>) -> i32 {
+    let bytes_written = format_into(UncheckedBufWriter::new(destination), format, args);
+    // WARN: Null-terminate even on error... glibc does this, and callers may read the buffer regardless of the return value.
     *destination.add(bytes_written.max(0) as usize) = 0;
     bytes_written
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn vdprintf(
-    file_descriptor: i32,
-    format: *const i8,
-    mut args: VaList<'_>,
-) -> i32 {
+unsafe extern "C" fn vdprintf(file_descriptor: i32, format: *const i8, args: VaList<'_>) -> i32 {
     let file = ManuallyDrop::new(File::from_raw_fd(file_descriptor));
-    let writer = BufWriter::new(&*file);
-    let mut formatter = Formatter::new(writer);
-
-    for item in parse::PrintfParser::new(format) {
-        match item {
-            PrintfItem::Literal(bytes) => formatter.write_bytes(bytes),
-            PrintfItem::Specifier(spec) => {
-                let resolved = ResolvedSpecifier::from_parsed(spec, &mut args);
-                formatter.format(&resolved, &mut args);
-            }
-        }
-    }
-
-    formatter.finish()
+    format_into(BufWriter::new(&*file), format, args)
 }
 
 #[cfg(test)]

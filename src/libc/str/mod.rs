@@ -1,4 +1,4 @@
-mod printf;
+pub mod printf;
 
 use crate::signature_matches_libc;
 

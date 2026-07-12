@@ -22,6 +22,11 @@ impl Errno {
     pub const INVAL: Self = Self(linux_raw_sys::errno::EINVAL);
     pub const BADF: Self = Self(linux_raw_sys::errno::EBADF);
     pub const NOMEM: Self = Self(linux_raw_sys::errno::ENOMEM);
+    pub const INTR: Self = Self(linux_raw_sys::errno::EINTR);
+
+    pub fn into_raw(self) -> u32 {
+        self.0
+    }
 }
 
 impl Into<u32> for &Errno {

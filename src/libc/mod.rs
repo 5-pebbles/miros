@@ -7,6 +7,7 @@ mod fs;
 pub mod mem;
 pub mod process;
 mod random;
+pub mod stdio;
 mod str;
 mod syscall;
 mod threads;

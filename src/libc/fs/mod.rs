@@ -1,7 +1,8 @@
 mod close;
 mod fcntl;
-mod fstat;
+pub mod fstat;
+pub mod isatty;
 mod open;
 mod pread;
 mod read;
-mod write;
+pub mod write;
