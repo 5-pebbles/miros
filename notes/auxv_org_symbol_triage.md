@@ -100,17 +100,17 @@ Everything past L6322, needed for the 200 from `curl`:
 Not needed to serve auxv.org over HTTP:
 
 - **sqlcipher/openssl/rusqlite FILE\* + ctype** (whole `FILE*` subsystem, gated behind
-  `--analytics-password`): `fopen` `fopen64` `fclose` `fread` `fwrite` `fseek` `ftell` `feof`
-  `ferror` `fflush` `fgets` `fputc` `fputs` `fileno` `fprintf` `vfprintf` `perror`
+  `--analytics-password`): `fopen` `fopen64` `fclose` `fread` ~~`fwrite`~~ `fseek` `ftell` `feof`
+  `ferror` ~~`fflush`~~ `fgets` ~~`fputc`~~ ~~`fputs`~~ `fileno` ~~`fprintf`~~ ~~`vfprintf`~~ `perror`
   `__ctype_b_loc` `__ctype_tolower_loc` `__isoc23_sscanf` `__isoc23_strtol` `__isoc23_strtoul`
   `posix_memalign`
 - **SysV shm**: `shmget` `shmat` `shmdt` — 0 syscalls
 - **DNS** (binding to `0.0.0.0` resolves nothing): `getaddrinfo` `freeaddrinfo` `gai_strerror`
   `__res_init` — `connect` fired 0 times
 - **fs mutations**: `mkdir` `rmdir` `rename` `unlink` `readlink` `realpath` `ftruncate64`
-  `fsync` `fchmod` `fchown` `utimes` `pwrite64` `dup` `isatty`
+  `fsync` `fchmod` `fchown` `utimes` `pwrite64` `dup` ~~`isatty`~~
 - **panic/unwind/shutdown**: `dl_iterate_phdr` `dladdr` `dlopen` `dlclose` `dlsym` `dlerror`
-  `setcontext` `_setjmp` `_longjmp` `__cxa_atexit` `__cxa_finalize` `exit` `__assert_fail`
+  `setcontext` `_setjmp` `_longjmp` ~~`__cxa_atexit`~~ `__cxa_finalize` ~~`exit`~~ `__assert_fail`
 - **misc**: `uname` `gnu_get_libc_version` `__libc_current_sigrtmax` `mlock` `munlock` `log`
   `pow` `nanosleep` `pause` `localtime_r` `strftime` `secure_getenv` `geteuid`
 
