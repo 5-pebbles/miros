@@ -1,8 +1,34 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, ptr};
 
 use strum::FromRepr;
 
 use crate::{elf::program_header::ProgramHeader, error::MirosError};
+
+/// The raw auxiliary vector, retained past bootstrap so `getauxval` can answer arbitrary `AT_*` keys.
+static mut AUXILIARY_VECTOR: *const AuxiliaryVectorItem = ptr::null();
+
+pub unsafe fn set_auxiliary_vector(auxv_pointer: *const AuxiliaryVectorItem) {
+    AUXILIARY_VECTOR = auxv_pointer;
+}
+
+/// Walks auxv items from a pre-offset pointer, stopping before the `Null` terminator.
+unsafe fn auxiliary_vector_items(
+    auxv_pointer: *const AuxiliaryVectorItem,
+) -> impl Iterator<Item = AuxiliaryVectorItem> {
+    (0..)
+        .map(move |index| *auxv_pointer.add(index))
+        .take_while(|item| item.a_type != AuxiliaryVectorType::Null as usize)
+}
+
+pub unsafe fn get_auxiliary_value(requested_type: usize) -> Option<usize> {
+    let auxv_pointer = AUXILIARY_VECTOR;
+    if auxv_pointer.is_null() {
+        return None;
+    }
+    auxiliary_vector_items(auxv_pointer)
+        .find(|item| item.a_type == requested_type)
+        .map(|item| item.a_un.a_val)
+}
 
 #[derive(Debug, FromRepr, Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -65,20 +91,15 @@ impl AuxiliaryVectorInfo {
         let mut program_header_count: Result<usize, MirosError> =
             Err(MirosError::MissingAuxvEntry(AuxiliaryVectorType::Phnum));
 
-        (0..)
-            .map(|i| *auxv_pointer.add(i))
-            .take_while(|item| item.a_type() != Ok(AuxiliaryVectorType::Null))
-            .for_each(|item| match item.a_type() {
-                Ok(AuxiliaryVectorType::Base) => base = Ok(item.a_un.a_ptr.cast()),
-                Ok(AuxiliaryVectorType::Entry) => entry = Ok(item.a_un.a_ptr.cast()),
-                Ok(AuxiliaryVectorType::PageSize) => page_size = Ok(item.a_un.a_val),
-                Ok(AuxiliaryVectorType::Random) => pseudorandom_bytes = Ok(item.a_un.a_ptr.cast()),
-                Ok(AuxiliaryVectorType::Phdr) => {
-                    program_header_pointer = Ok(item.a_un.a_ptr.cast())
-                }
-                Ok(AuxiliaryVectorType::Phnum) => program_header_count = Ok(item.a_un.a_val),
-                _ => (),
-            });
+        auxiliary_vector_items(auxv_pointer).for_each(|item| match item.a_type() {
+            Ok(AuxiliaryVectorType::Base) => base = Ok(item.a_un.a_ptr.cast()),
+            Ok(AuxiliaryVectorType::Entry) => entry = Ok(item.a_un.a_ptr.cast()),
+            Ok(AuxiliaryVectorType::PageSize) => page_size = Ok(item.a_un.a_val),
+            Ok(AuxiliaryVectorType::Random) => pseudorandom_bytes = Ok(item.a_un.a_ptr.cast()),
+            Ok(AuxiliaryVectorType::Phdr) => program_header_pointer = Ok(item.a_un.a_ptr.cast()),
+            Ok(AuxiliaryVectorType::Phnum) => program_header_count = Ok(item.a_un.a_val),
+            _ => (),
+        });
 
         Ok(Self {
             base: base?,

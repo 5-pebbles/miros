@@ -38,3 +38,32 @@ pub unsafe extern "C" fn mmap(
     syscall_debug_assert!(result >= 0);
     result as *mut u8
 }
+
+// LFS alias: on x86_64 the offset is already 64-bit, so this is `mmap` verbatim.
+#[cfg_attr(not(test), no_mangle)]
+pub unsafe extern "C" fn mmap64(
+    pointer: *mut u8,
+    size: usize,
+    protection_flags: ProtectionFlags,
+    map_flags: MapFlags,
+    file_descriptor: RawFd,
+    file_offset: usize,
+) -> *mut u8 {
+    signature_matches_libc!((libc::mmap64(
+        pointer.cast(),
+        size,
+        std::mem::transmute(protection_flags),
+        std::mem::transmute(map_flags),
+        file_descriptor,
+        file_offset as i64,
+    ))
+    .cast());
+    mmap(
+        pointer,
+        size,
+        protection_flags,
+        map_flags,
+        file_descriptor,
+        file_offset,
+    )
+}

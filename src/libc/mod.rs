@@ -1,6 +1,7 @@
 // TODO: Kill the creators of this API... ヾ(๑╹◡╹)ﾉ🔪
 
 mod alloc;
+mod auxv;
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
@@ -11,6 +12,7 @@ pub mod stdio;
 mod str;
 mod syscall;
 mod threads;
+mod time;
 
 mod errno;
 

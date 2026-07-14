@@ -23,6 +23,9 @@ pub enum Syscall {
     OpenAt = 257,
     GetRandom = 318,
     Clone3 = 435,
+    GetTimeOfDay = 96,
+    ClockGetTime = 228,
+    SchedGetAffinity = 204,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,

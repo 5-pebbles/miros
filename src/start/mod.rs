@@ -83,6 +83,8 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .add(1)
         .cast::<AuxiliaryVectorItem>();
 
+    auxiliary_vector::set_auxiliary_vector(auxv_pointer);
+
     let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
     syscall_debug_assert!(auxv_info.page_size.is_power_of_two());
     syscall_debug_assert!(auxv_info.base.addr() & (auxv_info.page_size - 1) == 0);
