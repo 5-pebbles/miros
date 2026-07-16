@@ -5,7 +5,7 @@ mod libc_start_main;
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn rtld_fini() {}
 
-use std::{arch::asm, cell::Cell, process, thread};
+use std::{arch::asm, cell::Cell};
 
 use crate::{
     signature_matches_libc,
@@ -27,15 +27,10 @@ pub unsafe extern "C" fn getpid() -> ProcessID {
 unsafe extern "C" fn raise(signal_number: SignalNumber) -> i32 {
     signature_matches_libc!(libc::raise(signal_number));
 
-    let process_id = process::id();
-    let thread_id = thread::current().id();
+    let process_id = syscall!(Syscall::GetPid);
+    let thread_id = syscall!(Syscall::GetTid);
 
-    let result = syscall!(
-        Syscall::TgKill,
-        process_id,
-        thread_id.as_u64().get(),
-        signal_number
-    );
+    let result = syscall!(Syscall::TgKill, process_id, thread_id, signal_number);
     result as i32
 }
 
