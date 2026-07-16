@@ -17,3 +17,18 @@ pub fn exit(code: usize) -> ! {
         )
     }
 }
+
+/// Unmap `[base, base + length)` then exit the thread, touching no stack between the two syscalls.
+pub unsafe fn munmap_and_exit(base: *mut u8, length: usize) -> ! {
+    asm!(
+        "syscall",              // munmap(base, length)
+        "mov rax, {exit_number}",
+        "xor edi, edi",         // exit code 0
+        "syscall",              // exit(0)
+        in("rax") Syscall::MunMap as usize,
+        in("rdi") base,
+        in("rsi") length,
+        exit_number = const Syscall::Exit as usize,
+        options(noreturn, nostack),
+    )
+}

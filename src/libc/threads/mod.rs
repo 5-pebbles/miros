@@ -1,15 +1,60 @@
-use std::{cell::RefCell, ffi::c_void};
+use std::{cell::RefCell, ffi::c_void, sync::atomic::AtomicU32};
 
 use crate::{
     signature_matches_libc,
-    syscall::{syscall, Syscall},
+    syscall::{futex::FutexOperation, syscall, thread_pointer::get_thread_pointer, Syscall},
+    tls::thread_control_block::ThreadControlBlock,
 };
 
+mod attr;
+mod cond;
 mod create;
 mod join;
 mod key;
+mod mutex;
+mod once;
+mod rwlock;
+mod self_detach;
 
 use key::{run_key_destructor_round, PTHREAD_DESTRUCTOR_ITERATIONS};
+
+/// A thread handle — the thread pointer (= TCB address), matching glibc's `pthread_t` width.
+pub type PthreadT = usize;
+
+/// This thread's kernel tid, read from the TCB at the thread pointer.
+pub unsafe fn current_tid() -> u32 {
+    (*get_thread_pointer().cast::<ThreadControlBlock>()).tid as u32
+}
+
+/// Sleep on `word` while it still holds `expected`; the shared futex-wait for every pthread primitive.
+pub fn futex_wait(word: &AtomicU32, expected: u32) {
+    unsafe {
+        syscall!(
+            Syscall::Futex,
+            word.as_ptr(),
+            FutexOperation::Wait,
+            expected,
+            0usize,
+            0usize,
+            0usize
+        );
+    }
+}
+
+/// Wake up to `count` sleepers on `word` (`i32::MAX` for all).
+pub fn futex_wake(word: &AtomicU32, count: i32) {
+    unsafe {
+        syscall!(
+            Syscall::Futex,
+            word.as_ptr(),
+            FutexOperation::Wake,
+            count,
+            0usize,
+            0usize,
+            0usize
+        );
+    }
+}
 
 struct TlsDestructor {
     function: unsafe extern "C" fn(*mut c_void),

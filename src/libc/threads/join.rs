@@ -4,21 +4,15 @@ use std::{
 };
 
 use crate::{
-    libc::mem::munmap,
+    libc::{mem::munmap, threads::PthreadT},
     signature_matches_libc,
     syscall::{futex::FutexOperation, syscall, Syscall},
     tls::thread_control_block::ThreadControlBlock,
 };
 
-type PthreadT = usize;
-
-#[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn pthread_join(thread_addr: PthreadT, return_value: *mut *mut c_void) -> i32 {
-    signature_matches_libc!(libc::pthread_join(thread_addr as _, return_value));
-
-    let thread_control_block = thread_addr as *const ThreadControlBlock;
-    let tid_pointer = ptr::addr_of!((*thread_control_block).tid);
-
+/// Block until the kernel clears `tid` — set via `CLONE_CHILD_CLEARTID` as the last act of a dying thread,
+/// so `tid == 0` means the thread is fully off its stack and its region is safe to unmap.
+pub unsafe fn wait_until_exited(tid_pointer: *const i32) {
     loop {
         let current_tid = ptr::read_volatile(tid_pointer);
         if current_tid == 0 {
@@ -34,8 +28,22 @@ unsafe extern "C" fn pthread_join(thread_addr: PthreadT, return_value: *mut *mut
             0usize
         );
     }
+}
 
-    if let Some(return_value) = NonNull::new(return_value) {
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn pthread_join(
+    thread_addr: PthreadT,
+    return_value: Option<NonNull<*mut c_void>>,
+) -> i32 {
+    signature_matches_libc!(libc::pthread_join(
+        thread_addr as _,
+        std::mem::transmute(return_value)
+    ));
+
+    let thread_control_block = thread_addr as *const ThreadControlBlock;
+    wait_until_exited(ptr::addr_of!((*thread_control_block).tid));
+
+    if let Some(return_value) = return_value {
         *return_value.as_ptr() = (*thread_control_block).return_value;
     }
 

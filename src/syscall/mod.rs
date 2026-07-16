@@ -16,7 +16,7 @@ pub enum Syscall {
     GetPid = 39,
     Clone = 56,
     Exit = 60,
-    ArchPrctl = 158,
+    ArchPrCtl = 158,
     Futex = 202,
     GetTid = 186,
     TgKill = 234,
@@ -26,6 +26,7 @@ pub enum Syscall {
     GetTimeOfDay = 96,
     ClockGetTime = 228,
     SchedGetAffinity = 204,
+    PrCtl = 157,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
