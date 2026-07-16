@@ -26,6 +26,7 @@ examples: build_release
     gcc -o examples/bin/pthread_basic examples/pthread_basic.c -lpthread -Wl,{{linker_flag}}
     gcc -o examples/bin/pthread_sync examples/pthread_sync.c -lpthread -Wl,{{linker_flag}}
     gcc -o examples/bin/signal_reactor examples/signal_reactor.c -Wl,{{linker_flag}}
+    gcc -o examples/bin/fs_walk examples/fs_walk.c -Wl,{{linker_flag}}
     gcc -fno-builtin -o examples/bin/thread_dtors examples/thread_dtors.c -lpthread -Wl,{{linker_flag}}
     gcc -o examples/bin/stdio_buffer examples/stdio_buffer.c -Wl,{{linker_flag}}
     gcc -O2 -o examples/bin/putchar_unlocked_o2 examples/putchar_unlocked_o2.c -Wl,{{linker_flag}}

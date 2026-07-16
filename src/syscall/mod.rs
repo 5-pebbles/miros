@@ -39,6 +39,9 @@ pub enum Syscall {
     MAdvise = 28,
     SchedYield = 24,
     GetCwd = 79,
+    Statx = 332,
+    LSeek = 8,
+    GetDents64 = 217,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,

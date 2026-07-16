@@ -1,5 +1,6 @@
 use std::ffi::VaList;
 
+use arbitrary_int::u12;
 use bitbybit::{bitenum, bitfield};
 
 use crate::{
@@ -9,24 +10,26 @@ use crate::{
 };
 
 const AT_FDCWD: isize = -100;
-pub const S_IFMT: u32 = 1111 << 12;
 
-#[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
-    signature_matches_libc!(libc::open64(
-        std::mem::transmute(pathname),
-        std::mem::transmute(flags),
-        args,
-    ));
+/// The permission bits of a file mode; the file-type nibble above them is not part of `open`'s mode argument.
+#[bitfield(u32)]
+struct FileMode {
+    #[bits(0..=11, rw)]
+    permissions: u12,
+}
 
+/// Both ABI names funnel here; a create-flavored call carries its permission `mode` in the variadic tail.
+unsafe fn open_file(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
     let mode = if flags.create() || flags.create_unnamed_temporary_file() {
-        args.arg::<u32>() & !S_IFMT
+        FileMode::new_with_raw_value(args.arg::<u32>())
+            .permissions()
+            .value()
     } else {
         0
     };
 
-    // directory_file_descriptor = 0 (AT_FDCWD is unused; we always pass 0)
-    let result = syscall!(Syscall::OpenAt, 0usize, pathname, flags.raw_value(), mode);
+    // Relative paths resolve against the CWD, so the dirfd is AT_FDCWD — not 0, which is stdin.
+    let result = syscall!(Syscall::OpenAt, AT_FDCWD, pathname, flags.raw_value(), mode);
 
     if result < 0 {
         // The kernel returns the inverse of our errno...
@@ -35,6 +38,27 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
     } else {
         result as i32
     }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, args: VaList) -> i32 {
+    signature_matches_libc!(libc::open64(
+        std::mem::transmute(pathname),
+        std::mem::transmute(flags),
+        args,
+    ));
+    open_file(pathname, flags, args)
+}
+
+// LFS alias: `open` is `open64` on x86_64 (O_LARGEFILE is a no-op).
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn open(pathname: *const i8, flags: OFlags, args: VaList) -> i32 {
+    signature_matches_libc!(libc::open(
+        std::mem::transmute(pathname),
+        std::mem::transmute(flags),
+        args,
+    ));
+    open_file(pathname, flags, args)
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -101,8 +125,12 @@ pub struct OFlags {
     require_create: bool,
     #[bit(9, rw)]
     do_not_make_controlling_terminal: bool,
+    #[bit(16, rw)]
+    directory: bool,
     #[bit(18, rw)]
     do_not_follow_symbolic_link: bool,
+    #[bit(19, rw)]
+    close_on_exec: bool,
     #[bit(22, rw)]
     create_unnamed_temporary_file: bool,
 }

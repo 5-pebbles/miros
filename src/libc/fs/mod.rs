@@ -1,9 +1,12 @@
 mod close;
+mod dirent;
 mod fcntl;
 pub mod fstat;
 mod getcwd;
 pub mod isatty;
+mod lseek;
 mod open;
 mod pread;
 mod read;
+mod statx;
 pub mod write;
