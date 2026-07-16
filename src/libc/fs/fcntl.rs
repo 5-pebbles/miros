@@ -22,25 +22,19 @@ pub enum FCntlCommand {
     DuplicateFileDescriptorCloseOnExec = 1030,
 }
 
-#[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn fcntl(
-    file_descriptor: BorrowedFd<'_>,
-    command: FCntlCommand,
-    mut arguments: ...
-) -> i32 {
-    signature_matches_libc!(libc::fcntl(
-        std::mem::transmute(file_descriptor),
-        std::mem::transmute(command),
-    ));
-
-    let argument: usize = matches!(
+/// The commands that take no third argument; for these the variadic slot is never read.
+fn command_takes_no_argument(command: FCntlCommand) -> bool {
+    matches!(
         command,
         FCntlCommand::GetCloseOnExec | FCntlCommand::GetOpenFlags
     )
-    .not()
-    .then_some(arguments.arg())
-    .unwrap_or_default();
+}
 
+unsafe fn fcntl_dispatch(
+    file_descriptor: BorrowedFd<'_>,
+    command: FCntlCommand,
+    argument: usize,
+) -> i32 {
     let result = syscall!(
         Syscall::FCntl,
         file_descriptor.as_raw_fd(),
@@ -54,4 +48,41 @@ unsafe extern "C" fn fcntl(
     } else {
         result as i32
     }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fcntl(
+    file_descriptor: BorrowedFd<'_>,
+    command: FCntlCommand,
+    mut arguments: ...
+) -> i32 {
+    signature_matches_libc!(libc::fcntl(
+        std::mem::transmute(file_descriptor),
+        std::mem::transmute(command),
+    ));
+
+    let argument = command_takes_no_argument(command)
+        .not()
+        .then(|| arguments.arg())
+        .unwrap_or_default();
+    fcntl_dispatch(file_descriptor, command, argument)
+}
+
+// LFS alias: on x86_64 file offsets are already 64-bit, so `fcntl64` is `fcntl` verbatim.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fcntl64(
+    file_descriptor: BorrowedFd<'_>,
+    command: FCntlCommand,
+    mut arguments: ...
+) -> i32 {
+    signature_matches_libc!(libc::fcntl(
+        std::mem::transmute(file_descriptor),
+        std::mem::transmute(command),
+    ));
+
+    let argument = command_takes_no_argument(command)
+        .not()
+        .then(|| arguments.arg())
+        .unwrap_or_default();
+    fcntl_dispatch(file_descriptor, command, argument)
 }

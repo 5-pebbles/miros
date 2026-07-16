@@ -15,6 +15,8 @@ pub use mmap::mmap;
 mod mremap;
 pub use mremap::{mremap, MreMapFlags};
 
+mod madvise;
+
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]
 pub enum GrowthDirection {

@@ -3,11 +3,17 @@
 mod alloc;
 mod auxv;
 pub mod environ;
+mod epoll;
+mod eventfd;
 // TODO: Add error handling for these things:
 mod fs;
 pub mod mem;
+mod net;
+mod poll;
 pub mod process;
 mod random;
+mod sched;
+mod signal;
 pub mod stdio;
 mod str;
 mod syscall;
