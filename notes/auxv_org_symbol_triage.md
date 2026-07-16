@@ -26,6 +26,54 @@ miros already exports (relevant to boot): `pthread_create` `pthread_join`
 
 ---
 
+## Re-review (2026-07-16): empirical needed/cold split under miros
+
+Commits 1–3 landed all of Phase 1 (runtime + tokio reactor + signals). Re-ran the triage
+against the **current** `libmiros.so` to pin exactly which of the remaining **96 missing**
+symbols the index serve actually needs. **This section supersedes the Phase 2–4 tables and the
+cold list below wherever they conflict.**
+
+**Method.** The binary is `BIND_NOW` with **zero `JUMP_SLOT`** relocs — it calls libc via
+GOT-indirect (`GLOB_DAT`), so `LD_AUDIT`/`la_pltenter` catches almost nothing (3 calls). Used
+gdb `dprintf` on all 96 instead — a GOT-indirect call still lands on the function entry, so a
+name breakpoint fires regardless of call mechanism — over a boot + 2 `curl /` → 200. Then took
+backtraces on every ambiguous hit.
+
+**The correction that matters.** The raw trace shows **28/96** firing, but **7 are called only
+from inside glibc functions miros *overrides*** — they never run under miros:
+
+| Symbol(s) | glibc-internal caller (miros replaces it) |
+|---|---|
+| `fopen64` `fclose` `__isoc23_sscanf` `lseek64` | `pthread_getattr_np` (parses `/proc/self/maps`; miros reads the TCB) |
+| `_setjmp` | `__libc_start_main` |
+| `__isoc23_strtoul` | `get_nprocs` / malloc-init (miros's `sysconf` + allocator don't call it) |
+
+**Net: ~21 needed under miros, ~75 null-bind safely** (68 never-hit + the 7 glibc-internal).
+
+### Needed to serve the index (21)
+
+- **Filesystem (commit 4)** — `open` `opendir` `readdir` `readdir64` `closedir` `dirfd` `fstat`
+  `statx`. `stat`/`lstat64` are **not** needed (statx covers metadata on this kernel); `lseek64`
+  only seen glibc-internal — keep as cheap safety.
+- **Sockets (commit 5)** — `socket` `bind` `listen` `accept4` `setsockopt` `getsockname`
+  `getpeername` `recv` `writev` `shutdown`. `send` **not** needed — the response goes out via
+  `writev`.
+- **Leaf gaps — in NO prior commit plan** (⚠ each is a null-call SIGSEGV under the strong→null
+  relaxation):
+  - `posix_memalign` — Rust aligned allocation (miros has only `malloc`/`calloc`/`realloc`/`free`)
+  - `pow` — real libm call from a worker thread at boot
+  - `dlsym` — must *exist*; **null return is correct**: the only lookup is
+    `__pthread_get_minstack`, which Rust std handles by falling back to a constant (no cascade)
+
+### Risk — fallback divergence
+
+The trace is glibc behavior. If a miros implementation of a needed symbol **returns an error
+where glibc succeeded, std falls back to a different symbol** not in this list. Highest-risk:
+**`statx` must succeed** (else std drops to `fstatat`/`stat`/`lstat64`, pulling in symbols marked
+cold here). `dlsym`-returns-null is the one fallback confirmed safe.
+
+---
+
 ## Phase 1 — Rust runtime + tokio multi-thread runtime (before `main` body)
 
 `#[rocket::main]` builds the tokio runtime first; it spawns 9 worker threads (`clone3` ×9)
@@ -103,16 +151,18 @@ Not needed to serve auxv.org over HTTP:
   `--analytics-password`): `fopen` `fopen64` `fclose` `fread` ~~`fwrite`~~ `fseek` `ftell` `feof`
   `ferror` ~~`fflush`~~ `fgets` ~~`fputc`~~ ~~`fputs`~~ `fileno` ~~`fprintf`~~ ~~`vfprintf`~~ `perror`
   `__ctype_b_loc` `__ctype_tolower_loc` `__isoc23_sscanf` `__isoc23_strtol` `__isoc23_strtoul`
-  `posix_memalign`
+  ~~`posix_memalign`~~ (**NOT cold** — Rust aligned alloc; see Re-review)
 - **SysV shm**: `shmget` `shmat` `shmdt` — 0 syscalls
 - **DNS** (binding to `0.0.0.0` resolves nothing): `getaddrinfo` `freeaddrinfo` `gai_strerror`
   `__res_init` — `connect` fired 0 times
 - **fs mutations**: `mkdir` `rmdir` `rename` `unlink` `readlink` `realpath` `ftruncate64`
   `fsync` `fchmod` `fchown` `utimes` `pwrite64` `dup` ~~`isatty`~~
-- **panic/unwind/shutdown**: `dl_iterate_phdr` `dladdr` `dlopen` `dlclose` `dlsym` `dlerror`
+- **panic/unwind/shutdown**: `dl_iterate_phdr` `dladdr` `dlopen` `dlclose` `dlerror`
   `setcontext` `_setjmp` `_longjmp` ~~`__cxa_atexit`~~ `__cxa_finalize` ~~`exit`~~ `__assert_fail`
+  — but ~~`dlsym`~~ (**called, null-safe** — see Re-review)
 - **misc**: `uname` `gnu_get_libc_version` `__libc_current_sigrtmax` `mlock` `munlock` `log`
-  `pow` `nanosleep` `pause` `localtime_r` `strftime` `secure_getenv` `geteuid`
+  ~~`pow`~~ (**NOT cold** — libm, worker thread; see Re-review) `nanosleep` `pause` `localtime_r`
+  `strftime` `secure_getenv` `geteuid`
 
 ## Can't confirm from strace — verify before assuming
 
@@ -123,6 +173,12 @@ Read auxv/memory (no syscall), so the trace is blind. A couple may be Phase 1:
 
 ## Bottom line
 
-~55 symbols across Phases 1–4 get from exec to a served 200. The bulk is one push on
-**pthread mutex/cond/rwlock** (Phase 1) — tokio is the gate. The remaining ~110 missing symbols
-are dead code behind `--analytics-password` or panic/teardown paths.
+**Post-re-review (2026-07-16):** Phase 1 is committed (commits 1–3). Of the **96** still missing,
+only **~21** are on the index-serve path — 8 filesystem (commit 4), 10 sockets (commit 5), and
+**3 unplanned leaf gaps** (`posix_memalign` `pow` `dlsym`). The other **~75 null-bind safely**
+under the temporary strong→null relaxation. Fold the 3 leaf gaps into commit 5 (or a pre-commit),
+drop `stat`/`lstat64`/`send` from the critical path, and treat **`statx` must succeed** as a
+commit-4 acceptance criterion.
+
+*(Original estimate, pre-Phase-1: ~55 symbols across Phases 1–4; the bulk was the pthread
+mutex/cond/rwlock gate, now landed.)*
