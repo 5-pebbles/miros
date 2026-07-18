@@ -8,6 +8,7 @@ mod epoll;
 mod eventfd;
 // TODO: Add error handling for these things:
 mod fs;
+mod math;
 pub mod mem;
 mod net;
 mod poll;

@@ -31,6 +31,12 @@ pub fn run() -> PathBuf {
             "rustc",
             "-Z",
             "build-std=core,alloc,std",
+            // Mangle compiler_builtins' intrinsic symbols so its weak-hidden bare-C libm twins
+            // (sqrt, floor, fma, …) don't exist to collide with our exports. Without this, ld's
+            // visibility merge of our GLOBAL DEFAULT def with their WEAK HIDDEN def yields HIDDEN,
+            // silently dropping every hardware-satisfiable math symbol from our .dynsym.
+            "-Z",
+            "build-std-features=mangled-names",
             "--target",
             TARGET,
             "--release",
