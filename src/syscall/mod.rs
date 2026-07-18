@@ -42,6 +42,18 @@ pub enum Syscall {
     Statx = 332,
     LSeek = 8,
     GetDents64 = 217,
+    Socket = 41,
+    Bind = 49,
+    Listen = 50,
+    Accept4 = 288,
+    SetSockOpt = 54,
+    GetSockOpt = 55,
+    GetSockName = 51,
+    GetPeerName = 52,
+    RecvFrom = 45,
+    SendTo = 44,
+    WriteV = 20,
+    Shutdown = 48,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
