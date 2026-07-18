@@ -2,6 +2,7 @@
 
 mod alloc;
 mod auxv;
+mod dl;
 pub mod environ;
 mod epoll;
 mod eventfd;

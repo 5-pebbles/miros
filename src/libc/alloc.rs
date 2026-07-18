@@ -1,4 +1,10 @@
-use std::{alloc::Layout, ffi::c_void, ptr, ptr::NonNull};
+use std::{
+    alloc::Layout,
+    ffi::{c_int, c_void},
+    mem::size_of,
+    ptr,
+    ptr::NonNull,
+};
 
 use crate::{
     allocator::primary,
@@ -49,6 +55,27 @@ unsafe extern "C" fn realloc(pointer: *mut c_void, size: usize) -> *mut c_void {
             }
             ptr::null_mut()
         }
+    }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn posix_memalign(
+    memory: *mut *mut c_void,
+    alignment: usize,
+    size: usize,
+) -> c_int {
+    signature_matches_libc!(libc::posix_memalign(memory, alignment, size));
+    // POSIX: alignment must be a power of two and a multiple of the pointer size; errors return a code, not errno.
+    if !alignment.is_power_of_two() || alignment % size_of::<*mut c_void>() != 0 {
+        return libc::EINVAL;
+    }
+    // The allocator picks a class satisfying both size and align, so passing the alignment through is enough.
+    match primary().alloc(Layout::from_size_align_unchecked(size, alignment)) {
+        Some(pointer) => {
+            *memory = pointer.as_ptr().cast();
+            0
+        }
+        None => libc::ENOMEM,
     }
 }
 
