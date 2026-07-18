@@ -2,7 +2,7 @@
 
 A from-scratch ELF dynamic linker/loader/C standard library/pthreads monolith written in Rust. I'm building it to understand (and eventually replace) `ld.so` on my systems.
 
-Requires Rust nightly and [`just`](https://github.com/casey/just). Run `just --list` to see available commands.
+Requires Rust nightly. Run `cargo xtask --help` to see available commands; `cargo check` and `cargo test` work as plain cargo.
 
 ## What Can It Do? 🔧
 
@@ -49,12 +49,12 @@ I'm documenting the process of building miros at [auxv.org](https://auxv.org):
 Contributions are welcome! A few things to know:
 
 - **Idiomatic Rust** — use iterators, combinators, pattern matching, and the type system. No C-in-Rust.
-- **How to debug** — `cargo build && rust-lldb <program_linked_to_miros>` is the workflow. `readelf -r` for inspecting relocations.
+- **How to debug** — `cargo xtask build && rust-lldb <program_linked_to_miros>` is the workflow. `readelf -r` for inspecting relocations.
 - **Check for Supported Symbols** — the following fish command can be used to identify any `GLIBC` symbols Miros doesn't support within a given binary:
 
 ```fish
-set BINARY ./examples/print_deadbeef
-comm -23 (nm -D --undefined-only $BINARY | grep '@GLIBC' | awk '{print $NF}' | sed 's/@.*//' | sort | psub) (nm -D --defined-only ./target/x86_64-unknown-linux-gnu/debug/miros | awk '{print $NF}' | sort | psub)
+set BINARY ./examples/bin/print_deadbeef
+comm -23 (nm -D --undefined-only $BINARY | grep '@GLIBC' | awk '{print $NF}' | sed 's/@.*//' | sort | psub) (nm -D --defined-only ./target/x86_64-unknown-linux-gnu/release/libmiros.so | awk '{print $NF}' | sort | psub)
 ```
 
 Check the [issues](https://github.com/5-pebbles/miros/issues) if you're looking for something to work on (there's a lot).
