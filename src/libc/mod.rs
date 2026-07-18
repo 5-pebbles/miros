@@ -4,6 +4,7 @@ mod alloc;
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
+mod math;
 pub mod mem;
 pub mod process;
 mod random;

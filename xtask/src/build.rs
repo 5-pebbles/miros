@@ -27,6 +27,10 @@ pub fn run() -> PathBuf {
             "rustc",
             "-Z",
             "build-std=core,alloc,std",
+            "-Z",
+            "build-std-features=mangled-names",
+            // Without this ^, ld's visibility merge of our GLOBAL DEFAULT def with their WEAK HIDDEN def yields HIDDEN,
+            // dropping every hardware-satisfiable math symbol from our .dynsym.
             "--target",
             TARGET,
             "--release",
