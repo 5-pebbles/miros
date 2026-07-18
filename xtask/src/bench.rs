@@ -8,6 +8,8 @@ use std::{
 
 use clap::Args;
 
+use crate::build;
+
 #[derive(Args)]
 pub struct BenchArgs {
     /// Benchmark names to run (default: all *.c files)
@@ -56,13 +58,6 @@ fn log(color: bool, tag: &str, message: &str) {
     }
 }
 
-fn project_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask must be one directory below the project root")
-        .to_path_buf()
-}
-
 fn discover_benchmarks(bench_dir: &Path, names: &[String]) -> Vec<PathBuf> {
     if !names.is_empty() {
         return names
@@ -93,20 +88,6 @@ fn discover_benchmarks(bench_dir: &Path, names: &[String]) -> Vec<PathBuf> {
     }
 
     sources
-}
-
-fn build_miros(root: &Path, color: bool) {
-    log(color, "build", "miros (release)");
-    let status = Command::new("just")
-        .arg("build_release")
-        .current_dir(root)
-        .stdout(Stdio::null())
-        .status()
-        .expect("failed to run `just build_release`");
-    if !status.success() {
-        eprintln!("just build_release failed");
-        std::process::exit(1);
-    }
 }
 
 fn compile_benchmark(
@@ -362,10 +343,9 @@ fn command_exists(name: &str) -> bool {
 }
 
 pub fn run(args: BenchArgs) {
-    let root = project_root();
+    let root = build::workspace_root();
     let bench_dir = root.join("benchmarks");
     let bin_dir = bench_dir.join("bin");
-    let miros = root.join("target/x86_64-unknown-linux-gnu/release/libmiros.so");
 
     let log_color = std::io::stderr().is_terminal();
     let table_color = std::io::stdout().is_terminal();
@@ -375,11 +355,8 @@ pub fn run(args: BenchArgs) {
         std::process::exit(1);
     });
 
-    build_miros(&root, log_color);
-    if !miros.exists() {
-        eprintln!("miros binary not found at {}", miros.display());
-        std::process::exit(1);
-    }
+    log(log_color, "build", "miros (release)");
+    let miros = build::run();
 
     let sources = discover_benchmarks(&bench_dir, &args.names);
 
