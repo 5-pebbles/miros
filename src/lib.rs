@@ -4,7 +4,6 @@
 #![feature(const_cmp)]
 #![feature(generic_atomic)]
 #![feature(type_changing_struct_update)]
-#![feature(thread_id_value)]
 #![feature(thread_local)]
 #![feature(stmt_expr_attributes)]
 #![feature(maybe_uninit_array_assume_init)]
