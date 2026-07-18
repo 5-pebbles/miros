@@ -2,7 +2,7 @@
 
 A from-scratch ELF dynamic linker/loader/C standard library/pthreads monolith written in Rust. I'm building it to understand (and eventually replace) `ld.so` on my systems.
 
-Requires Rust nightly and [`just`](https://github.com/casey/just). Run `just --list` to see available commands.
+Requires Rust nightly. Build with `cargo xtask build`; run `cargo xtask --help` to see available commands.
 
 ## What Can It Do? 🔧
 
@@ -49,7 +49,7 @@ I'm documenting the process of building miros at [auxv.org](https://auxv.org):
 Contributions are welcome! A few things to know:
 
 - **Idiomatic Rust** — use iterators, combinators, pattern matching, and the type system. No C-in-Rust.
-- **How to debug** — `cargo build && rust-lldb <program_linked_to_miros>` is the workflow. `readelf -r` for inspecting relocations.
+- **How to debug** — `cargo xtask build && rust-lldb <program_linked_to_miros>` is the workflow. `readelf -r` for inspecting relocations.
 - **Check for Supported Symbols** — the following fish command can be used to identify any `GLIBC` symbols Miros doesn't support within a given binary:
 
 ```fish

@@ -2,6 +2,15 @@
 name = "xtask"
 version = "0.1.0"
 edition = "2021"
+default-run = "xtask"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+
+[[bin]]
+name = "miros-ld"
+path = "src/bin/miros-ld.rs"
+
+[[bin]]
+name = "xtask"
+path = "src/main.rs"
