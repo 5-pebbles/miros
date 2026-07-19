@@ -71,6 +71,17 @@ impl ObjectDataGraph {
         order.into_iter()
     }
 
+    // COPY lookup rule: the program's own definition is the copy destination, so the search skips it.
+    pub fn resolve_symbol_outside_program(
+        &self,
+        symbol_name: &str,
+    ) -> Option<(Symbol, *const c_void)> {
+        self.dependencies
+            .values()
+            .chain(std::iter::once(&self.miros))
+            .find_map(|object| object.resolve_symbol_and_address(symbol_name))
+    }
+
     pub fn resolve_symbol_address(
         &self,
         symbol: Symbol,
