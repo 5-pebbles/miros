@@ -1,24 +1,37 @@
-use std::{ffi::CStr, mem::MaybeUninit};
+use std::{
+    ffi::CStr,
+    ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
+
+use linkme::distributed_slice;
 
 use crate::{
-    io_macros::syscall_debug_assert, signature_matches_libc,
+    io_macros::syscall_debug_assert,
+    libc::interposable::{Bindable, InterposableCell, INTERPOSABLE_CELLS},
+    signature_matches_libc,
     start::environment_variables::EnvironmentIter,
 };
 
-#[cfg_attr(not(test), no_mangle)]
+// Exported as __environ — the static linker dedups every reference onto glibc's strong alias (bare environ/_environ are the weak twins rustc cdylibs can't also emit).
+#[cfg_attr(not(test), export_name = "__environ")]
 #[allow(non_upper_case_globals)]
-static mut environ: MaybeUninit<*mut *mut u8> = MaybeUninit::uninit();
+static environ: AtomicPtr<*mut u8> = AtomicPtr::new(ptr::null_mut());
+
+static ENVIRON: InterposableCell<*mut *mut u8> =
+    InterposableCell::new("__environ", environ.as_ptr());
+
+#[distributed_slice(INTERPOSABLE_CELLS)]
+static ENVIRON_CELL: &'static dyn Bindable = &ENVIRON;
 
 pub unsafe fn set_environ_pointer(environ_pointer: *mut *mut u8) {
     syscall_debug_assert!((*environ_pointer.sub(1)).is_null());
 
-    #[allow(static_mut_refs)]
-    environ.write(environ_pointer);
+    AtomicPtr::from_ptr(ENVIRON.as_ptr()).store(environ_pointer, Ordering::Relaxed);
 }
 
 pub unsafe fn get_environ_pointer() -> *mut *mut u8 {
-    #[allow(static_mut_refs)]
-    environ.assume_init_read()
+    AtomicPtr::from_ptr(ENVIRON.as_ptr()).load(Ordering::Relaxed)
 }
 
 #[cfg_attr(not(test), no_mangle)]
@@ -37,4 +50,30 @@ unsafe extern "C" fn getenv(variable_name_pointer: *const u8) -> *const u8 {
             }
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // One sequential test: rebinding the cell mid-flight would misdirect concurrent environ access.
+    #[test]
+    fn environ_set_get_and_rebind() {
+        let mut own_backing: [*mut u8; 2] = [ptr::null_mut(); 2];
+        let own_array = unsafe { own_backing.as_mut_ptr().add(1) };
+        unsafe { set_environ_pointer(own_array) };
+        assert_eq!(unsafe { get_environ_pointer() }, own_array);
+
+        let mut copied_cell: *mut *mut u8 = ptr::null_mut();
+        ENVIRON.rebind(&raw mut copied_cell);
+
+        let mut other_backing: [*mut u8; 2] = [ptr::null_mut(); 2];
+        let other_array = unsafe { other_backing.as_mut_ptr().add(1) };
+        unsafe { set_environ_pointer(other_array) };
+        assert_eq!(copied_cell, other_array);
+        assert_eq!(unsafe { get_environ_pointer() }, other_array);
+        assert_eq!(environ.load(Ordering::Relaxed), own_array);
+
+        ENVIRON.rebind(environ.as_ptr());
+    }
 }
