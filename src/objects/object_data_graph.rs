@@ -106,6 +106,10 @@ impl ObjectDataGraph {
             return Ok(address);
         }
 
+        self.resolve_symbol_by_name(symbol_name)
+    }
+
+    pub fn resolve_symbol_by_name(&self, symbol_name: &str) -> Result<*const c_void, MirosError> {
         let resolved = self
             .iter_objects()
             .chain(std::iter::once(&self.miros))

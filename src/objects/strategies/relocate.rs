@@ -114,6 +114,10 @@ impl Stratagem for Relocate {
                 .iter()
                 .chain(plt_rela_entries.iter())
                 .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
-        })
+        })?;
+
+        // Miros's manual GOT; must precede InitArray as user init code may reach the cells.
+        crate::libc::interposable::bind_all(object_data_map);
+        Ok(())
     }
 }

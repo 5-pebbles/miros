@@ -1,8 +1,15 @@
-use core::ffi::c_int;
+use core::{
+    ffi::c_int,
+    sync::atomic::{AtomicI32, Ordering},
+};
 
-// miros intercepts libm.so.6, so the whole C math surface is ours to provide. Each export is a
-// straight pass-through to the pure-Rust `libm` crate (fdlibm algorithms, no FFI, no global
-// state); the crate's names are the C names, so the wrappers are correct by construction.
+use linkme::distributed_slice;
+
+use crate::libc::interposable::{Bindable, InterposableCell, INTERPOSABLE_CELLS};
+
+// miros intercepts libm.so.6, so the whole C math surface is ours to provide.
+// Each export is a straight pass-through to the pure-Rust `libm` crate (fdlibm algorithms, no FFI, no global state);
+// the crate's names are the C names, so the wrappers are correct by construction.
 macro_rules! forward_to_libm {
     ($( $name:ident($($argument:ident: $argument_type:ty),*) -> $return_type:ty; )*) => { $(
         #[cfg_attr(not(test), no_mangle)]
@@ -48,7 +55,6 @@ forward_to_libm! {
     j1(value: f64) -> f64;
     jn(order: c_int, value: f64) -> f64;
     ldexp(value: f64, exponent: c_int) -> f64;
-    lgamma(value: f64) -> f64;
     log(value: f64) -> f64;
     log10(value: f64) -> f64;
     log1p(value: f64) -> f64;
@@ -106,7 +112,6 @@ forward_to_libm! {
     j1f(value: f32) -> f32;
     jnf(order: c_int, value: f32) -> f32;
     ldexpf(value: f32, exponent: c_int) -> f32;
-    lgammaf(value: f32) -> f32;
     log10f(value: f32) -> f32;
     log1pf(value: f32) -> f32;
     log2f(value: f32) -> f32;
@@ -130,6 +135,16 @@ forward_to_libm! {
     ynf(order: c_int, value: f32) -> f32;
 }
 
+// POSIX: lgamma reports Γ's sign through this global. Exported as __signgam — the static linker dedups every reference onto glibc's strong alias (bare signgam is the weak pre-2.23 twin; rustc cdylibs can't emit ELF aliases to cover both).
+#[cfg_attr(not(test), export_name = "__signgam")]
+#[allow(non_upper_case_globals)]
+static signgam: AtomicI32 = AtomicI32::new(0);
+
+static SIGNGAM: InterposableCell<i32> = InterposableCell::new("__signgam", signgam.as_ptr());
+
+#[distributed_slice(INTERPOSABLE_CELLS)]
+static SIGNGAM_CELL: &'static dyn Bindable = &SIGNGAM;
+
 // The out-pointer family: the crate returns tuples; .0 is the C return value, .1 goes through the pointer (sincos writes both).
 
 #[cfg_attr(not(test), no_mangle)]
@@ -147,9 +162,23 @@ unsafe extern "C" fn frexpf(value: f32, exponent: *mut c_int) -> f32 {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn lgamma(value: f64) -> f64 {
+    let (result, sign) = libm::lgamma_r(value);
+    AtomicI32::from_ptr(SIGNGAM.as_ptr()).store(sign, Ordering::Relaxed);
+    result
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn lgamma_r(value: f64, sign: *mut c_int) -> f64 {
     let (result, sign_of_gamma) = libm::lgamma_r(value);
     *sign = sign_of_gamma;
+    result
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn lgammaf(value: f32) -> f32 {
+    let (result, sign) = libm::lgammaf_r(value);
+    AtomicI32::from_ptr(SIGNGAM.as_ptr()).store(sign, Ordering::Relaxed);
     result
 }
 
@@ -202,6 +231,23 @@ unsafe extern "C" fn sincosf(angle: f32, sine: *mut f32, cosine: *mut f32) {
 mod tests {
     use super::*;
     use crate::test_macros::eq_tests;
+
+    // One sequential test: rebinding the cell mid-flight would misdirect concurrent lgamma stores.
+    #[test]
+    fn signgam_store_and_rebind() {
+        let _ = unsafe { lgamma(-0.5) };
+        assert_eq!(signgam.load(Ordering::Relaxed), -1);
+
+        signgam.store(0, Ordering::Relaxed);
+        let mut copied: i32 = 0;
+        SIGNGAM.rebind(&raw mut copied);
+
+        let _ = unsafe { lgammaf(-0.5) };
+        assert_eq!(copied, -1);
+        assert_eq!(signgam.load(Ordering::Relaxed), 0);
+
+        SIGNGAM.rebind(signgam.as_ptr());
+    }
 
     eq_tests!(mod out_pointer_family {
         frexp_six, {
