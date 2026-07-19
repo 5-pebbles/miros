@@ -135,7 +135,7 @@ forward_to_libm! {
     ynf(order: c_int, value: f32) -> f32;
 }
 
-// POSIX: lgamma reports Γ's sign through this global. Exported as __signgam — the static linker dedups every reference onto glibc's strong alias (bare signgam is the weak pre-2.23 twin; rustc cdylibs can't emit ELF aliases to cover both).
+// POSIX: lgamma reports Γ's sign through this global.
 #[cfg_attr(not(test), export_name = "__signgam")]
 #[allow(non_upper_case_globals)]
 static signgam: AtomicI32 = AtomicI32::new(0);
@@ -232,7 +232,7 @@ mod tests {
     use super::*;
     use crate::test_macros::eq_tests;
 
-    // One sequential test: rebinding the cell mid-flight would misdirect concurrent lgamma stores.
+    // Sequential: rebinding mid-flight would misdirect concurrent stores.
     #[test]
     fn signgam_store_and_rebind() {
         let _ = unsafe { lgamma(-0.5) };

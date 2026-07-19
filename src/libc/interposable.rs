@@ -4,7 +4,7 @@ use linkme::distributed_slice;
 
 use crate::objects::object_data_graph::ObjectDataGraph;
 
-// Miros's manual GOT. -Bsymbolic pins direct accesses to exported data onto our own cells, so runtime-written exports (which an executable may COPY-relocate, taking ownership of the canonical copy) are accessed through a slot bound by normal search order at relocate time.
+// Miros's manual GOT: runtime-written data exports that an executable may COPY-relocate, taking ownership of the canonical copy. -Bsymbolic pins direct accesses to our own cells, so access goes through a slot bound by normal search order at relocate time. Cells export under glibc's strong alias (ld dedups every reference onto it; rustc can't emit the weak twins).
 pub struct InterposableCell<T> {
     exported_name: &'static str,
     slot: AtomicPtr<T>,
@@ -32,7 +32,6 @@ pub trait Bindable: Sync {
 }
 
 impl<T> Bindable for InterposableCell<T> {
-    // The executable's COPY-created definition wins over our own export; absent one, this resolves back to our cell.
     fn bind(&self, graph: &ObjectDataGraph) {
         if let Ok(address) = graph.resolve_symbol_by_name(self.exported_name) {
             self.rebind(address.cast_mut().cast());

@@ -13,7 +13,6 @@ use crate::{
     start::environment_variables::EnvironmentIter,
 };
 
-// Exported as __environ — the static linker dedups every reference onto glibc's strong alias (bare environ/_environ are the weak twins rustc cdylibs can't also emit).
 #[cfg_attr(not(test), export_name = "__environ")]
 #[allow(non_upper_case_globals)]
 static environ: AtomicPtr<*mut u8> = AtomicPtr::new(ptr::null_mut());
@@ -56,7 +55,7 @@ unsafe extern "C" fn getenv(variable_name_pointer: *const u8) -> *const u8 {
 mod tests {
     use super::*;
 
-    // One sequential test: rebinding the cell mid-flight would misdirect concurrent environ access.
+    // Sequential: rebinding mid-flight would misdirect concurrent stores.
     #[test]
     fn environ_set_get_and_rebind() {
         let mut own_backing: [*mut u8; 2] = [ptr::null_mut(); 2];
