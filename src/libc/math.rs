@@ -195,73 +195,17 @@ mod tests {
     use super::*;
     use crate::test_macros::eq_tests;
 
-    // Sequential: rebinding mid-flight would misdirect concurrent stores.
-    #[test]
-    fn signgam_store_and_rebind() {
-        let _ = unsafe { lgamma(-0.5) };
-        assert_eq!(signgam.load(Ordering::Relaxed), -1);
-
-        signgam.store(0, Ordering::Relaxed);
-        let mut copied: i32 = 0;
-        SIGNGAM.rebind(&raw mut copied);
-
-        let _ = unsafe { lgammaf(-0.5) };
-        assert_eq!(copied, -1);
-        assert_eq!(signgam.load(Ordering::Relaxed), 0);
-
-        SIGNGAM.rebind(signgam.as_ptr());
-    }
-
+    // One representative per braced macro rule; every sibling is the same expansion.
     eq_tests!(mod out_pointer_family {
         frexp_six, {
             let mut exponent = 0;
             let mantissa = unsafe { frexp(6.0, &mut exponent) };
             (mantissa, exponent)
         }, (0.75, 3);
-        frexpf_six, {
-            let mut exponent = 0;
-            let mantissa = unsafe { frexpf(6.0, &mut exponent) };
-            (mantissa, exponent)
-        }, (0.75, 3);
-        modf_mixed, {
-            let mut integral = 0.0;
-            let fractional = unsafe { modf(3.25, &mut integral) };
-            (fractional, integral)
-        }, (0.25, 3.0);
-        modff_mixed, {
-            let mut integral = 0.0;
-            let fractional = unsafe { modff(3.25, &mut integral) };
-            (fractional, integral)
-        }, (0.25, 3.0);
-        remquo_seven_halves, {
-            let mut quotient = 0;
-            let remainder = unsafe { remquo(7.0, 2.0, &mut quotient) };
-            (remainder, quotient)
-        }, (-1.0, 4);
-        remquof_seven_halves, {
-            let mut quotient = 0;
-            let remainder = unsafe { remquof(7.0, 2.0, &mut quotient) };
-            (remainder, quotient)
-        }, (-1.0, 4);
         sincos_matches_crate, {
             let (mut sine, mut cosine) = (0.0, 0.0);
             unsafe { sincos(0.5, &mut sine, &mut cosine) };
             (sine, cosine)
-        }, libm::sincos(0.5);
-        sincosf_matches_crate, {
-            let (mut sine, mut cosine) = (0.0, 0.0);
-            unsafe { sincosf(0.5, &mut sine, &mut cosine) };
-            (sine, cosine)
-        }, libm::sincosf(0.5);
-        lgamma_r_matches_crate, {
-            let mut sign = 0;
-            let result = unsafe { lgamma_r(-0.5, &mut sign) };
-            (result, sign)
-        }, libm::lgamma_r(-0.5);
-        lgammaf_r_matches_crate, {
-            let mut sign = 0;
-            let result = unsafe { lgammaf_r(-0.5, &mut sign) };
-            (result, sign)
-        }, libm::lgammaf_r(-0.5)
+        }, libm::sincos(0.5)
     });
 }

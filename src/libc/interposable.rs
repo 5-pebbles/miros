@@ -45,3 +45,22 @@ pub static INTERPOSABLE_CELLS: [&'static dyn Bindable];
 pub fn bind_all(graph: &ObjectDataGraph) {
     INTERPOSABLE_CELLS.iter().for_each(|cell| cell.bind(graph));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rebind_redirects_stores() {
+        let mut own = 0;
+        let cell = InterposableCell::new("synthetic", &raw mut own);
+        unsafe { *cell.as_ptr() = 1 };
+
+        let mut copied = 0;
+        cell.rebind(&raw mut copied);
+        unsafe { *cell.as_ptr() = 2 };
+
+        assert_eq!(own, 1);
+        assert_eq!(copied, 2);
+    }
+}

@@ -50,29 +50,3 @@ unsafe extern "C" fn getenv(variable_name_pointer: *const u8) -> *const u8 {
         })
         .unwrap_or_default()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Sequential: rebinding mid-flight would misdirect concurrent stores.
-    #[test]
-    fn environ_set_get_and_rebind() {
-        let mut own_backing: [*mut u8; 2] = [ptr::null_mut(); 2];
-        let own_array = unsafe { own_backing.as_mut_ptr().add(1) };
-        unsafe { set_environ_pointer(own_array) };
-        assert_eq!(unsafe { get_environ_pointer() }, own_array);
-
-        let mut copied_cell: *mut *mut u8 = ptr::null_mut();
-        ENVIRON.rebind(&raw mut copied_cell);
-
-        let mut other_backing: [*mut u8; 2] = [ptr::null_mut(); 2];
-        let other_array = unsafe { other_backing.as_mut_ptr().add(1) };
-        unsafe { set_environ_pointer(other_array) };
-        assert_eq!(copied_cell, other_array);
-        assert_eq!(unsafe { get_environ_pointer() }, other_array);
-        assert_eq!(environ.load(Ordering::Relaxed), own_array);
-
-        ENVIRON.rebind(environ.as_ptr());
-    }
-}
