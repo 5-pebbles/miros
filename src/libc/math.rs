@@ -130,5 +130,129 @@ forward_to_libm! {
     ynf(order: c_int, value: f32) -> f32;
 }
 
-// TODO: frexp/modf/sincos/remquo/lgamma_r (+ f32 twins) return tuples in the `libm` crate but
-// write through out-pointers in the C ABI; wire them once a target needs them.
+// The out-pointer family: the crate returns tuples; .0 is the C return value, .1 goes through the pointer (sincos writes both).
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn frexp(value: f64, exponent: *mut c_int) -> f64 {
+    let (mantissa, power) = libm::frexp(value);
+    *exponent = power;
+    mantissa
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn frexpf(value: f32, exponent: *mut c_int) -> f32 {
+    let (mantissa, power) = libm::frexpf(value);
+    *exponent = power;
+    mantissa
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn lgamma_r(value: f64, sign: *mut c_int) -> f64 {
+    let (result, sign_of_gamma) = libm::lgamma_r(value);
+    *sign = sign_of_gamma;
+    result
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn lgammaf_r(value: f32, sign: *mut c_int) -> f32 {
+    let (result, sign_of_gamma) = libm::lgammaf_r(value);
+    *sign = sign_of_gamma;
+    result
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn modf(value: f64, integral: *mut f64) -> f64 {
+    let (fractional, integral_part) = libm::modf(value);
+    *integral = integral_part;
+    fractional
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn modff(value: f32, integral: *mut f32) -> f32 {
+    let (fractional, integral_part) = libm::modff(value);
+    *integral = integral_part;
+    fractional
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn remquo(numerator: f64, denominator: f64, quotient: *mut c_int) -> f64 {
+    let (remainder, quotient_bits) = libm::remquo(numerator, denominator);
+    *quotient = quotient_bits;
+    remainder
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn remquof(numerator: f32, denominator: f32, quotient: *mut c_int) -> f32 {
+    let (remainder, quotient_bits) = libm::remquof(numerator, denominator);
+    *quotient = quotient_bits;
+    remainder
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn sincos(angle: f64, sine: *mut f64, cosine: *mut f64) {
+    (*sine, *cosine) = libm::sincos(angle);
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn sincosf(angle: f32, sine: *mut f32, cosine: *mut f32) {
+    (*sine, *cosine) = libm::sincosf(angle);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_macros::eq_tests;
+
+    eq_tests!(mod out_pointer_family {
+        frexp_six, {
+            let mut exponent = 0;
+            let mantissa = unsafe { frexp(6.0, &mut exponent) };
+            (mantissa, exponent)
+        }, (0.75, 3);
+        frexpf_six, {
+            let mut exponent = 0;
+            let mantissa = unsafe { frexpf(6.0, &mut exponent) };
+            (mantissa, exponent)
+        }, (0.75, 3);
+        modf_mixed, {
+            let mut integral = 0.0;
+            let fractional = unsafe { modf(3.25, &mut integral) };
+            (fractional, integral)
+        }, (0.25, 3.0);
+        modff_mixed, {
+            let mut integral = 0.0;
+            let fractional = unsafe { modff(3.25, &mut integral) };
+            (fractional, integral)
+        }, (0.25, 3.0);
+        remquo_seven_halves, {
+            let mut quotient = 0;
+            let remainder = unsafe { remquo(7.0, 2.0, &mut quotient) };
+            (remainder, quotient)
+        }, (-1.0, 4);
+        remquof_seven_halves, {
+            let mut quotient = 0;
+            let remainder = unsafe { remquof(7.0, 2.0, &mut quotient) };
+            (remainder, quotient)
+        }, (-1.0, 4);
+        sincos_matches_crate, {
+            let (mut sine, mut cosine) = (0.0, 0.0);
+            unsafe { sincos(0.5, &mut sine, &mut cosine) };
+            (sine, cosine)
+        }, libm::sincos(0.5);
+        sincosf_matches_crate, {
+            let (mut sine, mut cosine) = (0.0, 0.0);
+            unsafe { sincosf(0.5, &mut sine, &mut cosine) };
+            (sine, cosine)
+        }, libm::sincosf(0.5);
+        lgamma_r_matches_crate, {
+            let mut sign = 0;
+            let result = unsafe { lgamma_r(-0.5, &mut sign) };
+            (result, sign)
+        }, libm::lgamma_r(-0.5);
+        lgammaf_r_matches_crate, {
+            let mut sign = 0;
+            let result = unsafe { lgammaf_r(-0.5, &mut sign) };
+            (result, sign)
+        }, libm::lgammaf_r(-0.5)
+    });
+}
