@@ -85,9 +85,15 @@ impl Relocate {
                     .string_table
                     .get(local_symbol.st_name as usize);
 
-                let (source_symbol, source_address) = object_data_map
-                    .resolve_symbol_outside_program(symbol_name)
-                    .ok_or_else(|| MirosError::UndefinedSymbol(symbol_name.to_string()))?;
+                let Some((source_symbol, source_address)) =
+                    object_data_map.resolve_symbol_outside_program(symbol_name)
+                else {
+                    // Undefined weak leaves the destination zeroed, as glibc does; strong is fatal.
+                    return match local_symbol.binding() {
+                        Ok(SymbolBinding::Weak) => Ok(()),
+                        _ => Err(MirosError::UndefinedSymbol(symbol_name.to_string())),
+                    };
+                };
 
                 // Sizes can disagree after a re-link; the destination's reservation caps the copy.
                 ptr::copy_nonoverlapping(
