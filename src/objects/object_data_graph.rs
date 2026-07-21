@@ -1,9 +1,9 @@
-use std::{ffi::c_void, ops::ControlFlow};
+use std::ffi::c_void;
 
 use indexmap::IndexMap;
 
 use crate::{
-    elf::symbol::{Symbol, SymbolBinding, SymbolVisibility},
+    elf::symbol::{Symbol, SymbolVisibility},
     error::MirosError,
     objects::object_data::ObjectData,
 };
@@ -71,6 +71,17 @@ impl ObjectDataGraph {
         order.into_iter()
     }
 
+    // COPY lookup rule: the program's own definition is the copy destination, so the search skips it.
+    pub fn resolve_symbol_outside_program(
+        &self,
+        symbol_name: &str,
+    ) -> Option<(Symbol, *const c_void)> {
+        self.dependencies
+            .values()
+            .chain(std::iter::once(&self.miros))
+            .find_definition(symbol_name)
+    }
+
     pub fn resolve_symbol_address(
         &self,
         symbol: Symbol,
@@ -95,24 +106,26 @@ impl ObjectDataGraph {
             return Ok(address);
         }
 
-        let resolved = self
-            .iter_objects()
-            .chain(std::iter::once(&self.miros))
-            .flat_map(|object| object.resolve_symbol_and_address(symbol_name))
-            .try_fold(None, |first_weak, (symbol, address)| {
-                match symbol.binding() {
-                    Ok(SymbolBinding::Global) => ControlFlow::Break(address),
-                    Ok(SymbolBinding::Weak) => ControlFlow::Continue(first_weak.or(Some(address))),
-                    _ => ControlFlow::Continue(first_weak),
-                }
-            });
+        self.resolve_symbol_by_name(symbol_name)
+    }
 
-        match resolved {
-            ControlFlow::Break(address) => Ok(address),
-            ControlFlow::Continue(Some(address)) => Ok(address),
-            ControlFlow::Continue(None) => {
-                Err(MirosError::UndefinedSymbol(symbol_name.to_string()))
-            }
-        }
+    pub fn resolve_symbol_by_name(&self, symbol_name: &str) -> Result<*const c_void, MirosError> {
+        self.iter_objects()
+            .chain(std::iter::once(&self.miros))
+            .find_definition(symbol_name)
+            .map(|(_, address)| address)
+            .ok_or_else(|| MirosError::UndefinedSymbol(symbol_name.to_string()))
+    }
+}
+
+// ELF search order: the first object with an exported definition wins, weak or global alike
+// (`resolve_symbol_and_address` already filters out undefined/local/hidden symbols).
+trait FindDefinition: Sized {
+    fn find_definition(self, symbol_name: &str) -> Option<(Symbol, *const c_void)>;
+}
+
+impl<'a, I: Iterator<Item = &'a ObjectData>> FindDefinition for I {
+    fn find_definition(mut self, symbol_name: &str) -> Option<(Symbol, *const c_void)> {
+        self.find_map(|object| object.resolve_symbol_and_address(symbol_name))
     }
 }

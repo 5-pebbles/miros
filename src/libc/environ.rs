@@ -1,24 +1,36 @@
-use std::{ffi::CStr, mem::MaybeUninit};
+use std::{
+    ffi::CStr,
+    ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
+
+use linkme::distributed_slice;
 
 use crate::{
-    io_macros::syscall_debug_assert, signature_matches_libc,
+    io_macros::syscall_debug_assert,
+    libc::interposable::{Bindable, InterposableCell, INTERPOSABLE_CELLS},
+    signature_matches_libc,
     start::environment_variables::EnvironmentIter,
 };
 
-#[cfg_attr(not(test), no_mangle)]
+#[cfg_attr(not(test), export_name = "__environ")]
 #[allow(non_upper_case_globals)]
-static mut environ: MaybeUninit<*mut *mut u8> = MaybeUninit::uninit();
+static environ: AtomicPtr<*mut u8> = AtomicPtr::new(ptr::null_mut());
+
+static ENVIRON: InterposableCell<*mut *mut u8> =
+    InterposableCell::new("__environ", environ.as_ptr());
+
+#[distributed_slice(INTERPOSABLE_CELLS)]
+static ENVIRON_CELL: &'static dyn Bindable = &ENVIRON;
 
 pub unsafe fn set_environ_pointer(environ_pointer: *mut *mut u8) {
     syscall_debug_assert!((*environ_pointer.sub(1)).is_null());
 
-    #[allow(static_mut_refs)]
-    environ.write(environ_pointer);
+    AtomicPtr::from_ptr(ENVIRON.as_ptr()).store(environ_pointer, Ordering::Relaxed);
 }
 
 pub unsafe fn get_environ_pointer() -> *mut *mut u8 {
-    #[allow(static_mut_refs)]
-    environ.assume_init_read()
+    AtomicPtr::from_ptr(ENVIRON.as_ptr()).load(Ordering::Relaxed)
 }
 
 #[cfg_attr(not(test), no_mangle)]

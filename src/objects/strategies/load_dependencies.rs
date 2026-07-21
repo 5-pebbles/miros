@@ -5,15 +5,15 @@ use crate::{
     objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
-const INTERCEPTED_LIBRARIES: &[&str] = &["libc.so.6", "libpthread.so.0", "ld-linux-x86-64.so.2"];
+const INTERCEPTED_LIBRARIES: &[&str] = &[
+    "libc.so.6",
+    "libm.so.6",
+    "libgcc_s.so.1",
+    "libpthread.so.0",
+    "ld-linux-x86-64.so.2",
+];
 
-pub struct LoadDependencies {}
-
-impl LoadDependencies {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+pub struct LoadDependencies;
 
 impl Stratagem for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataGraph) -> Result<(), MirosError> {

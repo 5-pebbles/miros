@@ -1,4 +1,4 @@
-use std::arch::asm;
+use std::{arch::asm, ptr};
 
 use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
@@ -6,13 +6,9 @@ use crate::{
     objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
-pub struct Relocate {}
+pub struct Relocate;
 
 impl Relocate {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     #[cfg(target_arch = "x86_64")]
     unsafe fn rela(
         &self,
@@ -28,7 +24,8 @@ impl Relocate {
         // dword | 32 bits (4 bytes) | "double word"
         // qword | 64 bits (8 bytes) | "quad word"
         use crate::elf::relocate::{
-            R_X86_64_GLOB_DAT, R_X86_64_IRELATIVE, R_X86_64_JUMP_SLOT, R_X86_64_RELATIVE,
+            R_X86_64_COPY, R_X86_64_GLOB_DAT, R_X86_64_IRELATIVE, R_X86_64_JUMP_SLOT,
+            R_X86_64_RELATIVE,
         };
         match rela.r_type() {
             R_X86_64_RELATIVE => {
@@ -56,8 +53,7 @@ impl Relocate {
 
                 let local_symbol = object_data
                     .dynamic_fields
-                    .symbol_table
-                    .get(rela.r_sym() as usize);
+                    .checked_symbol(rela.r_sym() as usize)?;
 
                 let remote_address = object_data_map
                     .resolve_symbol_address(local_symbol, object_data)
@@ -74,6 +70,33 @@ impl Relocate {
                 );
             }
 
+            R_X86_64_COPY => {
+                let local_symbol = object_data
+                    .dynamic_fields
+                    .checked_symbol(rela.r_sym() as usize)?;
+                let symbol_name = object_data
+                    .dynamic_fields
+                    .string_table
+                    .get(local_symbol.st_name as usize);
+
+                let Some((source_symbol, source_address)) =
+                    object_data_map.resolve_symbol_outside_program(symbol_name)
+                else {
+                    // Undefined weak leaves the destination zeroed, as glibc does; strong is fatal.
+                    return match local_symbol.binding() {
+                        Ok(SymbolBinding::Weak) => Ok(()),
+                        _ => Err(MirosError::UndefinedSymbol(symbol_name.to_string())),
+                    };
+                };
+
+                // Sizes can disagree after a re-link; the destination's reservation caps the copy.
+                ptr::copy_nonoverlapping(
+                    source_address.cast::<u8>(),
+                    relocate_address as *mut u8,
+                    source_symbol.st_size.min(local_symbol.st_size),
+                );
+            }
+
             _ => (),
         }
 
@@ -83,14 +106,17 @@ impl Relocate {
 
 impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
-        object_data_map.iter_objects().try_for_each(|object| {
-            let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
-            let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
+        // Dependencies before the program: a COPY reloc reads its source object's relocated bytes.
+        object_data_map
+            .iter_objects_topological()
+            .try_for_each(|object| {
+                let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
+                let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
 
-            rela_entries
-                .iter()
-                .chain(plt_rela_entries.iter())
-                .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
-        })
+                rela_entries
+                    .iter()
+                    .chain(plt_rela_entries.iter())
+                    .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
+            })
     }
 }

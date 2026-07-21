@@ -14,10 +14,6 @@ use crate::{
 pub struct ThreadLocalStorage;
 
 impl ThreadLocalStorage {
-    pub fn new() -> Self {
-        Self
-    }
-
     unsafe fn allocate_tls_module(
         allocator: &mut TlsAllocator,
         tls_data: &mut ThreadLocalData,

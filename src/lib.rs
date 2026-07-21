@@ -4,12 +4,13 @@
 #![feature(const_cmp)]
 #![feature(generic_atomic)]
 #![feature(type_changing_struct_update)]
-#![feature(thread_id_value)]
 #![feature(thread_local)]
 #![feature(stmt_expr_attributes)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![allow(dead_code)]
+// The libm TT muncher recurses once per exported symbol (~120).
+#![recursion_limit = "256"]
 // Pervasively-unsafe crate (linker + libc + allocator) almost every line is the unsafe operation.
 #![allow(unsafe_op_in_unsafe_fn)]
 // SAFETY: Should prevent LLVM from recognizing patterns in our libc implementations.

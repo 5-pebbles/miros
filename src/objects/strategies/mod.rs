@@ -1,5 +1,6 @@
 use crate::{error::MirosError, objects::object_data_graph::ObjectDataGraph};
 
+pub mod bind_interposable_cells;
 pub mod init_array;
 pub mod load_dependencies;
 pub mod relocate;

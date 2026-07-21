@@ -23,6 +23,7 @@ pub struct DynamicFields {
     preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
+    symbol_count: Option<usize>,
     pub path_resolver: PathResolver,
     dependencies: Vec<*const str>,
     pub static_tls: bool,
@@ -135,6 +136,7 @@ impl DynamicFields {
 
         let string_table = StringTable::new(string_table_pointer?);
         let symbol_table = SymbolTable::new(symbol_table_pointer?);
+        let symbol_count = hash_table.as_ref().map(|table| table.symbol_count());
 
         let rela_slice = rela_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, rela_count));
         let plt_rela_slice =
@@ -164,10 +166,19 @@ impl DynamicFields {
             preinit_array,
             init_array,
             hash_table,
+            symbol_count,
             path_resolver,
             dependencies,
             static_tls,
         })
+    }
+
+    // Relocation indices come straight from the file; reject any past the dynsym before dereferencing.
+    pub fn checked_symbol(&self, index: usize) -> Result<Symbol, MirosError> {
+        if self.symbol_count.is_some_and(|count| index >= count) {
+            return Err(MirosError::SymbolIndexOutOfBounds(index));
+        }
+        Ok(unsafe { self.symbol_table.get(index) })
     }
 
     pub fn dependencies(&self) -> &[&str] {
