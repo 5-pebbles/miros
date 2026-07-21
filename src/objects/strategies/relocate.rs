@@ -57,8 +57,7 @@ impl Relocate {
 
                 let local_symbol = object_data
                     .dynamic_fields
-                    .symbol_table
-                    .get(rela.r_sym() as usize);
+                    .checked_symbol(rela.r_sym() as usize)?;
 
                 let remote_address = object_data_map
                     .resolve_symbol_address(local_symbol, object_data)
@@ -78,8 +77,7 @@ impl Relocate {
             R_X86_64_COPY => {
                 let local_symbol = object_data
                     .dynamic_fields
-                    .symbol_table
-                    .get(rela.r_sym() as usize);
+                    .checked_symbol(rela.r_sym() as usize)?;
                 let symbol_name = object_data
                     .dynamic_fields
                     .string_table
