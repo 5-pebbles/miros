@@ -123,10 +123,10 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     };
     let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
 
-    let load_dependencies = LoadDependencies::new();
-    let relocate = Relocate::new();
+    let load_dependencies = LoadDependencies;
+    let relocate = Relocate;
     let bind_interposable_cells = BindInterposableCells;
-    let thread_local_storage = ThreadLocalStorage::new();
+    let thread_local_storage = ThreadLocalStorage;
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
     let executable_stratagems: &[&dyn Stratagem] = &[
         &load_dependencies,

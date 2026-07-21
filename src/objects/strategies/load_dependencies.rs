@@ -13,13 +13,7 @@ const INTERCEPTED_LIBRARIES: &[&str] = &[
     "ld-linux-x86-64.so.2",
 ];
 
-pub struct LoadDependencies {}
-
-impl LoadDependencies {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
+pub struct LoadDependencies;
 
 impl Stratagem for LoadDependencies {
     fn run(&self, object_data: &mut ObjectDataGraph) -> Result<(), MirosError> {

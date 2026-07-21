@@ -6,13 +6,9 @@ use crate::{
     objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
 };
 
-pub struct Relocate {}
+pub struct Relocate;
 
 impl Relocate {
-    pub fn new() -> Self {
-        Self {}
-    }
-
     #[cfg(target_arch = "x86_64")]
     unsafe fn rela(
         &self,
