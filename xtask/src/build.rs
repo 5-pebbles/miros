@@ -37,6 +37,9 @@ pub fn run() -> PathBuf {
             "--",
             "-C",
             "link-arg=-nostartfiles",
+            // We define our own intrinsics & are libc, so drop the driver's implicit libc/libgcc_s DT_NEEDED.
+            "-C",
+            "link-arg=-Wl,--as-needed",
             "-C",
             "link-arg=-Wl,-Bsymbolic",
             "-C",
