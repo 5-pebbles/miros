@@ -1,6 +1,7 @@
 // TODO: Kill the creators of this API... ヾ(๑╹◡╹)ﾉ🔪
 
 mod alloc;
+mod builtins;
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
