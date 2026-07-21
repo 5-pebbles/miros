@@ -106,15 +106,18 @@ impl Relocate {
 
 impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
-        object_data_map.iter_objects().try_for_each(|object| {
-            let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
-            let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
+        // Dependencies before the program: a COPY reloc reads its source object's relocated bytes.
+        object_data_map
+            .iter_objects_topological()
+            .try_for_each(|object| {
+                let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
+                let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
 
-            rela_entries
-                .iter()
-                .chain(plt_rela_entries.iter())
-                .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
-        })?;
+                rela_entries
+                    .iter()
+                    .chain(plt_rela_entries.iter())
+                    .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
+            })?;
 
         // Miros's manual GOT; must precede InitArray as user init code may reach the cells.
         crate::libc::interposable::bind_all(object_data_map);
