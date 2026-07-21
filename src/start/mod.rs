@@ -11,7 +11,8 @@ use crate::{
         object_data_graph::ObjectDataGraph,
         object_pipeline::ObjectPipeline,
         strategies::{
-            init_array::InitArray, load_dependencies::LoadDependencies, relocate::Relocate,
+            bind_interposable_cells::BindInterposableCells, init_array::InitArray,
+            load_dependencies::LoadDependencies, relocate::Relocate,
             thread_local_storage::ThreadLocalStorage, Stratagem,
         },
     },
@@ -124,11 +125,13 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     let load_dependencies = LoadDependencies::new();
     let relocate = Relocate::new();
+    let bind_interposable_cells = BindInterposableCells;
     let thread_local_storage = ThreadLocalStorage::new();
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
     let executable_stratagems: &[&dyn Stratagem] = &[
         &load_dependencies,
         &relocate,
+        &bind_interposable_cells,
         &thread_local_storage,
         &init_array,
     ];
