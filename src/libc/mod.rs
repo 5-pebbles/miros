@@ -11,6 +11,7 @@ mod math;
 pub mod mem;
 pub mod process;
 mod random;
+mod stdio;
 mod str;
 mod syscall;
 mod threads;
