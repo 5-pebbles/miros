@@ -20,7 +20,7 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList
     ));
 
     let mode = if flags.create() || flags.create_unnamed_temporary_file() {
-        args.arg::<u32>() & !S_IFMT
+        args.next_arg::<u32>() & !S_IFMT
     } else {
         0
     };

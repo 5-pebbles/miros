@@ -38,7 +38,7 @@ unsafe extern "C" fn fcntl(
         FCntlCommand::GetCloseOnExec | FCntlCommand::GetOpenFlags
     )
     .not()
-    .then_some(arguments.arg())
+    .then_some(arguments.next_arg())
     .unwrap_or_default();
 
     let result = syscall!(
