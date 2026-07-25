@@ -169,7 +169,8 @@ forward_to_libm! {
 #[allow(non_upper_case_globals)]
 static signgam: AtomicI32 = AtomicI32::new(0);
 
-static SIGNGAM: InterposableCell<i32> = InterposableCell::new("__signgam", signgam.as_ptr());
+static SIGNGAM: InterposableCell<i32> =
+    InterposableCell::new(&["signgam", "__signgam"], signgam.as_ptr());
 
 #[distributed_slice(INTERPOSABLE_CELLS)]
 static SIGNGAM_CELL: &'static dyn Bindable = &SIGNGAM;

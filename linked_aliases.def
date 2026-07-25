@@ -1,0 +1,7 @@
+# Symbol aliases miros exports, one per line:
+#   target: alias, alias(weak), ...
+# The target must be an existing exported miros symbol; aliases are emitted as assembler .set directives.
+
+__environ: environ(weak), _environ(weak)
+
+__signgam: signgam(weak)

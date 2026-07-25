@@ -9,8 +9,7 @@ pub struct BindInterposableCells;
 
 impl Stratagem for BindInterposableCells {
     fn run(&self, graph: &mut ObjectDataGraph) -> Result<(), MirosError> {
-        INTERPOSABLE_CELLS
-            .iter()
-            .try_for_each(|cell| cell.bind(graph))
+        INTERPOSABLE_CELLS.iter().for_each(|cell| cell.bind(graph));
+        Ok(())
     }
 }

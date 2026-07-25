@@ -2,18 +2,18 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 use linkme::distributed_slice;
 
-use crate::{error::MirosError, objects::object_data_graph::ObjectDataGraph};
+use crate::objects::object_data_graph::ObjectDataGraph;
 
-// Miros's manual GOT: runtime-written data exports that an executable may COPY-relocate, taking ownership of the canonical copy. -Bsymbolic pins direct accesses to our own cells, so access goes through a slot bound by normal search order at relocate time. Cells export under glibc's strong alias (ld dedups every reference onto it; rustc can't emit the weak twins).
+// Miros's manual GOT: runtime-written data exports that an executable may COPY-relocate, taking ownership of the canonical copy. -Bsymbolic pins direct accesses to our own cells, so access goes through a slot bound at load time. Each cell exports glibc's alias set (linked_aliases.def), and any of those names may be the one a program COPY-relocated.
 pub struct InterposableCell<T> {
-    exported_name: &'static str,
+    exported_names: &'static [&'static str],
     slot: AtomicPtr<T>,
 }
 
 impl<T> InterposableCell<T> {
-    pub const fn new(exported_name: &'static str, own_cell: *mut T) -> Self {
+    pub const fn new(exported_names: &'static [&'static str], own_cell: *mut T) -> Self {
         Self {
-            exported_name,
+            exported_names,
             slot: AtomicPtr::new(own_cell),
         }
     }
@@ -28,15 +28,20 @@ impl<T> InterposableCell<T> {
 }
 
 pub trait Bindable: Sync {
-    fn bind(&self, graph: &ObjectDataGraph) -> Result<(), MirosError>;
+    fn bind(&self, graph: &ObjectDataGraph);
 }
 
 impl<T> Bindable for InterposableCell<T> {
-    fn bind(&self, graph: &ObjectDataGraph) -> Result<(), MirosError> {
-        // Miros exports every cell name, so a miss means an export vanished, not interposition.
-        let address = graph.resolve_symbol_by_name(self.exported_name)?;
-        self.rebind(address.cast_mut().cast());
-        Ok(())
+    fn bind(&self, graph: &ObjectDataGraph) {
+        // A program that COPY-relocated any alias owns the canonical storage; route to it. No interposer is the common case: the slot stays on miros's own cell.
+        let interposed = self
+            .exported_names
+            .iter()
+            .find_map(|name| graph.resolve_symbol_outside_miros(name));
+
+        if let Some(address) = interposed {
+            self.rebind(address.cast_mut().cast());
+        }
     }
 }
 
@@ -50,7 +55,7 @@ mod tests {
     #[test]
     fn rebind_redirects_stores() {
         let mut own = 0;
-        let cell = InterposableCell::new("synthetic", &raw mut own);
+        let cell = InterposableCell::new(&["synthetic"], &raw mut own);
         unsafe { *cell.as_ptr() = 1 };
 
         let mut copied = 0;

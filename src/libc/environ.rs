@@ -18,7 +18,7 @@ use crate::{
 static environ: AtomicPtr<*mut u8> = AtomicPtr::new(ptr::null_mut());
 
 static ENVIRON: InterposableCell<*mut *mut u8> =
-    InterposableCell::new("__environ", environ.as_ptr());
+    InterposableCell::new(&["environ", "__environ", "_environ"], environ.as_ptr());
 
 #[distributed_slice(INTERPOSABLE_CELLS)]
 static ENVIRON_CELL: &'static dyn Bindable = &ENVIRON;

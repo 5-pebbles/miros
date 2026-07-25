@@ -82,6 +82,13 @@ impl ObjectDataGraph {
             .find_definition(symbol_name)
     }
 
+    // Interposable-cell lookup: asks whether anything but miros owns the name (a program's COPY relocation); miros's own weak export would mask that, so the search skips it.
+    pub fn resolve_symbol_outside_miros(&self, symbol_name: &str) -> Option<*const c_void> {
+        self.iter_objects()
+            .find_definition(symbol_name)
+            .map(|(_, address)| address)
+    }
+
     pub fn resolve_symbol_address(
         &self,
         symbol: Symbol,

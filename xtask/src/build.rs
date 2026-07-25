@@ -16,12 +16,13 @@ pub fn workspace_root() -> PathBuf {
 /// Build `libmiros.so` (release) and return its path.
 pub fn run() -> PathBuf {
     let root = workspace_root();
+    let aliases_version_script = crate::aliases::generate();
 
     let status = Command::new("cargo")
         .current_dir(&root)
         .env(
             "RUSTFLAGS",
-            "-C target-cpu=native -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec",
+            "-C target-cpu=native -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec --cfg miros_aliases",
         )
         .args([
             "rustc",
@@ -45,6 +46,11 @@ pub fn run() -> PathBuf {
             "-C",
             "link-arg=-Wl,-e,_start",
         ])
+        .arg("-C")
+        .arg(format!(
+            "link-arg=-Wl,--version-script,{}",
+            aliases_version_script.display()
+        ))
         .status()
         .expect("failed to spawn cargo");
     assert!(status.success(), "release build failed");
