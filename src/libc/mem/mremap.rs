@@ -33,7 +33,7 @@ pub unsafe extern "C" fn mremap(
     .cast());
 
     let new_address = if flags.fixed() {
-        args.arg::<*mut u8>()
+        args.next_arg::<*mut u8>()
     } else {
         std::ptr::null_mut()
     };

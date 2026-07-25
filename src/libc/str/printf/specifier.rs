@@ -74,21 +74,21 @@ pub enum LengthModifier {
 impl LengthModifier {
     pub unsafe fn extract_signed(self, args: &mut VaList<'_>) -> i64 {
         match self {
-            Self::HalfHalf => (args.arg::<i32>() as i8) as i64,
-            Self::Half => (args.arg::<i32>() as i16) as i64,
-            Self::None | Self::LongDouble => args.arg::<i32>() as i64,
-            Self::Long | Self::LongLong | Self::IntMax => args.arg::<i64>(),
-            Self::Size | Self::Ptrdiff => args.arg::<isize>() as i64,
+            Self::HalfHalf => (args.next_arg::<i32>() as i8) as i64,
+            Self::Half => (args.next_arg::<i32>() as i16) as i64,
+            Self::None | Self::LongDouble => args.next_arg::<i32>() as i64,
+            Self::Long | Self::LongLong | Self::IntMax => args.next_arg::<i64>(),
+            Self::Size | Self::Ptrdiff => args.next_arg::<isize>() as i64,
         }
     }
 
     pub unsafe fn extract_unsigned(self, args: &mut VaList<'_>) -> u64 {
         match self {
-            Self::HalfHalf => (args.arg::<u32>() as u8) as u64,
-            Self::Half => (args.arg::<u32>() as u16) as u64,
-            Self::None | Self::LongDouble => args.arg::<u32>() as u64,
-            Self::Long | Self::LongLong | Self::IntMax => args.arg::<u64>(),
-            Self::Size | Self::Ptrdiff => args.arg::<usize>() as u64,
+            Self::HalfHalf => (args.next_arg::<u32>() as u8) as u64,
+            Self::Half => (args.next_arg::<u32>() as u16) as u64,
+            Self::None | Self::LongDouble => args.next_arg::<u32>() as u64,
+            Self::Long | Self::LongLong | Self::IntMax => args.next_arg::<u64>(),
+            Self::Size | Self::Ptrdiff => args.next_arg::<usize>() as u64,
         }
     }
 }
@@ -198,7 +198,7 @@ impl ResolvedSpecifier {
         let width = match spec.width {
             DimensionSpecifier::Unspecified => None,
             DimensionSpecifier::Fixed(value) => Some(value),
-            DimensionSpecifier::FromNextArg => match args.arg::<i32>() {
+            DimensionSpecifier::FromNextArg => match args.next_arg::<i32>() {
                 raw if raw < 0 => {
                     left_align = true;
                     Some(raw.unsigned_abs() as usize)
@@ -211,7 +211,7 @@ impl ResolvedSpecifier {
             DimensionSpecifier::Unspecified => None,
             DimensionSpecifier::Fixed(value) => Some(value),
             DimensionSpecifier::FromNextArg => {
-                let raw = args.arg::<i32>();
+                let raw = args.next_arg::<i32>();
                 (raw >= 0).then(|| raw as usize)
             }
         };

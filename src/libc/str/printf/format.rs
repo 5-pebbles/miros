@@ -85,7 +85,7 @@ impl<W: Write> Formatter<W> {
                 // NOTE: `L` (long double) args are wider than f64 on x86-64 (80-bit in a
                 // 128-bit slot), so `%Lf` will misalign subsequent arguments until float
                 // formatting is fully implemented.
-                let _: f64 = args.arg();
+                let _: f64 = args.next_arg();
             }
         }
     }
@@ -149,7 +149,7 @@ impl<W: Write> Formatter<W> {
     }
 
     unsafe fn format_string(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
-        let pointer: *const i8 = args.arg();
+        let pointer: *const i8 = args.next_arg();
 
         let bytes: &[u8] = if pointer.is_null() {
             b"(null)"
@@ -168,7 +168,7 @@ impl<W: Write> Formatter<W> {
     }
 
     unsafe fn format_char(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
-        let character = args.arg::<i32>() as u8;
+        let character = args.next_arg::<i32>() as u8;
 
         self.write_padded(spec, 1, |formatter| {
             formatter.write_byte(character);
@@ -176,7 +176,7 @@ impl<W: Write> Formatter<W> {
     }
 
     unsafe fn format_pointer(&mut self, spec: &ResolvedSpecifier, args: &mut VaList<'_>) {
-        let address = args.arg::<*const ()>().addr();
+        let address = args.next_arg::<*const ()>().addr();
 
         if address == 0 {
             self.write_padded(spec, 5, |formatter| {
@@ -201,7 +201,7 @@ impl<W: Write> Formatter<W> {
 
         macro_rules! store_count {
             ($type:ty) => {{
-                let destination: *mut $type = args.arg();
+                let destination: *mut $type = args.next_arg();
                 if !destination.is_null() {
                     *destination = count as $type;
                 }

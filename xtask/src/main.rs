@@ -1,5 +1,6 @@
 use clap::Parser;
 
+mod aliases;
 mod bench;
 mod build;
 mod demo;
@@ -10,6 +11,8 @@ mod examples;
 enum Xtask {
     /// Build libmiros.so (release)
     Build,
+    /// Regenerate the alias asm/version script from linked_aliases.def without building
+    RegenerateAliases,
     /// Build miros + compile the example programs against it
     Examples,
     /// Run a binary under miros (patches a copy's interpreter)
@@ -22,6 +25,9 @@ fn main() {
     match Xtask::parse() {
         Xtask::Build => {
             build::run();
+        }
+        Xtask::RegenerateAliases => {
+            aliases::generate();
         }
         Xtask::Examples => examples::run(),
         Xtask::Demo(args) => demo::run(args),

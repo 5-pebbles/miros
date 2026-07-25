@@ -7,5 +7,6 @@ pub enum MirosError {
     DependencyNotFound(String),
     ElfReadError(String),
     UndefinedSymbol(String),
+    SymbolIndexOutOfBounds(usize),
     TlsAllocationFailed,
 }

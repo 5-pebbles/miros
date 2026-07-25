@@ -17,12 +17,12 @@ unsafe extern "C" fn syscall(number: c_long, mut args: ...) -> c_long {
     // Always pull six args; the ABI ignores registers a syscall doesn't read.
     let result: isize = syscall!(
         number,
-        args.arg::<c_long>(),
-        args.arg::<c_long>(),
-        args.arg::<c_long>(),
-        args.arg::<c_long>(),
-        args.arg::<c_long>(),
-        args.arg::<c_long>(),
+        args.next_arg::<c_long>(),
+        args.next_arg::<c_long>(),
+        args.next_arg::<c_long>(),
+        args.next_arg::<c_long>(),
+        args.next_arg::<c_long>(),
+        args.next_arg::<c_long>(),
     );
 
     if ERROR_RANGE.contains(&result) {

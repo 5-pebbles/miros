@@ -100,9 +100,9 @@ pub unsafe extern "C" fn clone(
         return -1;
     }
 
-    let parent_tid_pointer: *mut ThreadID = varargs.arg();
-    let thread_local_storage: *mut c_void = varargs.arg();
-    let child_tid_pointer: *mut ThreadID = varargs.arg();
+    let parent_tid_pointer: *mut ThreadID = varargs.next_arg();
+    let thread_local_storage: *mut c_void = varargs.next_arg();
+    let child_tid_pointer: *mut ThreadID = varargs.next_arg();
 
     let result: isize;
     asm!(

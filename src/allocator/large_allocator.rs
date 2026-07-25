@@ -15,7 +15,6 @@ use crate::{
 };
 
 const CAPACITY: usize = 8;
-const MAX_ALIGNMENT: usize = 128 * 1024;
 
 type EntryIndex = u8;
 const _: () = assert!(CAPACITY <= EntryIndex::MAX as usize);
@@ -37,20 +36,15 @@ impl LargeAllocator {
 
     #[cold]
     pub fn alloc_large(&mut self, layout: Layout) -> Option<NonNull<u8>> {
-        if layout.align() > MAX_ALIGNMENT {
-            return None;
-        }
-        let total_bytes = page_size::get_page_end(layout.size());
-        let region = self.acquire_region(total_bytes)?;
+        // Size 0 still yields a unique freeable block, matching the small path's class-0 slot.
+        let total_bytes = page_size::get_page_end(layout.size().max(1));
+        let region = self.acquire_region(total_bytes, layout.align())?;
         Some(self.register_allocation(region))
     }
 
     pub fn alloc_large_zeroed(&mut self, layout: Layout) -> Option<NonNull<u8>> {
-        if layout.align() > MAX_ALIGNMENT {
-            return None;
-        }
-        let total_bytes = page_size::get_page_end(layout.size());
-        let mut region = self.acquire_region(total_bytes)?;
+        let total_bytes = page_size::get_page_end(layout.size().max(1));
+        let mut region = self.acquire_region(total_bytes, layout.align())?;
         if !region.zeroed {
             unsafe {
                 ptr::write_bytes(region.pointer, 0, region.size_in_bytes);
@@ -61,14 +55,23 @@ impl LargeAllocator {
     }
 
     /// `None` when the kernel refuses the mapping — the error must surface as a clean null, never `MAP_FAILED`.
-    fn acquire_region(&mut self, total_bytes: usize) -> Option<LargeRegion> {
-        if let Some(region) = self.cache.take(total_bytes) {
-            return Some(region);
+    fn acquire_region(&mut self, total_bytes: usize, alignment: usize) -> Option<LargeRegion> {
+        let page_size = page_size::get_page_size();
+        // Cached regions only guarantee page alignment.
+        if alignment <= page_size {
+            if let Some(region) = self.cache.take(total_bytes) {
+                return Some(region);
+            }
         }
+
+        // Page-aligned mmap results sit at most `alignment - page_size` short of the next boundary.
+        let slack = alignment.saturating_sub(page_size);
+        let mapped_bytes = total_bytes.checked_add(slack)?;
+
         let pointer = unsafe {
             mmap(
                 null_mut(),
-                total_bytes,
+                mapped_bytes,
                 DATA_PAGE_PROTECTION,
                 ANONYMOUS_PRIVATE_MAP,
                 -1, /* file_descriptor */
@@ -79,8 +82,22 @@ impl LargeAllocator {
         if (pointer as isize) <= 0 {
             return None;
         }
+
+        let raw_address = pointer.addr();
+        let aligned_address = (raw_address + alignment - 1) & !(alignment - 1);
+        let leading_slack = aligned_address - raw_address;
+        let trailing_slack = mapped_bytes - leading_slack - total_bytes;
+        unsafe {
+            if leading_slack > 0 {
+                munmap(pointer, leading_slack);
+            }
+            if trailing_slack > 0 {
+                munmap(pointer.add(leading_slack + total_bytes), trailing_slack);
+            }
+        }
+
         Some(LargeRegion {
-            pointer,
+            pointer: unsafe { pointer.add(leading_slack) },
             size_in_bytes: total_bytes,
             zeroed: true,
         })

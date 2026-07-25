@@ -74,6 +74,33 @@ impl HashTable {
         }
     }
 
+    // Number of dynsym entries, recovered from the hash table (there is no direct DT count).
+    pub unsafe fn symbol_count(&self) -> usize {
+        match self {
+            // The chain runs parallel to the symbol table, so nchain is the entry count.
+            Self::SysV { chain, .. } => chain.len(),
+            Self::Gnu {
+                symbol_offset,
+                buckets,
+                chain,
+                ..
+            } => {
+                let symbol_offset = *symbol_offset as usize;
+                let buckets = &**buckets;
+                // Empty buckets: only the unhashed [0, symbol_offset) entries exist.
+                let Some(&highest) = buckets.iter().filter(|&&index| index != 0).max() else {
+                    return symbol_offset;
+                };
+                // Walk the highest bucket's chain to its stop bit; the last index + 1 is the count.
+                let mut symbol_index = highest as usize;
+                while *chain.add(symbol_index - symbol_offset) & 1 == 0 {
+                    symbol_index += 1;
+                }
+                symbol_index + 1
+            }
+        }
+    }
+
     pub unsafe fn lookup(
         &self,
         name: &str,

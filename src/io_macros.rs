@@ -1,3 +1,4 @@
+#[allow(unused_macros)]
 macro_rules! syscall_assert {
     ($condition:expr $(, $message:expr)? $(,)?) => {
         if !$condition {
@@ -17,6 +18,7 @@ macro_rules! syscall_assert {
     };
 }
 
+#[allow(unused_imports)]
 pub(crate) use syscall_assert;
 
 macro_rules! syscall_debug_assert {
