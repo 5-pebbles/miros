@@ -48,6 +48,26 @@ impl Relocate {
                     options(nostack, preserves_flags),
                 );
             }
+            R_X86_64_COPY => {
+                let local_symbol = object_data
+                    .dynamic_fields
+                    .symbol_table
+                    .get(rela.r_sym() as usize);
+                let symbol_name = object_data
+                    .dynamic_fields
+                    .string_table
+                    .get(local_symbol.st_name as usize);
+
+                let (source_symbol, source_address) = object_data_map
+                    .resolve_symbol_outside_program(symbol_name)
+                    .ok_or_else(|| MirosError::UndefinedSymbol(symbol_name.to_string()))?;
+
+                std::ptr::copy_nonoverlapping(
+                    source_address as *const u8,
+                    relocate_address as *mut u8,
+                    source_symbol.st_size,
+                );
+            }
             R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
                 debug_assert_eq!(rela.r_addend, 0);
 
