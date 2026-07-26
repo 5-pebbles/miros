@@ -134,9 +134,17 @@ impl DynamicFields {
             _ => (),
         });
 
-        let string_table = StringTable::new(string_table_pointer?);
-        let symbol_table = SymbolTable::new(symbol_table_pointer?);
-        let symbol_count = hash_table.as_ref().map(|table| table.symbol_count());
+        let string_table_pointer = string_table_pointer?;
+        let symbol_table_pointer = symbol_table_pointer?;
+        let string_table = StringTable::new(string_table_pointer);
+        let symbol_table = SymbolTable::new(symbol_table_pointer);
+        // .dynstr immediately follows .dynsym in real linker output, so the address difference is the exact entry count; the hash table count is the fallback.
+        let symbol_count = (string_table_pointer > symbol_table_pointer.cast())
+            .then(|| {
+                (string_table_pointer as usize - symbol_table_pointer as usize)
+                    / size_of::<Symbol>()
+            })
+            .or_else(|| hash_table.as_ref().and_then(|table| table.symbol_count()));
 
         let rela_slice = rela_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, rela_count));
         let plt_rela_slice =
