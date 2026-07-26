@@ -1,8 +1,4 @@
-// Verifies thread-exit destructor parity with glibc: __cxa_thread_atexit_impl
-// LIFO drain (a destructor may register another), thread_local dtors before
-// pthread key dtors, key values nulled before their destructor runs, re-armed
-// keys bounded at PTHREAD_DESTRUCTOR_ITERATIONS (4) rounds, and the main
-// thread's tls dtors running at exit. Prints "thread dtors ok" then "main dtor".
+// LIFO drain, tls-before-key, key-nulled-before-dtor, re-arm capped at 4 rounds.
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
