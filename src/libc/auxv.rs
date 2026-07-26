@@ -6,7 +6,7 @@ use crate::{
     libc::errno::{set_errno, Errno},
     page_size::get_page_size,
     signature_matches_libc,
-    start::auxiliary_vector::get_auxiliary_value,
+    start::auxiliary_vector::{get_auxiliary_value, AuxiliaryVectorType},
     syscall::{syscall, Syscall},
 };
 
@@ -33,8 +33,8 @@ unsafe extern "C" fn sysconf(name: c_int) -> c_long {
     match SysconfName::from_repr(name) {
         Some(PageSize) => get_page_size() as c_long,
         Some(ProcessorsConfigured | ProcessorsOnline) => online_processor_count(),
-        Some(ClockTicks) => 100,
-        Some(OpenMax) => 1024,
+        Some(ClockTicks) => clock_ticks_per_second(),
+        Some(OpenMax) => open_file_descriptor_limit(),
         None => {
             set_errno(Errno::INVAL);
             -1
@@ -60,4 +60,37 @@ unsafe fn online_processor_count() -> c_long {
         .map(|byte| byte.count_ones() as c_long)
         .sum::<c_long>()
         .max(1)
+}
+
+/// `AT_CLKTCK` from the kernel, falling back to `USER_HZ` (100) like glibc's `SYSTEM_CLK_TCK`.
+unsafe fn clock_ticks_per_second() -> c_long {
+    get_auxiliary_value(AuxiliaryVectorType::ClkTck as usize)
+        .filter(|&value| value != 0)
+        .unwrap_or(100) as c_long
+}
+
+/// Soft `RLIMIT_NOFILE` via `prlimit64`, falling back to `OPEN_MAX` (256) like glibc's `__getdtablesize`.
+unsafe fn open_file_descriptor_limit() -> c_long {
+    #[repr(C)]
+    struct Rlimit64 {
+        rlim_cur: u64,
+        rlim_max: u64,
+    }
+    const RLIMIT_NOFILE: usize = 7;
+    let mut rlimit = Rlimit64 {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    let result = syscall!(
+        Syscall::PrLimit64,
+        0usize,
+        RLIMIT_NOFILE,
+        0usize,
+        &mut rlimit as *mut Rlimit64
+    );
+    if result < 0 {
+        256
+    } else {
+        rlimit.rlim_cur as c_long
+    }
 }

@@ -41,6 +41,7 @@ pub enum AuxiliaryVectorType {
     Base = 7,
     Entry = 9,
     Random = 25,
+    ClkTck = 17,
 }
 
 /// A union resolved by the a_type field of the parent auxiliary vector item.
