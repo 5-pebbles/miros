@@ -29,6 +29,14 @@ const EXAMPLES: &[Example] = &[
         stem: "thread_dtors",
         flags: &["-fno-builtin", "-lpthread"],
     },
+    Example {
+        stem: "stdio_buffer",
+        flags: &[],
+    },
+    Example {
+        stem: "putchar_unlocked_o2",
+        flags: &["-O2"],
+    },
 ];
 
 pub fn run() {
