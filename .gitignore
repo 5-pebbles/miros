@@ -1,6 +1,8 @@
 /target
 /.claude/
+/.pi/
 CLAUDE.md
+AGENTS.md
 /benchmarks/bin/
 /examples/bin/
 /examples/*/target
