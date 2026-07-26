@@ -8,7 +8,7 @@ use std::{
 use super::{IoFile, BUFFER_SIZE, EOF};
 use crate::{
     libc::{
-        errno::Errno,
+        errno::{set_errno, Errno},
         fs::{fstat::FileStatus, isatty::file_descriptor_isatty},
     },
     syscall::{syscall, Syscall},
@@ -78,8 +78,22 @@ impl IoFile {
         self.write_ptr < self.buf_end || self.flush_buffer() >= 0
     }
 
+    /// False if this stream is read-only (`NO_WRITES`); caller must treat that as failure.
+    unsafe fn writable(&mut self) -> bool {
+        if self.flags.no_writes() {
+            self.flags = self.flags.with_err_seen(true);
+            set_errno(Errno::BADF);
+            false
+        } else {
+            true
+        }
+    }
+
     /// Append one byte, flushing first if the buffer is full. `c == EOF` is glibc's flush request.
     pub(super) unsafe fn overflow(&mut self, c: i32) -> i32 {
+        if !self.writable() {
+            return EOF;
+        }
         self.begin_write();
 
         if c == EOF {
@@ -102,6 +116,9 @@ impl IoFile {
 
     /// Returns bytes accepted — short of `bytes.len()` only on write error.
     pub(super) unsafe fn write_bytes(&mut self, bytes: &[u8]) -> usize {
+        if !self.writable() {
+            return 0;
+        }
         self.begin_write();
 
         let mut remaining = bytes;
