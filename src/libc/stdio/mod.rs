@@ -36,7 +36,7 @@ struct IoFlags {
 
 const IO_MAGIC: u16 = 0xFBAD;
 
-// SAFETY: glibc froze these `_IO_FILE` offsets in the libio rewrite (2.1, 1999); moving would break every binary ever linked against glibc, so hardcoding them is safe.
+// NOTE: glibc froze these `_IO_FILE` offsets in the libio rewrite (2.1, 1999); moving would break every binary ever linked against glibc, so hardcoding them is safe.
 const _: () = {
     assert!(offset_of!(IoFile, flags) == 0);
     assert!(offset_of!(IoFile, read_ptr) == 8);
