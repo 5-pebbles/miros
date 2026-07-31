@@ -5,9 +5,13 @@ use crate::{
     syscall::{syscall, Syscall},
 };
 
+mod attr;
 mod create;
 mod join;
 mod key;
+
+/// A thread handle, thread pointer (= TCB address), matching glibc's `pthread_t` width.
+pub type PthreadT = usize;
 
 use key::{run_key_destructor_round, PTHREAD_DESTRUCTOR_ITERATIONS};
 
