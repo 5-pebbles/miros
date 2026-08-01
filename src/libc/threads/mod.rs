@@ -9,6 +9,7 @@ mod attr;
 mod create;
 mod join;
 mod key;
+mod self_detach;
 
 /// A thread handle, thread pointer (= TCB address), matching glibc's `pthread_t` width.
 pub type PthreadT = usize;

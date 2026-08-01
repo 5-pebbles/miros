@@ -11,7 +11,7 @@ use crate::{
         process::clone::{clone3, Clone3Args, Clone3Flags},
     },
     page_size, signature_matches_libc,
-    syscall::{exit, thread_pointer::get_thread_pointer},
+    syscall::thread_pointer::get_thread_pointer,
     tls::{
         get_tls_allocator,
         thread_control_block::{
@@ -50,7 +50,7 @@ unsafe extern "C" fn pthread_entry(context: *mut c_void) -> ! {
     // Destructors run before `abandon_heap` because they may malloc/free.
     super::run_at_thread_exit_destructors();
     crate::allocator::abandon_heap();
-    exit::exit(0);
+    super::self_detach::on_thread_exit(thread_pointer);
 }
 
 #[repr(C)]
