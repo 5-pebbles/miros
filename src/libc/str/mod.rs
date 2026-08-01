@@ -35,7 +35,7 @@ unsafe fn first_byte_difference(
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn strlen(start_character: *mut i8) -> usize {
+pub unsafe extern "C" fn strlen(start_character: *mut i8) -> usize {
     signature_matches_libc!(libc::strlen(start_character));
     c_string_bytes(start_character).count()
 }
