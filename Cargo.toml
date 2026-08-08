@@ -14,7 +14,10 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbitrary-int = "2.0.0"
+# std has no Atomic<T> for non-native primitives (the condvar's bitfield words).
+atomic = "0.6.1"
 bitbybit = "1.4.0"
+bytemuck = { version = "1.25.2", features = ["derive"] }
 indexmap = "2.13.0"
 
 # We need a refrence to confirm our function signatures match, this method is from sunfishcode's c-ward.

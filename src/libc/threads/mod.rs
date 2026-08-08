@@ -7,6 +7,7 @@ use crate::{
 };
 
 mod attr;
+mod cond;
 mod create;
 mod join;
 mod key;
