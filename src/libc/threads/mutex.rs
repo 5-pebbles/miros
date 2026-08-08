@@ -75,8 +75,7 @@ pub struct PthreadMutex {
 
 const _: () = assert!(size_of::<PthreadMutex>() == size_of::<libc::pthread_mutex_t>());
 const _: () = assert!(align_of::<PthreadMutex>() == align_of::<libc::pthread_mutex_t>());
-// glibc x86_64 `__pthread_mutex_s`: __lock @0, __count @4, __owner @8, __nusers @12, __kind @16,
-// __spins @20, __elision @22, __list @24. The static initializers write only `kind`.
+// glibc x86_64 `__pthread_mutex_s`: __lock @0, __count @4, __owner @8, __nusers @12, __kind @16, __spins @20, __elision @22, __list @24. The static initializers write only `kind`.
 const _: () = {
     assert!(offset_of!(PthreadMutex, state) == 0);
     assert!(offset_of!(PthreadMutex, recursion) == 4);
