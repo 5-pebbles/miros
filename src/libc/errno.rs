@@ -26,6 +26,7 @@ impl Errno {
     pub const INTR: Self = Self(linux_raw_sys::errno::EINTR);
     pub const PERM: Self = Self(linux_raw_sys::errno::EPERM);
     pub const BUSY: Self = Self(linux_raw_sys::errno::EBUSY);
+    pub const AGAIN: Self = Self(linux_raw_sys::errno::EAGAIN);
     pub const DEADLK: Self = Self(linux_raw_sys::errno::EDEADLK);
     // POSIX name; the kernel calls it EOPNOTSUPP.
     pub const NOTSUP: Self = Self(linux_raw_sys::errno::EOPNOTSUPP);

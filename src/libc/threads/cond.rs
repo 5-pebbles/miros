@@ -1,9 +1,5 @@
-use core::{
-    ffi::c_int,
-    mem::offset_of,
-    ptr::{self, NonNull},
-};
-use std::sync::atomic::{AtomicU32, Ordering};
+use core::{ffi::c_int, mem::offset_of, ptr::NonNull};
+use std::sync::atomic::Ordering;
 
 use arbitrary_int::{u29, u30, u63};
 use atomic::Atomic;
@@ -71,13 +67,6 @@ fn fetch_map<T: NoUninit>(
         unreachable!()
     };
     previous
-}
-
-/// A futex sleeps on the raw u32 inside a typed atomic word.
-fn futex_word<T: NoUninit>(word: &Atomic<T>) -> &AtomicU32 {
-    assert!(size_of::<T>() == size_of::<u32>());
-    // SAFETY: atomic::Atomic<T> is repr(transparent) over T, and the assert above pins T to 4 bytes.
-    unsafe { &*ptr::from_ref(word).cast::<AtomicU32>() }
 }
 
 /// glibc's `__pthread_cond_s`, protocol-compatible so PTHREAD_PROCESS_SHARED condvars interoperate with real glibc processes.
@@ -187,10 +176,7 @@ impl PthreadCond {
                 }
             }
             let expected = state.with_signaler_lock(SignalerLock::LockedWithWaiters);
-            futex_wait(
-                futex_word(&self.group_one_original_size),
-                expected.raw_value(),
-            );
+            futex_wait(&self.group_one_original_size, expected.raw_value());
             state = self.group_one_original_size.load(Ordering::Relaxed);
         }
     }
@@ -203,7 +189,7 @@ impl PthreadCond {
             |state| state.with_signaler_lock(SignalerLock::Unlocked),
         );
         if previous.signaler_lock() == SignalerLock::LockedWithWaiters {
-            futex_wake(futex_word(&self.group_one_original_size), 1);
+            futex_wake(&self.group_one_original_size, 1);
         }
     }
 
@@ -249,7 +235,7 @@ impl PthreadCond {
             |references| references.with_waiters(references.waiters() - u29::new(1)),
         );
         if previous.destroy_wake_request() && previous.waiters() == u29::new(1) {
-            futex_wake(futex_word(&self.waiter_references), i32::MAX);
+            futex_wake(&self.waiter_references, i32::MAX);
         }
     }
 }
@@ -301,7 +287,7 @@ unsafe extern "C" fn pthread_cond_wait(cond: &PthreadCond, mutex: &PthreadMutex)
             }
             continue;
         }
-        futex_wait(futex_word(signals), available);
+        futex_wait(signals, available);
     }
 
     cond.confirm_wakeup();
@@ -332,7 +318,7 @@ unsafe extern "C" fn pthread_cond_signal(cond: &PthreadCond) -> c_int {
 
     cond.release_lock();
     if wake {
-        futex_wake(futex_word(cond.signals(group_one)), 1);
+        futex_wake(cond.signals(group_one), 1);
     }
     0
 }
@@ -356,7 +342,7 @@ unsafe extern "C" fn pthread_cond_broadcast(cond: &PthreadCond) -> c_int {
             .fetch_add(remaining, Ordering::Relaxed);
         cond.size(group_one).store(0, Ordering::Relaxed);
         // Group one must be awake before the role switch below repurposes its slot.
-        futex_wake(futex_word(cond.signals(group_one)), i32::MAX);
+        futex_wake(cond.signals(group_one), i32::MAX);
     }
 
     let mut wake = false;
@@ -369,7 +355,7 @@ unsafe extern "C" fn pthread_cond_broadcast(cond: &PthreadCond) -> c_int {
 
     cond.release_lock();
     if wake {
-        futex_wake(futex_word(cond.signals(group_one)), i32::MAX);
+        futex_wake(cond.signals(group_one), i32::MAX);
     }
     0
 }
@@ -406,7 +392,7 @@ unsafe extern "C" fn pthread_cond_destroy(cond: &PthreadCond) -> c_int {
     // The fetch returns the pre-flag value; the futex word already carries the flag.
     references = references.with_destroy_wake_request(true);
     while references.waiters() != u29::new(0) {
-        futex_wait(futex_word(&cond.waiter_references), references.raw_value());
+        futex_wait(&cond.waiter_references, references.raw_value());
         references = cond.waiter_references.load(Ordering::Acquire);
     }
     0

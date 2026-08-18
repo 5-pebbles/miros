@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ffi::c_void, sync::atomic::AtomicU32};
+use std::{cell::RefCell, ffi::c_void};
 
 use crate::{
     signature_matches_libc,
@@ -12,6 +12,7 @@ mod create;
 mod join;
 mod key;
 mod mutex;
+mod rwlock;
 mod self_detach;
 
 use key::{run_key_destructor_round, PTHREAD_DESTRUCTOR_ITERATIONS};
@@ -23,12 +24,20 @@ pub unsafe fn current_tid() -> u32 {
     (*get_thread_pointer().cast::<ThreadControlBlock>()).tid as u32
 }
 
+/// A word a futex can park on: the kernel's 32-bit compare unit. Blanket-implemented, so a wrong-sized `T` fails only when a caller evaluates `ASSERT`.
+pub trait FutexWord: Sized {
+    const ASSERT: () = assert!(size_of::<Self>() == 4 && align_of::<Self>() == 4);
+}
+
+impl<T> FutexWord for T {}
+
 /// The shared futex-wait for every pthread primitive.
-pub fn futex_wait(word: &AtomicU32, expected: u32) {
+pub fn futex_wait<T: FutexWord>(word: &T, expected: u32) {
+    let () = T::ASSERT;
     unsafe {
         syscall!(
             Syscall::Futex,
-            word.as_ptr(),
+            word as *const T,
             FutexOperation::Wait,
             expected,
             0usize,
@@ -39,11 +48,12 @@ pub fn futex_wait(word: &AtomicU32, expected: u32) {
 }
 
 /// The shared futex-wake for every pthread primitive.
-pub fn futex_wake(word: &AtomicU32, count: i32) {
+pub fn futex_wake<T: FutexWord>(word: &T, count: i32) {
+    let () = T::ASSERT;
     unsafe {
         syscall!(
             Syscall::Futex,
-            word.as_ptr(),
+            word as *const T,
             FutexOperation::Wake,
             count,
             0usize,

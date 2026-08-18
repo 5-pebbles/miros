@@ -2,13 +2,10 @@ use core::{
     ffi::c_int,
     ptr::{self, NonNull},
 };
-use std::{
-    cell::UnsafeCell,
-    mem::offset_of,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::{cell::UnsafeCell, mem::offset_of, sync::atomic::Ordering};
 
 use arbitrary_int::u2;
+use atomic::Atomic;
 use bitbybit::{bitenum, bitfield};
 
 use crate::{
@@ -60,9 +57,9 @@ struct RobustList {
 /// Soo, we require identical structure to glibc...
 #[repr(C, align(8))]
 pub struct PthreadMutex {
-    state: AtomicU32,
+    state: Atomic<u32>,
     recursion: UnsafeCell<u32>,
-    owner: AtomicU32,
+    owner: Atomic<u32>,
     _number_of_users: u32,
     kind: MutexKindField,
     spins: u16,
@@ -93,9 +90,9 @@ unsafe impl Sync for PthreadMutex {}
 impl PthreadMutex {
     const fn new(kind: MutexKindField, spins: u16) -> Self {
         Self {
-            state: AtomicU32::new(UNLOCKED),
+            state: Atomic::new(UNLOCKED),
             recursion: UnsafeCell::new(0),
-            owner: AtomicU32::new(0),
+            owner: Atomic::new(0),
             _number_of_users: 0,
             kind,
             spins,
