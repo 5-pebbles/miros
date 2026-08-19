@@ -53,8 +53,7 @@ struct RobustList {
     next: *mut RobustList,
 }
 
-/// glibc's `PTHREAD_PROCESS_SHARED` blob in shared memory can be locked by another program who isn't linked by miros.
-/// Soo, we require identical structure to glibc...
+/// A `PTHREAD_PROCESS_SHARED` blob in shared memory can be locked by a process not linked against miros, so the layout must match glibc's exactly.
 #[repr(C, align(8))]
 pub struct PthreadMutex {
     state: Atomic<u32>,
@@ -66,7 +65,7 @@ pub struct PthreadMutex {
     // TSX lock elision is unsupported (for now?); glibc leaves this zero when elision is off.
     // TODO: Should we add elision support? Probably?
     _elision: u16,
-    // TODO: Implment the robust list.
+    // TODO: Implement the robust list.
     _robust_list: RobustList,
 }
 
