@@ -34,6 +34,10 @@ const EXAMPLES: &[Example] = &[
         flags: &["-fno-builtin", "-lpthread"],
     },
     Example {
+        stem: "pthread_sync",
+        flags: &["-lpthread"],
+    },
+    Example {
         stem: "stdio_buffer",
         flags: &[],
     },
