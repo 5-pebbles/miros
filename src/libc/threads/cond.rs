@@ -9,7 +9,7 @@ use bytemuck::NoUninit;
 use crate::{
     libc::{
         errno::Errno,
-        threads::{futex_wait, futex_wake, mutex::PthreadMutex},
+        threads::{futex_wait, futex_wake, mutex::PthreadMutex, FetchMap},
     },
     signature_matches_libc,
 };
@@ -53,20 +53,6 @@ struct WaiterReferences {
     destroy_wake_request: bool,
     #[bits(3..=31, rw)]
     waiters: u29,
-}
-
-/// `fetch_update` with an infallible mapping, returning the previous value.
-fn fetch_map<T: NoUninit>(
-    word: &Atomic<T>,
-    set: Ordering,
-    fetch: Ordering,
-    map: impl FnMut(T) -> T,
-) -> T {
-    let mut map = map;
-    let Ok(previous) = word.fetch_update(set, fetch, |value| Some(map(value))) else {
-        unreachable!()
-    };
-    previous
 }
 
 /// glibc's `__pthread_cond_s`, protocol-compatible so PTHREAD_PROCESS_SHARED condvars interoperate with real glibc processes.
@@ -182,12 +168,11 @@ impl PthreadCond {
     }
 
     fn release_lock(&self) {
-        let previous = fetch_map(
-            &self.group_one_original_size,
-            Ordering::Release,
-            Ordering::Relaxed,
-            |state| state.with_signaler_lock(SignalerLock::Unlocked),
-        );
+        let (previous, _) =
+            self.group_one_original_size
+                .fetch_map(Ordering::Release, Ordering::Relaxed, |state| {
+                    state.with_signaler_lock(SignalerLock::Unlocked)
+                });
         if previous.signaler_lock() == SignalerLock::LockedWithWaiters {
             futex_wake(&self.group_one_original_size, 1);
         }
@@ -207,14 +192,12 @@ impl PthreadCond {
         self.group_one_start
             .fetch_add(u64::from(old_original_size), Ordering::Relaxed);
         // Flipping the slot publishes the switch and redirects future waiters to the other slot in one atomic.
-        let switched_sequence = fetch_map(
-            &self.wait_sequence,
-            Ordering::Release,
-            Ordering::Relaxed,
-            |sequence| sequence.with_group_two_slot(!sequence.group_two_slot()),
-        )
-        .ticket()
-        .value();
+        let (switched_sequence, _) =
+            self.wait_sequence
+                .fetch_map(Ordering::Release, Ordering::Relaxed, |sequence| {
+                    sequence.with_group_two_slot(!sequence.group_two_slot())
+                });
+        let switched_sequence = switched_sequence.ticket().value();
         let new_group_one = old_group_one ^ 1;
         *group_one = new_group_one;
 
@@ -228,12 +211,11 @@ impl PthreadCond {
     }
 
     fn confirm_wakeup(&self) {
-        let previous = fetch_map(
-            &self.waiter_references,
-            Ordering::Release,
-            Ordering::Relaxed,
-            |references| references.with_waiters(references.waiters() - u29::new(1)),
-        );
+        let (previous, _) =
+            self.waiter_references
+                .fetch_map(Ordering::Release, Ordering::Relaxed, |references| {
+                    references.with_waiters(references.waiters() - u29::new(1))
+                });
         if previous.destroy_wake_request() && previous.waiters() == u29::new(1) {
             futex_wake(&self.waiter_references, i32::MAX);
         }
@@ -248,20 +230,17 @@ unsafe extern "C" fn pthread_cond_wait(cond: &PthreadCond, mutex: &PthreadMutex)
     ));
 
     // Registration must complete before the mutex release: a signaler ordered after the release must see this waiter.
-    let ticket = fetch_map(
-        &cond.wait_sequence,
-        Ordering::Acquire,
-        Ordering::Acquire,
-        |sequence| sequence.with_ticket(sequence.ticket() + u63::new(1)),
-    );
+    let (ticket, _) =
+        cond.wait_sequence
+            .fetch_map(Ordering::Acquire, Ordering::Acquire, |sequence| {
+                sequence.with_ticket(sequence.ticket() + u63::new(1))
+            });
     let group = usize::from(ticket.group_two_slot());
     let position = ticket.ticket().value();
-    fetch_map(
-        &cond.waiter_references,
-        Ordering::Relaxed,
-        Ordering::Relaxed,
-        |references| references.with_waiters(references.waiters() + u29::new(1)),
-    );
+    cond.waiter_references
+        .fetch_map(Ordering::Relaxed, Ordering::Relaxed, |references| {
+            references.with_waiters(references.waiters() + u29::new(1))
+        });
 
     let recursion = mutex.release_for_wait();
 
@@ -383,12 +362,11 @@ unsafe extern "C" fn pthread_cond_init(
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pthread_cond_destroy(cond: &PthreadCond) -> c_int {
     signature_matches_libc!(libc::pthread_cond_destroy(std::mem::transmute(cond)));
-    let mut references = fetch_map(
-        &cond.waiter_references,
-        Ordering::Acquire,
-        Ordering::Acquire,
-        |references| references.with_destroy_wake_request(true),
-    );
+    let (mut references, _) =
+        cond.waiter_references
+            .fetch_map(Ordering::Acquire, Ordering::Acquire, |references| {
+                references.with_destroy_wake_request(true)
+            });
     // The fetch returns the pre-flag value; the futex word already carries the flag.
     references = references.with_destroy_wake_request(true);
     while references.waiters() != u29::new(0) {

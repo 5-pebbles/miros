@@ -18,7 +18,7 @@ use bytemuck::NoUninit;
 use crate::{
     libc::{
         errno::Errno,
-        threads::{current_tid, futex_wait, futex_wake},
+        threads::{current_tid, futex_wait, futex_wake, FetchMap},
     },
     signature_matches_libc,
 };
@@ -185,23 +185,6 @@ impl Deref for AtomicPhaseWord {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-trait FetchMap<T> {
-    fn fetch_map(&self, set: Ordering, fetch: Ordering, map: impl FnMut(T) -> T) -> (T, T);
-}
-
-impl<T: NoUninit> FetchMap<T> for Atomic<T> {
-    fn fetch_map(&self, set: Ordering, fetch: Ordering, mut map: impl FnMut(T) -> T) -> (T, T) {
-        let mut previous = self.load(fetch);
-        loop {
-            let new = map(previous);
-            match self.compare_exchange_weak(previous, new, set, fetch) {
-                Ok(_) => return (previous, new),
-                Err(actual) => previous = actual,
-            }
-        }
     }
 }
 

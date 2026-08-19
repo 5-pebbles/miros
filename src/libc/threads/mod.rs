@@ -1,4 +1,7 @@
-use std::{cell::RefCell, ffi::c_void};
+use std::{cell::RefCell, ffi::c_void, sync::atomic::Ordering};
+
+use atomic::Atomic;
+use bytemuck::NoUninit;
 
 use crate::{
     signature_matches_libc,
@@ -31,6 +34,24 @@ pub trait FutexWord: Sized {
 }
 
 impl<T> FutexWord for T {}
+
+/// `fetch_update` with an infallible mapping, returning the previous and new values.
+pub trait FetchMap<T> {
+    fn fetch_map(&self, set: Ordering, fetch: Ordering, map: impl FnMut(T) -> T) -> (T, T);
+}
+
+impl<T: NoUninit> FetchMap<T> for Atomic<T> {
+    fn fetch_map(&self, set: Ordering, fetch: Ordering, mut map: impl FnMut(T) -> T) -> (T, T) {
+        let mut previous = self.load(fetch);
+        loop {
+            let new = map(previous);
+            match self.compare_exchange_weak(previous, new, set, fetch) {
+                Ok(_) => return (previous, new),
+                Err(actual) => previous = actual,
+            }
+        }
+    }
+}
 
 /// The shared futex-wait for every pthread primitive.
 pub fn futex_wait<T: FutexWord>(word: &T, expected: u32) {
