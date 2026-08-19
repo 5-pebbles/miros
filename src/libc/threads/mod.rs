@@ -12,6 +12,7 @@ mod create;
 mod join;
 mod key;
 mod mutex;
+mod once;
 mod rwlock;
 mod self_detach;
 
