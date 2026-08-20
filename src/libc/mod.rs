@@ -18,7 +18,7 @@ mod syscall;
 mod threads;
 mod time;
 
-mod errno;
+pub(crate) mod errno;
 
 /// A macro for ensuring that the `libc` crate signature for a function matches
 /// the signature that our implementation of it is using.

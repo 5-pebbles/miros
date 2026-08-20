@@ -2,11 +2,10 @@ use std::ffi::c_int;
 
 use crate::libc::net::net_syscall_pass_through;
 
-net_syscall_pass_through!(fn socket(domain: c_int, socket_type: c_int, protocol: c_int) = Socket);
-
-net_syscall_pass_through!(
-    fn socketpair(domain: c_int, socket_type: c_int, protocol: c_int, socket_vector: *mut [c_int; 2]) = SocketPair
-);
+net_syscall_pass_through! {
+    fn socket(domain: c_int, socket_type: c_int, protocol: c_int) -> c_int = Syscall::Socket;
+    fn socketpair(domain: c_int, socket_type: c_int, protocol: c_int, socket_vector: *mut [c_int; 2]) -> c_int = Syscall::SocketPair;
+}
 
 #[cfg(test)]
 mod tests {

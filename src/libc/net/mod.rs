@@ -16,21 +16,56 @@ mod accept;
 mod connect;
 mod listen;
 mod names;
+mod options;
 mod socket;
+mod transfer;
 
-// Arguments forward to the syscall in declaration order; a negative result maps to errno + -1.
+// A C function per entry: `Syscall::X` forwards the arguments in declaration order, `{ body }`
+// is written out in full. Both map a negative result to errno + -1 via `translate`.
 macro_rules! net_syscall_pass_through {
-    (fn $name:ident($($argument:ident: $argument_type:ty),* $(,)?) = $syscall:ident) => {
+    () => {};
+    (fn $name:ident($($argument:ident: $argument_type:ty),* $(,)?) -> $return_type:ty = Syscall::$syscall:ident; $($rest:tt)*) => {
         #[cfg_attr(not(test), no_mangle)]
-        pub(crate) unsafe extern "C" fn $name($($argument: $argument_type),*) -> std::ffi::c_int {
+        pub(crate) unsafe extern "C" fn $name($($argument: $argument_type),*) -> $return_type {
             $crate::signature_matches_libc!(libc::$name($(std::mem::transmute($argument)),*));
 
-            $crate::libc::net::translate_syscall_result($crate::syscall!(
-                $crate::syscall::Syscall::$syscall,
-                $($argument),*
-            ))
+            let result = $crate::syscall!($crate::syscall::Syscall::$syscall, $($argument),*);
+            $crate::libc::net::translate(result)
         }
+        net_syscall_pass_through! { $($rest)* }
     };
+    (fn $name:ident($($argument:ident: $argument_type:ty),* $(,)?) -> $return_type:ty { $($body:tt)* } $($rest:tt)*) => {
+        #[cfg_attr(not(test), no_mangle)]
+        pub(crate) unsafe extern "C" fn $name($($argument: $argument_type),*) -> $return_type {
+            $($body)*
+        }
+        net_syscall_pass_through! { $($rest)* }
+    };
+}
+
+pub(crate) trait TranslateSyscallResult {
+    fn translate(result: isize) -> Self;
+}
+
+impl TranslateSyscallResult for std::ffi::c_int {
+    fn translate(result: isize) -> Self {
+        translate_syscall_result(result)
+    }
+}
+
+impl TranslateSyscallResult for isize {
+    fn translate(result: isize) -> Self {
+        if result < 0 {
+            crate::libc::errno::set_errno(crate::libc::errno::Errno(result.unsigned_abs() as u32));
+            -1
+        } else {
+            result
+        }
+    }
+}
+
+pub(crate) fn translate<ReturnType: TranslateSyscallResult>(result: isize) -> ReturnType {
+    TranslateSyscallResult::translate(result)
 }
 
 pub(crate) use net_syscall_pass_through;

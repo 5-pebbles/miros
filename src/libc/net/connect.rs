@@ -2,9 +2,9 @@ use std::ffi::c_int;
 
 use crate::libc::net::{net_syscall_pass_through, sockaddr, socklen_t};
 
-net_syscall_pass_through!(
-    fn connect(socket: c_int, address: *const sockaddr, address_len: socklen_t) = Connect
-);
+net_syscall_pass_through! {
+    fn connect(socket: c_int, address: *const sockaddr, address_len: socklen_t) -> c_int = Syscall::Connect;
+}
 
 #[cfg(test)]
 mod tests {
