@@ -1,44 +1,12 @@
 use std::ffi::c_int;
 
-use crate::{
-    libc::net::translate_syscall_result,
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::libc::net::net_syscall_pass_through;
 
-#[cfg_attr(not(test), no_mangle)]
-pub(crate) unsafe extern "C" fn socket(
-    domain: c_int,
-    socket_type: c_int,
-    protocol: c_int,
-) -> c_int {
-    signature_matches_libc!(libc::socket(domain, socket_type, protocol));
+net_syscall_pass_through!(fn socket(domain: c_int, socket_type: c_int, protocol: c_int) = Socket);
 
-    translate_syscall_result(syscall!(Syscall::Socket, domain, socket_type, protocol))
-}
-
-#[cfg_attr(not(test), no_mangle)]
-pub(crate) unsafe extern "C" fn socketpair(
-    domain: c_int,
-    socket_type: c_int,
-    protocol: c_int,
-    socket_vector: *mut [c_int; 2],
-) -> c_int {
-    signature_matches_libc!(libc::socketpair(
-        domain,
-        socket_type,
-        protocol,
-        socket_vector.cast(),
-    ));
-
-    translate_syscall_result(syscall!(
-        Syscall::SocketPair,
-        domain,
-        socket_type,
-        protocol,
-        socket_vector
-    ))
-}
+net_syscall_pass_through!(
+    fn socketpair(domain: c_int, socket_type: c_int, protocol: c_int, socket_vector: *mut [c_int; 2]) = SocketPair
+);
 
 #[cfg(test)]
 mod tests {

@@ -7,7 +7,8 @@ use crate::{
     page_size::get_page_size,
     signature_matches_libc,
     start::auxiliary_vector::{get_auxiliary_value, AuxiliaryVectorType},
-    syscall::{syscall, Syscall},
+    syscall,
+    syscall::Syscall,
 };
 
 #[cfg_attr(not(test), no_mangle)]

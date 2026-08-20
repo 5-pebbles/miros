@@ -2,8 +2,8 @@ use std::os::fd::{AsRawFd, BorrowedFd};
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 // TODO: structure fields with proper types (e.g. enums for st_mode, bitfields for permissions)

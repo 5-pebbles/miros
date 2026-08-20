@@ -1,25 +1,10 @@
 use std::ffi::c_int;
 
-use crate::{
-    libc::net::{sockaddr, socklen_t, translate_syscall_result},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::libc::net::{net_syscall_pass_through, sockaddr, socklen_t};
 
-#[cfg_attr(not(test), no_mangle)]
-pub(crate) unsafe extern "C" fn connect(
-    socket: c_int,
-    address: *const sockaddr,
-    address_len: socklen_t,
-) -> c_int {
-    signature_matches_libc!(libc::connect(
-        socket,
-        std::mem::transmute(address),
-        std::mem::transmute(address_len),
-    ));
-
-    translate_syscall_result(syscall!(Syscall::Connect, socket, address, address_len))
-}
+net_syscall_pass_through!(
+    fn connect(socket: c_int, address: *const sockaddr, address_len: socklen_t) = Connect
+);
 
 #[cfg(test)]
 mod tests {

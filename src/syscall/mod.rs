@@ -55,10 +55,11 @@ pub enum Syscall {
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
 // accumulating `in("reg") value` operands into a single `asm!` block.
+#[macro_export]
 macro_rules! syscall {
     ($syscall:expr $(, $args:expr)* $(,)?) => {
         #[cfg(target_arch = "x86_64")]
-        syscall!(
+        $crate::syscall!(
             @build $syscall,
             [in("rdi"), in("rsi"), in("rdx"), in("r10"), in("r8"), in("r9"),],
             []
@@ -79,7 +80,7 @@ macro_rules! syscall {
         result
     }};
     (@build $syscall:expr, [$constraint:tt $register:tt, $($rest:tt)*], [$($operands:tt)*], $arg:expr $(, $more:expr)*) => {
-        syscall!(
+        $crate::syscall!(
             @build $syscall,
             [$($rest)*],
             [$($operands)* $constraint $register $arg as usize,]
@@ -90,8 +91,6 @@ macro_rules! syscall {
         compile_error!("x86_64 syscall ABI supports at most 6 arguments")
     };
 }
-
-pub(crate) use syscall;
 
 pub mod exit;
 pub mod futex;

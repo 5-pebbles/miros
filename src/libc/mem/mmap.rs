@@ -3,8 +3,8 @@ use std::os::fd::RawFd;
 use crate::{
     io_macros::syscall_debug_assert,
     libc::mem::{MapFlags, ProtectionFlags},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 // TODO: add error handling

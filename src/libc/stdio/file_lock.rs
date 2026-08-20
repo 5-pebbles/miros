@@ -7,7 +7,8 @@ use arbitrary_int::u31;
 use bitbybit::bitfield;
 
 use crate::{
-    syscall::{futex::FutexOperation, syscall, thread_pointer::get_thread_pointer, Syscall},
+    syscall,
+    syscall::{futex::FutexOperation, thread_pointer::get_thread_pointer, Syscall},
     tls::thread_control_block::ThreadControlBlock,
 };
 

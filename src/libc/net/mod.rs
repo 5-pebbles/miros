@@ -18,6 +18,23 @@ mod listen;
 mod names;
 mod socket;
 
+// Arguments forward to the syscall in declaration order; a negative result maps to errno + -1.
+macro_rules! net_syscall_pass_through {
+    (fn $name:ident($($argument:ident: $argument_type:ty),* $(,)?) = $syscall:ident) => {
+        #[cfg_attr(not(test), no_mangle)]
+        pub(crate) unsafe extern "C" fn $name($($argument: $argument_type),*) -> std::ffi::c_int {
+            $crate::signature_matches_libc!(libc::$name($(std::mem::transmute($argument)),*));
+
+            $crate::libc::net::translate_syscall_result($crate::syscall!(
+                $crate::syscall::Syscall::$syscall,
+                $($argument),*
+            ))
+        }
+    };
+}
+
+pub(crate) use net_syscall_pass_through;
+
 /// The kernel reports errors as -errno; the C ABI reports them through the thread-local errno.
 pub(crate) fn translate_syscall_result(result: isize) -> c_int {
     if result < 0 {

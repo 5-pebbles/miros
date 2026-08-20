@@ -2,8 +2,8 @@ use std::os::fd::RawFd;
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 #[cfg_attr(not(test), no_mangle)]

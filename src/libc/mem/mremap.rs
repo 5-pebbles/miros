@@ -1,10 +1,6 @@
 use bitbybit::bitfield;
 
-use crate::{
-    io_macros::syscall_debug_assert,
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::{io_macros::syscall_debug_assert, signature_matches_libc, syscall, syscall::Syscall};
 
 #[bitfield(u32)]
 pub struct MreMapFlags {

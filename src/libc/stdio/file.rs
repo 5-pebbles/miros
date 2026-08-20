@@ -11,7 +11,8 @@ use crate::{
         errno::{set_errno, Errno},
         fs::{fstat::FileStatus, isatty::file_descriptor_isatty},
     },
-    syscall::{syscall, Syscall},
+    syscall,
+    syscall::Syscall,
 };
 
 impl IoFile {
