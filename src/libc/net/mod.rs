@@ -14,9 +14,13 @@ pub(crate) const SOCK_NONBLOCK: c_int = 0o4000;
 
 mod accept;
 mod connect;
+mod epoll;
+mod eventfd;
 mod listen;
 mod names;
 mod options;
+mod poll;
+mod select;
 mod socket;
 mod transfer;
 
