@@ -25,7 +25,7 @@ mod socket;
 mod transfer;
 
 // A C function per entry: `Syscall::X` forwards the arguments in declaration order, `{ body }`
-// is written out in full. Both map a negative result to errno + -1 via `translate`.
+// is written out in full. The `Syscall::X` form maps a negative result to errno + -1.
 macro_rules! net_syscall_pass_through {
     () => {};
     (fn $name:ident($($argument:ident: $argument_type:ty),* $(,)?) -> $return_type:ty = Syscall::$syscall:ident; $($rest:tt)*) => {

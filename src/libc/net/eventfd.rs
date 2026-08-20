@@ -13,7 +13,7 @@ mod tests {
     #[test]
     fn eventfd_accumulates_writes_and_drains_on_read() {
         let descriptor = unsafe { eventfd(0, 0) };
-        assert_eq!(descriptor == -1, false);
+        assert_ne!(descriptor, -1);
 
         let one: u64 = 1;
         let two: u64 = 2;

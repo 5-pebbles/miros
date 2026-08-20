@@ -24,7 +24,7 @@ mod tests {
     #[test]
     fn epoll_wait_reports_a_ready_eventfd() {
         let epoll_descriptor = unsafe { epoll_create1(0) };
-        assert_eq!(epoll_descriptor == -1, false);
+        assert_ne!(epoll_descriptor, -1);
         let eventfd_descriptor = unsafe { eventfd(0, 0) };
 
         let mut interest = linux_raw_sys::general::epoll_event {

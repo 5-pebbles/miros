@@ -55,7 +55,7 @@ mod tests {
             },
             0
         );
-        assert_eq!(u16::from_be(bound.sin_port) == 0, false);
+        assert_ne!(u16::from_be(bound.sin_port), 0);
         (listener, bound)
     }
 
@@ -83,7 +83,7 @@ mod tests {
                 SOCK_CLOEXEC,
             )
         };
-        assert_eq!(accepted == -1, false);
+        assert_ne!(accepted, -1);
         assert_eq!(
             unsafe { libc::fcntl(accepted, libc::F_GETFD) } & libc::FD_CLOEXEC,
             libc::FD_CLOEXEC

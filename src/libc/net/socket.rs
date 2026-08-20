@@ -23,7 +23,7 @@ mod tests {
     #[test]
     fn socket_returns_a_usable_descriptor() {
         let descriptor = unsafe { socket(AF_INET, SOCK_STREAM, 0) };
-        assert_eq!(descriptor == -1, false);
+        assert_ne!(descriptor, -1);
         assert_eq!(unsafe { libc::close(descriptor) }, 0);
     }
 

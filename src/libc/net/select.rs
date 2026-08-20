@@ -43,7 +43,7 @@ mod tests {
             )
         };
         assert_eq!(ready, 1);
-        assert_eq!(unsafe { libc::FD_ISSET(pair[1], &read_set) }, true);
+        assert!(unsafe { libc::FD_ISSET(pair[1], &read_set) });
 
         assert_eq!(unsafe { libc::close(pair[0]) }, 0);
         assert_eq!(unsafe { libc::close(pair[1]) }, 0);
