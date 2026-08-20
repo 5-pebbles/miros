@@ -2,10 +2,14 @@ use std::ffi::c_int;
 
 use crate::libc::net::net_syscall_pass_through;
 
-// The kernel ignores epoll_create's size argument (since 2.6.8); it must only be positive.
+// The kernel ignores epoll_create's size argument (since 2.6.8); glibc still rejects size <= 0.
 net_syscall_pass_through! {
     fn epoll_create1(flags: c_int) -> c_int = Syscall::EpollCreate1;
-    fn epoll_create(_size: c_int) -> c_int {
+    fn epoll_create(size: c_int) -> c_int {
+        if size <= 0 {
+            crate::libc::errno::set_errno(crate::libc::errno::Errno::INVAL);
+            return -1;
+        }
         epoll_create1(0)
     }
     fn epoll_ctl(epoll_descriptor: c_int, operation: c_int, target: c_int, event: *mut linux_raw_sys::general::epoll_event) -> c_int = Syscall::EpollCtl;

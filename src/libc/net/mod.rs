@@ -34,7 +34,7 @@ macro_rules! net_syscall_pass_through {
             $crate::signature_matches_libc!(libc::$name($(std::mem::transmute($argument)),*));
 
             let result = $crate::syscall!($crate::syscall::Syscall::$syscall, $($argument),*);
-            $crate::libc::net::translate(result)
+            $crate::libc::net::translate_syscall_result(result) as $return_type
         }
         net_syscall_pass_through! { $($rest)* }
     };
@@ -47,39 +47,14 @@ macro_rules! net_syscall_pass_through {
     };
 }
 
-pub(crate) trait TranslateSyscallResult {
-    fn translate(result: isize) -> Self;
-}
-
-impl TranslateSyscallResult for std::ffi::c_int {
-    fn translate(result: isize) -> Self {
-        translate_syscall_result(result)
-    }
-}
-
-impl TranslateSyscallResult for isize {
-    fn translate(result: isize) -> Self {
-        if result < 0 {
-            crate::libc::errno::set_errno(crate::libc::errno::Errno(result.unsigned_abs() as u32));
-            -1
-        } else {
-            result
-        }
-    }
-}
-
-pub(crate) fn translate<ReturnType: TranslateSyscallResult>(result: isize) -> ReturnType {
-    TranslateSyscallResult::translate(result)
-}
-
 pub(crate) use net_syscall_pass_through;
 
 /// The kernel reports errors as -errno; the C ABI reports them through the thread-local errno.
-pub(crate) fn translate_syscall_result(result: isize) -> c_int {
+pub(crate) fn translate_syscall_result(result: isize) -> isize {
     if result < 0 {
         set_errno(Errno(result.unsigned_abs() as u32));
         -1
     } else {
-        result as c_int
+        result
     }
 }
