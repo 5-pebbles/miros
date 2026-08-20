@@ -27,7 +27,9 @@ use crate::{
     tls::{
         get_tls_allocator, set_tls_allocator,
         template::TlsTemplate,
-        thread_control_block::{DynamicThreadVector, ThreadControlBlock},
+        thread_control_block::{
+            AtomicDetachState, DetachState, DynamicThreadVector, ThreadControlBlock,
+        },
         TLS_RESERVE_SIZE,
     },
     utils::round_up_to_boundary,
@@ -264,7 +266,7 @@ impl Bootstrap<AllocateTls> {
             thread_pointee: [],
             thread_pointer_register,
             tid: getpid(),
-            _padding: Default::default(),
+            detach_state: AtomicDetachState::new(DetachState::Joinable),
             return_value: null_mut(),
             region: ptr::slice_from_raw_parts_mut(region_pointer, region_total_size),
             canary: usize::from_ne_bytes(ptr::read(

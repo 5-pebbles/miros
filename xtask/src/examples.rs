@@ -26,8 +26,16 @@ const EXAMPLES: &[Example] = &[
         flags: &["-lpthread"],
     },
     Example {
+        stem: "pthread_cond",
+        flags: &["-lpthread"],
+    },
+    Example {
         stem: "thread_dtors",
         flags: &["-fno-builtin", "-lpthread"],
+    },
+    Example {
+        stem: "pthread_sync",
+        flags: &["-lpthread"],
     },
     Example {
         stem: "stdio_buffer",

@@ -27,6 +27,7 @@ pub enum Syscall {
     ClockGetTime = 228,
     SchedGetAffinity = 204,
     PrLimit64 = 302,
+    PrCtl = 157,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,

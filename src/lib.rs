@@ -1,5 +1,6 @@
 #![feature(allocator_api)]
 #![feature(const_trait_impl)]
+#![feature(min_specialization)]
 #![feature(const_cmp)]
 #![feature(generic_atomic)]
 #![feature(type_changing_struct_update)]

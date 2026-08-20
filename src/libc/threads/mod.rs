@@ -1,15 +1,89 @@
-use std::{cell::RefCell, ffi::c_void};
+use std::{cell::RefCell, ffi::c_void, sync::atomic::Ordering};
+
+use atomic::Atomic;
+use bytemuck::NoUninit;
 
 use crate::{
     signature_matches_libc,
-    syscall::{syscall, Syscall},
+    syscall::{futex::FutexOperation, syscall, thread_pointer::get_thread_pointer, Syscall},
+    tls::thread_control_block::ThreadControlBlock,
 };
 
+mod attr;
+mod cond;
 mod create;
 mod join;
 mod key;
+mod mutex;
+mod once;
+mod rwlock;
+mod self_detach;
 
 use key::{run_key_destructor_round, PTHREAD_DESTRUCTOR_ITERATIONS};
+
+/// A thread handle, thread pointer (= TCB address), matching glibc's `pthread_t` width.
+pub type PthreadT = usize;
+
+pub unsafe fn current_tid() -> u32 {
+    (*get_thread_pointer().cast::<ThreadControlBlock>()).tid as u32
+}
+
+/// A word a futex can park on: the kernel's 32-bit compare unit. Blanket-implemented, so a wrong-sized `T` fails only when a caller evaluates `ASSERT`.
+pub trait FutexWord: Sized {
+    const ASSERT: () = assert!(size_of::<Self>() == 4 && align_of::<Self>() == 4);
+}
+
+impl<T> FutexWord for T {}
+
+/// `fetch_update` with an infallible mapping, returning the previous and new values.
+pub trait FetchMap<T> {
+    fn fetch_map(&self, set: Ordering, fetch: Ordering, map: impl FnMut(T) -> T) -> (T, T);
+}
+
+impl<T: NoUninit> FetchMap<T> for Atomic<T> {
+    fn fetch_map(&self, set: Ordering, fetch: Ordering, mut map: impl FnMut(T) -> T) -> (T, T) {
+        let mut previous = self.load(fetch);
+        loop {
+            let new = map(previous);
+            match self.compare_exchange_weak(previous, new, set, fetch) {
+                Ok(_) => return (previous, new),
+                Err(actual) => previous = actual,
+            }
+        }
+    }
+}
+
+/// The shared futex-wait for every pthread primitive.
+pub fn futex_wait<T: FutexWord>(word: &T, expected: u32) {
+    let () = T::ASSERT;
+    unsafe {
+        syscall!(
+            Syscall::Futex,
+            word as *const T,
+            FutexOperation::Wait,
+            expected,
+            0usize,
+            0usize,
+            0usize
+        );
+    }
+}
+
+/// The shared futex-wake for every pthread primitive.
+pub fn futex_wake<T: FutexWord>(word: &T, count: i32) {
+    let () = T::ASSERT;
+    unsafe {
+        syscall!(
+            Syscall::Futex,
+            word as *const T,
+            FutexOperation::Wake,
+            count,
+            0usize,
+            0usize,
+            0usize
+        );
+    }
+}
 
 struct TlsDestructor {
     function: unsafe extern "C" fn(*mut c_void),

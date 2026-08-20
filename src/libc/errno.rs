@@ -1,3 +1,4 @@
+use core::ffi::c_int;
 use std::{cell::Cell, fmt::Display, io::Write};
 
 use libc;
@@ -23,9 +24,21 @@ impl Errno {
     pub const BADF: Self = Self(linux_raw_sys::errno::EBADF);
     pub const NOMEM: Self = Self(linux_raw_sys::errno::ENOMEM);
     pub const INTR: Self = Self(linux_raw_sys::errno::EINTR);
+    pub const PERM: Self = Self(linux_raw_sys::errno::EPERM);
+    pub const BUSY: Self = Self(linux_raw_sys::errno::EBUSY);
+    pub const AGAIN: Self = Self(linux_raw_sys::errno::EAGAIN);
+    pub const DEADLK: Self = Self(linux_raw_sys::errno::EDEADLK);
+    // POSIX name; the kernel calls it EOPNOTSUPP.
+    pub const NOTSUP: Self = Self(linux_raw_sys::errno::EOPNOTSUPP);
 
     pub fn into_raw(self) -> u32 {
         self.0
+    }
+}
+
+impl From<Errno> for c_int {
+    fn from(error: Errno) -> Self {
+        error.0 as Self
     }
 }
 
