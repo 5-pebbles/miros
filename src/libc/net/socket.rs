@@ -7,14 +7,18 @@ use crate::{
 };
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn socket(domain: c_int, socket_type: c_int, protocol: c_int) -> c_int {
+pub(crate) unsafe extern "C" fn socket(
+    domain: c_int,
+    socket_type: c_int,
+    protocol: c_int,
+) -> c_int {
     signature_matches_libc!(libc::socket(domain, socket_type, protocol));
 
     translate_syscall_result(syscall!(Syscall::Socket, domain, socket_type, protocol))
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn socketpair(
+pub(crate) unsafe extern "C" fn socketpair(
     domain: c_int,
     socket_type: c_int,
     protocol: c_int,
