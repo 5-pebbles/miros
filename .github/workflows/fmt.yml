@@ -10,7 +10,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
+      # rustup installs the pinned toolchain from rust-toolchain.toml (rustfmt included) on first use.
       - run: cargo fmt -- --check
