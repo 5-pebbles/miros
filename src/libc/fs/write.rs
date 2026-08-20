@@ -1,9 +1,6 @@
 use std::ffi::c_void;
 
-use crate::{
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::{signature_matches_libc, syscall, syscall::Syscall};
 
 pub const STD_IN: i32 = 0;
 pub const STD_OUT: i32 = 1;

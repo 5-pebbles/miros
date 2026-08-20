@@ -6,8 +6,8 @@ use std::{
 use super::PthreadT;
 use crate::{
     libc::mem::munmap,
-    signature_matches_libc,
-    syscall::{futex::FutexOperation, syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::{futex::FutexOperation, Syscall},
     tls::thread_control_block::ThreadControlBlock,
 };
 

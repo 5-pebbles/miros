@@ -7,10 +7,7 @@ unsafe extern "C" fn rtld_fini() {}
 
 use std::{arch::asm, cell::Cell};
 
-use crate::{
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::{signature_matches_libc, syscall, syscall::Syscall};
 
 pub type ProcessID = i32;
 pub type SignalNumber = i32;

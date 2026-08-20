@@ -2,8 +2,8 @@ use std::os::fd::{AsRawFd, BorrowedFd};
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 const TCGETS: usize = 0x5401;

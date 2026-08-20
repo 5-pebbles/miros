@@ -2,8 +2,7 @@ use std::ffi::c_long;
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::syscall,
+    signature_matches_libc, syscall,
 };
 
 // The kernel returns errors as `-errno` in this range; everything else is a

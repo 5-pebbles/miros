@@ -4,8 +4,8 @@ use atomic::Atomic;
 use bytemuck::NoUninit;
 
 use crate::{
-    signature_matches_libc,
-    syscall::{futex::FutexOperation, syscall, thread_pointer::get_thread_pointer, Syscall},
+    signature_matches_libc, syscall,
+    syscall::{futex::FutexOperation, thread_pointer::get_thread_pointer, Syscall},
     tls::thread_control_block::ThreadControlBlock,
 };
 

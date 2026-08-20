@@ -28,14 +28,38 @@ pub enum Syscall {
     SchedGetAffinity = 204,
     PrLimit64 = 302,
     PrCtl = 157,
+    Poll = 7,
+    Select = 23,
+    Socket = 41,
+    Connect = 42,
+    Accept = 43,
+    SendTo = 44,
+    RecvFrom = 45,
+    SendMsg = 46,
+    RecvMsg = 47,
+    Shutdown = 48,
+    Bind = 49,
+    Listen = 50,
+    GetSockName = 51,
+    GetPeerName = 52,
+    SocketPair = 53,
+    SetSockOpt = 54,
+    GetSockOpt = 55,
+    EpollWait = 232,
+    EpollCtl = 233,
+    EpollPWait = 281,
+    Accept4 = 288,
+    EventFd2 = 290,
+    EpollCreate1 = 291,
 }
 
 // TT-muncher: peels one register constraint and one argument per recursion step,
 // accumulating `in("reg") value` operands into a single `asm!` block.
+#[macro_export]
 macro_rules! syscall {
     ($syscall:expr $(, $args:expr)* $(,)?) => {
         #[cfg(target_arch = "x86_64")]
-        syscall!(
+        $crate::syscall!(
             @build $syscall,
             [in("rdi"), in("rsi"), in("rdx"), in("r10"), in("r8"), in("r9"),],
             []
@@ -56,7 +80,7 @@ macro_rules! syscall {
         result
     }};
     (@build $syscall:expr, [$constraint:tt $register:tt, $($rest:tt)*], [$($operands:tt)*], $arg:expr $(, $more:expr)*) => {
-        syscall!(
+        $crate::syscall!(
             @build $syscall,
             [$($rest)*],
             [$($operands)* $constraint $register $arg as usize,]
@@ -67,8 +91,6 @@ macro_rules! syscall {
         compile_error!("x86_64 syscall ABI supports at most 6 arguments")
     };
 }
-
-pub(crate) use syscall;
 
 pub mod exit;
 pub mod futex;

@@ -26,7 +26,7 @@ libc = { version = "0.2.148", default-features = false }
 libm = { version = "0.2", default-features = false, features = ["arch"] }
 # Link-section distributed slices, registers interposable-data cells.
 linkme = "0.3.37"
-linux-raw-sys = "0.11.0"
+linux-raw-sys = { version = "0.11.0", features = ["net"] }
 strum = { version = "0.27.2", features = ["derive"] }
 
 [profile.release]

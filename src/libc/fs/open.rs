@@ -4,8 +4,8 @@ use bitbybit::{bitenum, bitfield};
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 const AT_FDCWD: isize = -100;

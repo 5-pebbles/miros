@@ -2,8 +2,8 @@ use core::ffi::{c_int, c_void};
 
 use crate::{
     libc::errno::{set_errno, Errno},
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
+    signature_matches_libc, syscall,
+    syscall::Syscall,
 };
 
 // glibc routes these through the vDSO; the raw syscall is correct, just without the vDSO fast path.

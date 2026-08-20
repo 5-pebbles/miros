@@ -9,8 +9,8 @@ use crate::{
         str::strlen,
         threads::{join::wait_until_exited, PthreadT},
     },
-    signature_matches_libc,
-    syscall::{exit, syscall, thread_pointer::get_thread_pointer, Syscall},
+    signature_matches_libc, syscall,
+    syscall::{exit, thread_pointer::get_thread_pointer, Syscall},
     tls::thread_control_block::{DetachState, ThreadControlBlock},
 };
 

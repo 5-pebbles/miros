@@ -3,10 +3,7 @@ use std::{
     os::fd::{AsRawFd, BorrowedFd},
 };
 
-use crate::{
-    signature_matches_libc,
-    syscall::{syscall, Syscall},
-};
+use crate::{signature_matches_libc, syscall, syscall::Syscall};
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn pread64(
