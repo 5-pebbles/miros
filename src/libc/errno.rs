@@ -7,7 +7,7 @@ use crate::signature_matches_libc;
 
 #[repr(transparent)]
 #[doc(alias = "errno")]
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct Errno(pub(crate) u32);
 
 #[cfg_attr(not(test), no_mangle)]

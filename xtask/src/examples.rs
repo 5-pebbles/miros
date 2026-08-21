@@ -42,6 +42,10 @@ const EXAMPLES: &[Example] = &[
         flags: &[],
     },
     Example {
+        stem: "list_dir",
+        flags: &[],
+    },
+    Example {
         stem: "putchar_unlocked_o2",
         flags: &["-O2"],
     },

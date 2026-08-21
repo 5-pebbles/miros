@@ -21,6 +21,7 @@ pub enum Syscall {
     GetTid = 186,
     TgKill = 234,
     OpenAt = 257,
+    GetDents64 = 217,
     GetRandom = 318,
     Clone3 = 435,
     GetTimeOfDay = 96,
