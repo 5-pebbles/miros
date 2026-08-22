@@ -9,6 +9,7 @@ pub enum Syscall {
     FCntl = 72,
     Stat = 4,
     FStat = 5,
+    Statx = 332,
     MMap = 9,
     IoCtl = 16,
     MProtect = 10,

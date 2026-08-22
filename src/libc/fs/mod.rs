@@ -7,4 +7,5 @@ mod lseek;
 mod open;
 mod pread;
 mod read;
+mod statx;
 mod write;
