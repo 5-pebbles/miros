@@ -1,40 +1,90 @@
 use std::ffi::VaList;
 
+use arbitrary_int::{u12, u3};
 use bitbybit::{bitenum, bitfield};
 
-use crate::{
-    libc::errno::{set_errno, Errno},
-    signature_matches_libc, syscall,
-    syscall::Syscall,
-};
+use crate::{libc::translate_syscall_result, signature_matches_libc, syscall, syscall::Syscall};
 
 const AT_FDCWD: isize = -100;
-pub const S_IFMT: u32 = 1111 << 12;
+
+#[bitfield(u3)]
+struct UnixPermissionClass {
+    #[bit(0, rw)]
+    exec: bool,
+    #[bit(1, rw)]
+    write: bool,
+    #[bit(2, rw)]
+    read: bool,
+}
+
+#[bitfield(u12)]
+struct UnixPermissions {
+    #[bits(0..=2, rw)]
+    other: UnixPermissionClass,
+    #[bits(3..=5, rw)]
+    group: UnixPermissionClass,
+    #[bits(6..=8, rw)]
+    owner: UnixPermissionClass,
+    #[bit(9, rw)]
+    sticky: bool,
+    #[bit(10, rw)]
+    set_group_id: bool,
+    #[bit(11, rw)]
+    set_user_id: bool,
+}
+
+#[bitenum(u4)]
+pub enum UnixFileType {
+    NamedPipe = 0b0001,
+    CharacterDevice = 0b0010,
+    Directory = 0b0100,
+    BlockDevice = 0b0110,
+    RegularFile = 0b1000,
+    SymbolicLink = 0b1010,
+    Socket = 0b1100,
+}
+
+#[bitfield(u32)]
+struct UnixFileMode {
+    #[bits(0..=11, rw)]
+    permissions: u12,
+    #[bits(12..=15, rw)]
+    file_type: Option<UnixFileType>,
+}
+
+unsafe fn open_file(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
+    let mode = if flags.create() || flags.create_unnamed_temporary_file() {
+        UnixFileMode::new_with_raw_value(args.next_arg::<u32>())
+            .permissions()
+            .value()
+    } else {
+        UnixPermissions::ZERO.raw_value().value()
+    };
+
+    // Relative paths resolve against the CWD, so the dirfd is AT_FDCWD.
+    let result = syscall!(Syscall::OpenAt, AT_FDCWD, pathname, flags.raw_value(), mode);
+    translate_syscall_result(result) as i32
+}
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, mut args: VaList) -> i32 {
+unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, args: VaList) -> i32 {
     signature_matches_libc!(libc::open64(
         std::mem::transmute(pathname),
         std::mem::transmute(flags),
         args,
     ));
+    open_file(pathname, flags, args)
+}
 
-    let mode = if flags.create() || flags.create_unnamed_temporary_file() {
-        args.next_arg::<u32>() & !S_IFMT
-    } else {
-        0
-    };
-
-    // directory_file_descriptor = 0 (AT_FDCWD is unused; we always pass 0)
-    let result = syscall!(Syscall::OpenAt, 0usize, pathname, flags.raw_value(), mode);
-
-    if result < 0 {
-        // The kernel returns the inverse of our errno...
-        set_errno(Errno(result.abs() as u32));
-        -1
-    } else {
-        result as i32
-    }
+// LFS alias: `open` is `open64` on x86_64, where O_LARGEFILE is a no-op.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn open(pathname: *const i8, flags: OFlags, args: VaList) -> i32 {
+    signature_matches_libc!(libc::open(
+        std::mem::transmute(pathname),
+        std::mem::transmute(flags),
+        args,
+    ));
+    open_file(pathname, flags, args)
 }
 
 #[cfg_attr(not(test), no_mangle)]

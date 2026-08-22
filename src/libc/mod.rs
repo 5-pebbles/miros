@@ -20,6 +20,16 @@ mod time;
 
 mod errno;
 
+/// The kernel reports errors as -errno; the C ABI reports them through the thread-local errno.
+pub(crate) fn translate_syscall_result(result: isize) -> isize {
+    if result < 0 {
+        errno::set_errno(errno::Errno(result.unsigned_abs() as u32));
+        -1
+    } else {
+        result
+    }
+}
+
 /// A macro for ensuring that the `libc` crate signature for a function matches
 /// the signature that our implementation of it is using.
 ///

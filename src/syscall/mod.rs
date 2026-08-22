@@ -3,11 +3,13 @@
 pub enum Syscall {
     Read = 0,
     PRead64 = 17,
+    LSeek = 8,
     Write = 1,
     Close = 3,
     FCntl = 72,
     Stat = 4,
     FStat = 5,
+    Statx = 332,
     MMap = 9,
     IoCtl = 16,
     MProtect = 10,
