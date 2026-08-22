@@ -3,6 +3,7 @@
 pub enum Syscall {
     Read = 0,
     PRead64 = 17,
+    LSeek = 8,
     Write = 1,
     Close = 3,
     FCntl = 72,

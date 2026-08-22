@@ -3,6 +3,7 @@ mod dir;
 mod fcntl;
 pub mod fstat;
 pub mod isatty;
+mod lseek;
 mod open;
 mod pread;
 mod read;
