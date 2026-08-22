@@ -76,6 +76,17 @@ unsafe extern "C" fn open64(pathname: *const i8, flags: OFlags, args: VaList) ->
     open_file(pathname, flags, args)
 }
 
+// LFS alias: `open` is `open64` on x86_64, where O_LARGEFILE is a no-op.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn open(pathname: *const i8, flags: OFlags, args: VaList) -> i32 {
+    signature_matches_libc!(libc::open(
+        std::mem::transmute(pathname),
+        std::mem::transmute(flags),
+        args,
+    ));
+    open_file(pathname, flags, args)
+}
+
 #[cfg_attr(not(test), no_mangle)]
 pub static O_RDONLY: AccessMode = AccessMode::ReadOnly;
 #[cfg_attr(not(test), no_mangle)]
