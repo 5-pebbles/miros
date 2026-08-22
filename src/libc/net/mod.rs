@@ -1,7 +1,5 @@
 use std::ffi::c_int;
 
-use crate::libc::errno::{set_errno, Errno};
-
 // This is the ABI with the kernel; glibc's `struct sockaddr` is a 16-byte fixed field.
 #[allow(non_camel_case_types)]
 pub(crate) type sockaddr = linux_raw_sys::net::__kernel_sockaddr_storage;
@@ -34,7 +32,7 @@ macro_rules! net_syscall_pass_through {
             $crate::signature_matches_libc!(libc::$name($(std::mem::transmute($argument)),*));
 
             let result = $crate::syscall!($crate::syscall::Syscall::$syscall, $($argument),*);
-            $crate::libc::net::translate_syscall_result(result) as $return_type
+            $crate::libc::translate_syscall_result(result) as $return_type
         }
         net_syscall_pass_through! { $($rest)* }
     };
@@ -48,13 +46,3 @@ macro_rules! net_syscall_pass_through {
 }
 
 pub(crate) use net_syscall_pass_through;
-
-/// The kernel reports errors as -errno; the C ABI reports them through the thread-local errno.
-pub(crate) fn translate_syscall_result(result: isize) -> isize {
-    if result < 0 {
-        set_errno(Errno(result.unsigned_abs() as u32));
-        -1
-    } else {
-        result
-    }
-}
