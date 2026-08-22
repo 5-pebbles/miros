@@ -11,11 +11,6 @@ unsafe extern "C" fn lseek64(file_descriptor: BorrowedFd<'_>, offset: i64, whenc
         whence
     ));
 
-    let result = syscall!(
-        Syscall::LSeek,
-        file_descriptor.as_raw_fd(),
-        offset,
-        whence
-    );
+    let result = syscall!(Syscall::LSeek, file_descriptor.as_raw_fd(), offset, whence);
     translate_syscall_result(result) as i64
 }
