@@ -56,7 +56,7 @@ const EXAMPLES: &[Example] = &[
 ];
 
 pub fn run() {
-    let miros = build::run();
+    let miros = build::run(None);
     let root = build::workspace_root();
     let interpreter = format!("-Wl,--dynamic-linker={}", miros.display());
 
