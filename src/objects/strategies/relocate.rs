@@ -8,6 +8,11 @@ use crate::{
 
 pub struct Relocate;
 
+#[cfg(feature = "lenient-undefined-symbols")]
+fn warn_undefined_symbol(symbol_name: &str) {
+    eprintln!("miros: warning: undefined symbol `{symbol_name}`, relocating to null");
+}
+
 impl Relocate {
     #[cfg(target_arch = "x86_64")]
     unsafe fn rela(
@@ -59,6 +64,14 @@ impl Relocate {
                     .resolve_symbol_address(local_symbol, object_data)
                     .or_else(|err| match local_symbol.binding() {
                         Ok(SymbolBinding::Weak) => Ok(std::ptr::null()),
+                        #[cfg(feature = "lenient-undefined-symbols")]
+                        _ => {
+                            if let MirosError::UndefinedSymbol(name) = &err {
+                                warn_undefined_symbol(name);
+                            }
+                            Ok(std::ptr::null())
+                        }
+                        #[cfg(not(feature = "lenient-undefined-symbols"))]
                         _ => Err(err),
                     })?;
 
@@ -82,9 +95,15 @@ impl Relocate {
                 let Some((source_symbol, source_address)) =
                     object_data_map.resolve_symbol_outside_program(symbol_name)
                 else {
-                    // Undefined weak leaves the destination zeroed, as glibc does; strong is fatal.
+                    // Undefined weak zeros the destination, same as glibc; strong is fatal unless `lenient-undefined-symbols` is enabled.
                     return match local_symbol.binding() {
                         Ok(SymbolBinding::Weak) => Ok(()),
+                        #[cfg(feature = "lenient-undefined-symbols")]
+                        _ => {
+                            warn_undefined_symbol(symbol_name);
+                            Ok(())
+                        }
+                        #[cfg(not(feature = "lenient-undefined-symbols"))]
                         _ => Err(MirosError::UndefinedSymbol(symbol_name.to_string())),
                     };
                 };
