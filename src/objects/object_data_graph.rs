@@ -4,7 +4,6 @@ use indexmap::IndexMap;
 
 use crate::{
     elf::symbol::{Symbol, SymbolVisibility},
-    error::MirosError,
     objects::object_data::ObjectData,
 };
 
@@ -91,16 +90,9 @@ impl ObjectDataGraph {
 
     pub fn resolve_symbol_address(
         &self,
-        symbol: Symbol,
+        symbol_name: &str,
         requesting_object: &ObjectData,
-    ) -> Result<*const c_void, MirosError> {
-        let symbol_name = unsafe {
-            requesting_object
-                .dynamic_fields
-                .string_table
-                .get(symbol.st_name as usize)
-        };
-
+    ) -> Option<*const c_void> {
         // NOTE: Protected symbols cannot be interposed - bind to the requesting object's own definition.
         let protected_symbol = requesting_object
             .resolve_symbol_and_address(symbol_name)
@@ -109,19 +101,14 @@ impl ObjectDataGraph {
             })
             .map(|(_, address)| address);
 
-        if let Some(address) = protected_symbol {
-            return Ok(address);
-        }
-
-        self.resolve_symbol_by_name(symbol_name)
+        protected_symbol.or_else(|| self.resolve_symbol_by_name(symbol_name))
     }
 
-    pub fn resolve_symbol_by_name(&self, symbol_name: &str) -> Result<*const c_void, MirosError> {
+    pub fn resolve_symbol_by_name(&self, symbol_name: &str) -> Option<*const c_void> {
         self.iter_objects()
             .chain(std::iter::once(&self.miros))
             .find_definition(symbol_name)
             .map(|(_, address)| address)
-            .ok_or_else(|| MirosError::UndefinedSymbol(symbol_name.to_string()))
     }
 }
 
