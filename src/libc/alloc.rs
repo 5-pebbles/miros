@@ -19,7 +19,7 @@ fn allocation_or_nomem(result: Option<NonNull<u8>>) -> *mut c_void {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
+pub unsafe extern "C" fn malloc(size: usize) -> *mut c_void {
     signature_matches_libc!(libc::malloc(size));
     allocation_or_nomem(primary().alloc(Layout::from_size_align_unchecked(size, 1)))
 }
@@ -53,7 +53,7 @@ unsafe extern "C" fn realloc(pointer: *mut c_void, size: usize) -> *mut c_void {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn free(pointer: *mut c_void) {
+pub unsafe extern "C" fn free(pointer: *mut c_void) {
     signature_matches_libc!(libc::free(pointer));
     primary().free(pointer as *mut u8)
 }
