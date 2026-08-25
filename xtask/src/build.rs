@@ -14,41 +14,44 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// Build `libmiros.so` (release) and return its path.
-pub fn run() -> PathBuf {
+pub fn run(features: Option<&str>) -> PathBuf {
     let root = workspace_root();
     let aliases_version_script = crate::aliases::generate();
 
-    let status = Command::new("cargo")
-        .current_dir(&root)
-        .env(
-            "RUSTFLAGS",
-            "-C target-cpu=native -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec --cfg miros_aliases",
-        )
-        .args([
-            "rustc",
-            "-Z",
-            "build-std=core,alloc,std",
-            "--target",
-            TARGET,
-            "--release",
-            "--",
-            "-C",
-            "link-arg=-nostartfiles",
-            // We define our own intrinsics & are libc, so drop the driver's implicit libc/libgcc_s DT_NEEDED.
-            "-C",
-            "link-arg=-Wl,--as-needed",
-            "-C",
-            "link-arg=-Wl,-Bsymbolic",
-            "-C",
-            "link-arg=-Wl,-e,_start",
-        ])
-        .arg("-C")
-        .arg(format!(
-            "link-arg=-Wl,--version-script,{}",
-            aliases_version_script.display()
-        ))
-        .status()
-        .expect("failed to spawn cargo");
+    let mut cargo = Command::new("cargo");
+    cargo.current_dir(&root).env(
+        "RUSTFLAGS",
+        "-C target-cpu=native -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec --cfg miros_aliases",
+    );
+    cargo.args([
+        "rustc",
+        "-Z",
+        "build-std=core,alloc,std",
+        "--target",
+        TARGET,
+        "--release",
+    ]);
+    if let Some(features) = features {
+        cargo.args(["--features", features]);
+    }
+    cargo.args([
+        "--",
+        "-C",
+        "link-arg=-nostartfiles",
+        // We define our own intrinsics & are libc, so drop the driver's implicit libc/libgcc_s DT_NEEDED.
+        "-C",
+        "link-arg=-Wl,--as-needed",
+        "-C",
+        "link-arg=-Wl,-Bsymbolic",
+        "-C",
+        "link-arg=-Wl,-e,_start",
+    ]);
+    cargo.arg("-C").arg(format!(
+        "link-arg=-Wl,--version-script,{}",
+        aliases_version_script.display()
+    ));
+
+    let status = cargo.status().expect("failed to spawn cargo");
     assert!(status.success(), "release build failed");
 
     let miros = root.join(format!("target/{TARGET}/release/libmiros.so"));

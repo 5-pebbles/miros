@@ -15,6 +15,7 @@ impl Relocate {
         rela: Rela,
         object_data: &ObjectData,
         object_data_map: &ObjectDataGraph,
+        undefined_symbols: &mut Vec<String>,
     ) -> Result<(), MirosError> {
         let relocate_address = rela.r_offset.wrapping_add(object_data.base.addr());
 
@@ -55,12 +56,18 @@ impl Relocate {
                     .dynamic_fields
                     .checked_symbol(rela.r_sym() as usize)?;
 
-                let remote_address = object_data_map
-                    .resolve_symbol_address(local_symbol, object_data)
-                    .or_else(|err| match local_symbol.binding() {
-                        Ok(SymbolBinding::Weak) => Ok(std::ptr::null()),
-                        _ => Err(err),
-                    })?;
+                let symbol_name = object_data
+                    .dynamic_fields
+                    .string_table
+                    .get(local_symbol.st_name as usize);
+
+                let resolved = object_data_map.resolve_symbol_address(symbol_name, object_data);
+                let remote_address = resolved.unwrap_or_default();
+
+                // Undefined symbols relocate to null: weak by spec, strong only under lenient mode.
+                if resolved.is_none() && local_symbol.binding() != Ok(SymbolBinding::Weak) {
+                    undefined_symbols.push(symbol_name.to_string());
+                }
 
                 asm!(
                     "mov qword ptr [{}], {}",
@@ -79,22 +86,18 @@ impl Relocate {
                     .string_table
                     .get(local_symbol.st_name as usize);
 
-                let Some((source_symbol, source_address)) =
+                if let Some((source_symbol, source_address)) =
                     object_data_map.resolve_symbol_outside_program(symbol_name)
-                else {
-                    // Undefined weak leaves the destination zeroed, as glibc does; strong is fatal.
-                    return match local_symbol.binding() {
-                        Ok(SymbolBinding::Weak) => Ok(()),
-                        _ => Err(MirosError::UndefinedSymbol(symbol_name.to_string())),
-                    };
+                {
+                    // Sizes can disagree after a re-link; the destination's reservation caps the copy.
+                    ptr::copy_nonoverlapping(
+                        source_address.cast::<u8>(),
+                        relocate_address as *mut u8,
+                        source_symbol.st_size.min(local_symbol.st_size),
+                    );
+                } else if local_symbol.binding() != Ok(SymbolBinding::Weak) {
+                    undefined_symbols.push(symbol_name.to_string());
                 };
-
-                // Sizes can disagree after a re-link; the destination's reservation caps the copy.
-                ptr::copy_nonoverlapping(
-                    source_address.cast::<u8>(),
-                    relocate_address as *mut u8,
-                    source_symbol.st_size.min(local_symbol.st_size),
-                );
             }
 
             _ => (),
@@ -106,6 +109,7 @@ impl Relocate {
 
 impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
+        let mut undefined_symbols = Vec::<String>::new();
         // Dependencies before the program: a COPY reloc reads its source object's relocated bytes.
         object_data_map
             .iter_objects_topological()
@@ -116,7 +120,23 @@ impl Stratagem for Relocate {
                 rela_entries
                     .iter()
                     .chain(plt_rela_entries.iter())
-                    .try_for_each(|rela| unsafe { self.rela(*rela, object, object_data_map) })
-            })
+                    .try_for_each(|rela| unsafe {
+                        self.rela(*rela, object, object_data_map, &mut undefined_symbols)
+                    })
+            })?;
+
+        if undefined_symbols.is_empty() {
+            return Ok(());
+        }
+
+        #[cfg(feature = "lenient-undefined-symbols")]
+        {
+            eprintln!("{}", MirosError::UndefinedSymbols(undefined_symbols));
+            Ok(())
+        }
+        #[cfg(not(feature = "lenient-undefined-symbols"))]
+        {
+            Err(MirosError::UndefinedSymbols(undefined_symbols))
+        }
     }
 }

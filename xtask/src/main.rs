@@ -10,7 +10,11 @@ mod examples;
 #[command(name = "xtask", about = "Development tasks for miros")]
 enum Xtask {
     /// Build libmiros.so (release)
-    Build,
+    Build {
+        /// Cargo features to pass through (comma- or space-separated), like `cargo --features`.
+        #[arg(long)]
+        features: Option<String>,
+    },
     /// Regenerate the alias asm/version script from linked_aliases.def without building
     RegenerateAliases,
     /// Build miros + compile the example programs against it
@@ -23,8 +27,8 @@ enum Xtask {
 
 fn main() {
     match Xtask::parse() {
-        Xtask::Build => {
-            build::run();
+        Xtask::Build { features } => {
+            build::run(features.as_deref());
         }
         Xtask::RegenerateAliases => {
             aliases::generate();
