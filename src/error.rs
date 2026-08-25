@@ -1,10 +1,10 @@
 use std::fmt;
 
-use strum::{Display, EnumString};
+use strum::Display;
 
 use crate::{elf::dynamic_array::DynamicTag, start::auxiliary_vector::AuxiliaryVectorType};
 
-#[derive(EnumString, Display)]
+#[derive(Display)]
 pub enum ErrorLevel {
     Debug,
     Warn,
@@ -29,7 +29,7 @@ impl MirosError {
                 ErrorLevel::Warn
             }
             Self::UndefinedSymbols(_) => ErrorLevel::Error,
-            _ => todo!(),
+            _ => ErrorLevel::Error,
         }
     }
 }
@@ -44,7 +44,7 @@ impl fmt::Display for MirosError {
                 let symbols = names.join("`, `");
                 write!(f, "Found Undefined Symbol{plural} [`{symbols}`]")
             }
-            _ => todo!(),
+            other => write!(f, "{other:?}"),
         }
     }
 }
