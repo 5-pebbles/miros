@@ -53,6 +53,11 @@ const EXAMPLES: &[Example] = &[
         stem: "putchar_unlocked_o2",
         flags: &["-O2"],
     },
+    Example {
+        // Integer address checks foil escape analysis, so this needs no protective flags.
+        stem: "signal_basic",
+        flags: &[],
+    },
 ];
 
 pub fn run() {

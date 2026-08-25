@@ -12,6 +12,7 @@ pub mod mem;
 mod net;
 pub mod process;
 mod random;
+mod signal;
 mod stdio;
 mod str;
 mod syscall;
