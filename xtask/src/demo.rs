@@ -11,6 +11,9 @@ pub struct DemoArgs {
     /// Working directory to run the binary from (for programs that read relative paths).
     #[arg(long)]
     dir: Option<PathBuf>,
+    /// Cargo features to pass through (like `cargo --features`).
+    #[arg(long)]
+    features: Option<String>,
     /// Arguments forwarded to the binary.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
@@ -18,8 +21,7 @@ pub struct DemoArgs {
 
 /// Build miros, copy the target binary, repoint its interpreter at miros via patchelf, and run it.
 pub fn run(demo: DemoArgs) {
-    let miros = build::run(None);
-
+    let miros = build::run(demo.features.as_deref());
     let patched = std::env::temp_dir().join(format!("miros-demo-{}", std::process::id()));
     fs::copy(&demo.binary, &patched).expect("copy target binary");
 

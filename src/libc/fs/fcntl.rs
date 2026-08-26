@@ -1,7 +1,4 @@
-use std::{
-    ops::Not,
-    os::fd::{AsRawFd, BorrowedFd},
-};
+use std::os::fd::{AsRawFd, BorrowedFd};
 
 use bitbybit::bitenum;
 
@@ -22,25 +19,24 @@ pub enum FCntlCommand {
     DuplicateFileDescriptorCloseOnExec = 1030,
 }
 
-#[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn fcntl(
+impl FCntlCommand {
+    /// Commands that take / read the variadic slot.
+    pub fn takes_third_argument(&self) -> bool {
+        match self {
+            FCntlCommand::GetCloseOnExec | FCntlCommand::GetOpenFlags => false,
+            FCntlCommand::DuplicateFileDescriptor
+            | FCntlCommand::SetCloseOnExec
+            | FCntlCommand::SetOpenFlags
+            | FCntlCommand::DuplicateFileDescriptorCloseOnExec => true,
+        }
+    }
+}
+
+unsafe fn fcntl_dispatch(
     file_descriptor: BorrowedFd<'_>,
     command: FCntlCommand,
-    mut arguments: ...
+    argument: usize,
 ) -> i32 {
-    signature_matches_libc!(libc::fcntl(
-        std::mem::transmute(file_descriptor),
-        std::mem::transmute(command),
-    ));
-
-    let argument: usize = matches!(
-        command,
-        FCntlCommand::GetCloseOnExec | FCntlCommand::GetOpenFlags
-    )
-    .not()
-    .then_some(arguments.next_arg())
-    .unwrap_or_default();
-
     let result = syscall!(
         Syscall::FCntl,
         file_descriptor.as_raw_fd(),
@@ -54,4 +50,41 @@ unsafe extern "C" fn fcntl(
     } else {
         result as i32
     }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fcntl(
+    file_descriptor: BorrowedFd<'_>,
+    command: FCntlCommand,
+    mut arguments: ...
+) -> i32 {
+    signature_matches_libc!(libc::fcntl(
+        std::mem::transmute(file_descriptor),
+        std::mem::transmute(command),
+    ));
+
+    let argument: usize = command
+        .takes_third_argument()
+        .then_some(arguments.next_arg())
+        .unwrap_or_default();
+    fcntl_dispatch(file_descriptor, command, argument)
+}
+
+// LFS alias: on x86_64 file offsets are already 64-bit, so `fcntl64` is `fcntl` verbatim.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fcntl64(
+    file_descriptor: BorrowedFd<'_>,
+    command: FCntlCommand,
+    mut arguments: ...
+) -> i32 {
+    signature_matches_libc!(libc::fcntl(
+        std::mem::transmute(file_descriptor),
+        std::mem::transmute(command),
+    ));
+
+    let argument: usize = command
+        .takes_third_argument()
+        .then_some(arguments.next_arg())
+        .unwrap_or_default();
+    fcntl_dispatch(file_descriptor, command, argument)
 }

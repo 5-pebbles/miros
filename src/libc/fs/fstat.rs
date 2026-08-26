@@ -53,6 +53,19 @@ unsafe extern "C" fn fstat64(
     }
 }
 
+// `fstat` is `fstat64` on x86_64 — same `struct stat`.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fstat(
+    file_descriptor: BorrowedFd<'_>,
+    file_status_pointer: *mut FileStatus,
+) -> i32 {
+    signature_matches_libc!(libc::fstat(
+        std::mem::transmute(file_descriptor),
+        std::mem::transmute(file_status_pointer),
+    ));
+    fstat64(file_descriptor, file_status_pointer)
+}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn stat64(pathname: *const i8, file_status_pointer: *mut FileStatus) -> i32 {
     signature_matches_libc!(libc::stat64(
