@@ -3,6 +3,7 @@
 mod alloc;
 mod auxv;
 mod builtins;
+mod dl;
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
