@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -21,6 +22,7 @@ jobs:
 
       - name: Check version bump
         id: version
+        if: github.event_name == 'push'
         run: |
           CURRENT=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           PREVIOUS=$(git show 'HEAD^:Cargo.toml' 2>/dev/null | grep -m1 '^version' | cut -d'"' -f2 || echo "0.0.0")
@@ -34,15 +36,15 @@ jobs:
 
       # Target x86-64-v2 (SSE4.2, POPCNT; Nehalem 2008+) instead of the runner's native CPU.
       - name: Build libmiros.so
-        if: steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
         run: cargo xtask build --target-cpu x86-64-v2
 
       - name: Create GitHub release
-        if: steps.version.outputs.changed == 'true'
+        if: github.event_name == 'workflow_dispatch' || steps.version.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           TAG="v${VERSION}"
           gh release create "$TAG" \
             target/x86_64-unknown-linux-gnu/release/libmiros.so \
