@@ -34,7 +34,7 @@ pub fn run(demo: DemoArgs) {
         Ok(status) if status.success() => {}
         Ok(_) => panic!("patchelf failed"),
         Err(_) => {
-            panic!("patchelf not found on PATH — install it (e.g. `nix run nixpkgs#patchelf`)")
+            panic!("patchelf not found on PATH - install it (e.g. `nix run nixpkgs#patchelf`)")
         }
     }
 

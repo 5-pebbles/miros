@@ -21,7 +21,7 @@ impl FreeChunk {
 }
 
 /// Manages the TLS reserve region layout shared across all threads. Tracks
-/// block allocations as offsets from the thread pointer — individual threads
+/// block allocations as offsets from the thread pointer. Individual threads
 /// apply these offsets to their own TP to derive addresses.
 pub struct TlsLayoutAllocator {
     free: LinkedList<FreeChunk>,

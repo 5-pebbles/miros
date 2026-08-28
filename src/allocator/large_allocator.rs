@@ -54,7 +54,7 @@ impl LargeAllocator {
         Some(self.register_allocation(region))
     }
 
-    /// `None` when the kernel refuses the mapping — the error must surface as a clean null, never `MAP_FAILED`.
+    /// `None` when the kernel refuses the mapping. The error surfaces as a clean null, never `MAP_FAILED`.
     fn acquire_region(&mut self, total_bytes: usize, alignment: usize) -> Option<LargeRegion> {
         let page_size = page_size::get_page_size();
         // Cached regions only guarantee page alignment.

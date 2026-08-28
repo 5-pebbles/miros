@@ -69,7 +69,7 @@ unsafe extern "C" fn strncpy(
     length: usize,
 ) -> *mut c_char {
     signature_matches_libc!(libc::strncpy(destination, source, length));
-    // Exactly `length` bytes: the string, then a terminator, then zero-padding — all truncated.
+    // Exactly `length` bytes: the string, then a terminator, then zero-padding. All truncated.
     c_string_bytes(source)
         .chain(std::iter::repeat(0))
         .take(length)

@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 /// An intrusive doubly-linked list.
 ///
-/// Nodes are not owned by the list — they live in caller-controlled storage
+/// Nodes are not owned by the list. They live in caller-controlled storage
 /// (slab metadata, span headers, the TLS free map, ...) and are referenced by
 /// raw pointer, so the list itself never allocates. Each node carries its own
 /// `prev`/`next` links.
@@ -150,8 +150,8 @@ impl<T> LinkedListNode<T> {
 mod tests {
     use super::*;
 
-    /// Owns the nodes and hands out one `NonNull` per node, derived exactly once —
-    /// re-borrowing a node would invalidate the list's stored pointer under Miri.
+    /// Owns the nodes and hands out one `NonNull` per node, derived exactly once.
+    /// Re-borrowing a node would invalidate the list's stored pointer under Miri.
     struct Arena {
         _nodes: Vec<Box<LinkedListNode<i32>>>,
         pointers: Vec<NonNull<LinkedListNode<i32>>>,

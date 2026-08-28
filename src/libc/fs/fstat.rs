@@ -53,7 +53,7 @@ unsafe extern "C" fn fstat64(
     }
 }
 
-// `fstat` is `fstat64` on x86_64 — same `struct stat`.
+// `fstat` is `fstat64` on x86_64. Same `struct stat`.
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn fstat(
     file_descriptor: BorrowedFd<'_>,

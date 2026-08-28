@@ -9,7 +9,7 @@ use crate::{
 };
 
 fn non_null_or_map_failed(pointer: *mut u8, size: usize) -> Result<NonNull<[u8]>, AllocError> {
-    // Miros's wrappers return the kernel's `-errno` verbatim — never `MAP_FAILED` (-1) alone.
+    // Miros's wrappers return the kernel's `-errno` verbatim. Never `MAP_FAILED` (-1) alone.
     if (pointer as isize) <= 0 {
         return Err(AllocError);
     }

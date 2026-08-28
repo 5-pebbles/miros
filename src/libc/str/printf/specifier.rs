@@ -1,7 +1,7 @@
 use std::ffi::VaList;
 
 /// Raw flags parsed from a printf format specifier.
-/// No interpretation is applied — flag validity and interactions are resolved later by `ResolvedSpecifier`.
+/// No interpretation is applied. Flag validity and interactions are resolved later by `ResolvedSpecifier`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct RawFlags {
     pub left_justify: bool,
@@ -166,7 +166,7 @@ pub enum FloatFormat {
     Hex { uppercase: bool },
 }
 
-/// A parsed format specifier — everything between `%` and the conversion character.
+/// A parsed format specifier. Everything between `%` and the conversion character.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PrintfSpecifier {
     pub flags: RawFlags,

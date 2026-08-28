@@ -38,7 +38,7 @@ impl Span {
         self.owner.store(owner, Ordering::Relaxed);
     }
 
-    /// A routing hint only — the remote bitmap's `Release`/`Acquire` carries the cross-thread ordering, not this.
+    /// A routing hint only. The remote bitmap's `Release`/`Acquire` carries the cross-thread ordering, not this.
     pub fn owner(&self) -> HeapId {
         self.owner.load(Ordering::Relaxed)
     }
@@ -55,8 +55,7 @@ impl Span {
         self.remote.has_remote_frees()
     }
 
-    /// Reset owner-side occupancy only —
-    /// overwriting `remote` would clobber the atomics a non-owner may be writing this instant.
+    /// Reset owner-side occupancy only. Overwriting `remote` would clobber the atomics a non-owner may be writing this instant.
     pub fn reinitialize(&self) {
         unsafe { *self.local.get() = LocalOccupancy::new(self.size_class) }
     }

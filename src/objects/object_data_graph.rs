@@ -30,7 +30,7 @@ impl ObjectDataGraph {
         std::iter::once(&mut self.program).chain(self.dependencies.values_mut())
     }
 
-    // DFS post-order topological sort — dependencies before dependents, cycles skipped
+    // DFS post-order topological sort. Dependencies before dependents, cycles skipped.
     pub fn iter_objects_topological(&self) -> impl DoubleEndedIterator<Item = &ObjectData> {
         enum Event<'a> {
             Discover(usize),
