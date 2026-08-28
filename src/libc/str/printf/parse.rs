@@ -11,7 +11,7 @@ pub enum PrintfItem<'a> {
 
 /// Iterator that parses a C printf format string into [`PrintfItem`]s.
 ///
-/// Inspired by relibc's `PrintfIter` — each call to `next()` yields either a
+/// Inspired by relibc's `PrintfIter`. Each call to `next()` yields either a
 /// span of literal text or a fully-parsed specifier ready for argument extraction.
 pub struct PrintfParser<'a> {
     bytes: &'a [u8],
@@ -164,7 +164,7 @@ impl<'a> Iterator for PrintfParser<'a> {
                 if let Some(spec) = self.parse_specifier() {
                     return Some(PrintfItem::Specifier(spec));
                 }
-                // Unknown conversion specifier — already consumed, skip it
+                // Unknown conversion specifier. Already consumed, skip it.
             } else {
                 let start = self.position;
                 while self.peek().is_some_and(|byte| byte != b'%') {

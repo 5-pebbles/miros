@@ -264,7 +264,7 @@ impl Radix {
     }
 
     /// The prefix characters for alternate form (`0x`, `0X`, or empty).
-    /// Does NOT check whether alternate form is active — that's the caller's decision.
+    /// Does NOT check whether alternate form is active. That's the caller's decision.
     fn prefix(self) -> &'static [u8] {
         match self {
             Self::Hex { uppercase: false } => b"0x",

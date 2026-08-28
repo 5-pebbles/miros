@@ -122,7 +122,7 @@ impl ClassRegion {
             .prepend_adopt(list);
     }
 
-    /// Claim one abandoned span for `new_owner` — exactly one thread can claim any span.
+    /// Claim one abandoned span for `new_owner`. Exactly one thread can claim any span.
     pub unsafe fn adopt_span(&self, new_owner: HeapId) -> Option<NonNull<LinkedListNode<Span>>> {
         let span_node = {
             let mut pool = self.span_pool.lock().unwrap_unchecked();

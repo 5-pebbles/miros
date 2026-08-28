@@ -310,7 +310,7 @@ fn run_perf(
     color: bool,
 ) {
     if !command_exists("perf") {
-        log(color, "perf", "not found — skipping");
+        log(color, "perf", "not found - skipping");
         return;
     }
 
@@ -356,7 +356,7 @@ pub fn run(args: BenchArgs) {
     });
 
     log(log_color, "build", "miros (release)");
-    let miros = build::run(None);
+    let miros = build::run(None, None);
 
     let sources = discover_benchmarks(&bench_dir, &args.names);
 
@@ -367,7 +367,7 @@ pub fn run(args: BenchArgs) {
         log(
             log_color,
             "env",
-            "taskset unavailable — jitter may be higher",
+            "taskset unavailable - jitter may be higher",
         );
         Vec::new()
     };
@@ -386,20 +386,20 @@ pub fn run(args: BenchArgs) {
             log(log_color, "warmup", &format!("{name} x {}", args.warmup));
             let _ = execute(&glibc_bin, &wrapper, args.warmup);
             if execute(&miros_bin, &wrapper, args.warmup).is_none() {
-                log(log_color, "error", "miros crashed during warmup — skipping");
+                log(log_color, "error", "miros crashed during warmup - skipping");
                 continue;
             }
         }
 
-        log(log_color, "run", &format!("{name} — glibc x {}", args.runs));
+        log(log_color, "run", &format!("{name} - glibc x {}", args.runs));
         let Some(glibc_runs) = execute(&glibc_bin, &wrapper, args.runs) else {
-            log(log_color, "error", "glibc variant crashed — skipping");
+            log(log_color, "error", "glibc variant crashed - skipping");
             continue;
         };
 
-        log(log_color, "run", &format!("{name} — miros x {}", args.runs));
+        log(log_color, "run", &format!("{name} - miros x {}", args.runs));
         let Some(miros_runs) = execute(&miros_bin, &wrapper, args.runs) else {
-            log(log_color, "error", "miros variant crashed — skipping");
+            log(log_color, "error", "miros variant crashed - skipping");
             continue;
         };
 

@@ -40,7 +40,7 @@ impl PathResolver {
         dependency_name: &str,
     ) -> Option<File> {
         // PERF: Reuse a single PathBuf across calls to avoid per-probe allocations.
-        // LLVM can't hoist this — each iteration escapes into an opaque syscall with a different length.
+        // LLVM can't hoist this. Each iteration escapes into an opaque syscall with a different length.
         thread_local! {
             static CANDIDATE_BUFFER: RefCell<PathBuf> = RefCell::new(PathBuf::new());
         }

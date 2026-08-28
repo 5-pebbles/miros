@@ -2,8 +2,7 @@ use std::ptr;
 
 use super::span::MAX_SLOTS_PER_SPAN;
 
-/// C standard requires `malloc`/`realloc` to return memory aligned for any
-/// fundamental type — `_Alignof(max_align_t)`, which is 16 on x86_64.
+/// C standard requires `malloc`/`realloc` to return memory aligned for any fundamental type. `_Alignof(max_align_t)` is 16 on x86_64.
 const C_ABI_MIN_ALIGNMENT: usize = 16;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -104,10 +103,10 @@ impl SizeClassInfo {
 /// the compiler fully unrolls the loop into individual SIMD loads/stores.
 /// Larger sizes delegate to `copy_nonoverlapping`.
 ///
-/// Unlike `ptr::copy_nonoverlapping` with a constant size — which LLVM merges
+/// Unlike `ptr::copy_nonoverlapping` with a constant size, which LLVM merges
 /// across match arms into a single `memcpy` call when `#![no_builtins]` and
-/// `-Z build-std` are active — each monomorphization here has a structurally
-/// different loop body (different iteration count), preventing the merge.
+/// `-Z build-std` are active, each monomorphization here has a structurally
+/// different loop body (different iteration count). This prevents the merge.
 #[inline(always)]
 unsafe fn copy_slot_inline<const SIZE: usize>(source: *const u8, dest: *mut u8) {
     if SIZE <= 128 {

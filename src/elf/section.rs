@@ -5,7 +5,7 @@ use bitbybit::bitenum;
 ///
 /// The reserved range 0xFF00..0xFFFF (`SHN_LORESERVE`..`SHN_HIRESERVE`) includes
 /// processor-specific indices (0xFF00..0xFF1F) and OS-specific indices (0xFF20..0xFF3F)
-/// that are not modeled here — they will also fall into `Err(raw)`.
+/// that are not modeled here. They will also fall into `Err(raw)`.
 #[bitenum(u16, exhaustive = false)]
 #[derive(PartialEq, Eq)]
 pub enum SectionIndex {

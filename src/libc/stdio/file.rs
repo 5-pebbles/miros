@@ -115,7 +115,7 @@ impl IoFile {
         c & 0xff
     }
 
-    /// Returns bytes accepted — short of `bytes.len()` only on write error.
+    /// Returns bytes accepted. Short of `bytes.len()` only on write error.
     pub(super) unsafe fn write_bytes(&mut self, bytes: &[u8]) -> usize {
         if !self.writable() {
             return 0;
@@ -134,7 +134,7 @@ impl IoFile {
             let chunk = &remaining[..take];
             remaining = &remaining[take..];
 
-            // Line-buffered flush is whole-buffer, not up to the last newline — more eager than glibc, still POSIX-legal.
+            // Line-buffered flush is whole-buffer, not up to the last newline. More eager than glibc, still POSIX-legal.
             if self.flags.unbuffered() || (self.flags.line_buffered() && chunk.contains(&b'\n')) {
                 if self.flush_buffer() < 0 {
                     break;

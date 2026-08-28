@@ -1,6 +1,6 @@
 // Single-threaded allocation stress test.
 //
-// Build twice from the same source — the only difference is the dynamic linker:
+// Build twice from the same source. The only difference is the dynamic linker:
 //
 //   gcc -O2 -o alloc_stress_glibc alloc_stress.c
 //   gcc -O2 -Wl,--dynamic-linker=path/to/miros -o alloc_stress_miros alloc_stress.c

@@ -44,7 +44,7 @@ impl ThreadClassHeap {
             let span = &span_node.as_ref().value;
 
             // Fold in cross-thread frees first so their slots re-enter this batch instead of forcing fresh address space.
-            // An idle thread still strands remote frees until its next refill or exit — only the owner may reuse them.
+            // An idle thread strands remote frees until its next refill or exit. Only the owner may reuse them.
             if span.has_remote_frees() {
                 span.reclaim_remote_frees();
             }

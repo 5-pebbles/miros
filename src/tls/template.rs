@@ -11,7 +11,7 @@ pub struct TlsTemplate {
 }
 
 impl TlsTemplate {
-    /// The template is read from the mapped image: `p_vaddr`, not `p_offset` — the RW segment's file offset and vaddr diverge.
+    /// The template is read from the mapped image: `p_vaddr`, not `p_offset`. The RW segment's file offset and vaddr diverge.
     pub unsafe fn from_program_header(base: *const c_void, tls_header: &ProgramHeader) -> Self {
         Self {
             template_pointer: base.byte_add(tls_header.p_vaddr) as *const u8,

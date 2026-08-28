@@ -44,7 +44,7 @@ const _: () = {
     assert!(offset_of!(IoFile, write_ptr) == 40);
     assert!(offset_of!(IoFile, write_end) == 48);
 };
-/// Offsets 0/8/16/40/48 are pinned to glibc `struct _IO_FILE` — inlined `-O2`
+/// Offsets 0/8/16/40/48 are pinned to glibc `struct _IO_FILE`. Inlined `-O2`
 /// `putc_unlocked`/`getc_unlocked`/`feof_unlocked` read them there.
 #[repr(C)]
 pub struct IoFile {

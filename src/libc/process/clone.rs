@@ -32,7 +32,7 @@ pub struct Clone3Flags {
     child_clear_tid: bool,
 }
 
-/// Kernel's `struct clone_args` — every field is u64-sized.
+/// Kernel's `struct clone_args`. Every field is u64-sized.
 #[repr(C)]
 pub struct Clone3Args {
     pub flags: Clone3Flags,

@@ -97,14 +97,14 @@ impl FileLock {
         loop {
             match self.word.load(Ordering::Relaxed) {
                 0 =>
-                // Free — install ourselves and we're done.
+                // Free. Install ourselves and we're done.
                 {
                     if self.cas(0, held_contended, Ordering::Acquire) {
                         return;
                     }
                 }
                 current =>
-                // Held — publish the waiters bit if needed, then sleep on that value.
+                // Held. Publish the waiters bit if needed, then sleep on that value.
                 {
                     let contended = LockWord::new_with_raw_value(current).contended();
                     if contended == current || self.cas(current, contended, Ordering::Relaxed) {

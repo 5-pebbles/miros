@@ -80,7 +80,7 @@ unsafe extern "C" fn sprintf(destination: *mut i8, format: *const i8, args: ...)
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn vsprintf(destination: *mut i8, format: *const i8, args: VaList<'_>) -> i32 {
     let bytes_written = format_into(UncheckedBufWriter::new(destination), format, args);
-    // WARN: Null-terminate even on error — glibc does this, and callers may read the buffer regardless of the return value.
+    // WARN: Null-terminate even on error. Glibc does this, and callers may read the buffer regardless of the return value.
     *destination.add(bytes_written.max(0) as usize) = 0;
     bytes_written
 }

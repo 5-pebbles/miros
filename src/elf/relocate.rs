@@ -92,7 +92,7 @@ pub mod relocations {
     /// The returned value from the function located at (B + A) | u64
     pub const R_X86_64_IRELATIVE: u32 = 37; // This one is fucking awesome... I mean, it's a little annoying but really cool.
 
-    // Thread-Local Storage ABI — see "ELF Handling for Thread-Local Storage":
+    // Thread-Local Storage ABI. See "ELF Handling for Thread-Local Storage":
     /// Module index for TLS | u64
     pub const R_X86_64_DTPMOD64: u32 = 16;
     /// Offset within TLS module | u64

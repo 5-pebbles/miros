@@ -14,6 +14,9 @@ enum Xtask {
         /// Cargo features to pass through (comma- or space-separated), like `cargo --features`.
         #[arg(long)]
         features: Option<String>,
+        /// CPU to target (e.g. `x86-64-v2`). Defaults to `native`.
+        #[arg(long)]
+        target_cpu: Option<String>,
     },
     /// Regenerate the alias asm/version script from linked_aliases.def without building
     RegenerateAliases,
@@ -27,8 +30,11 @@ enum Xtask {
 
 fn main() {
     match Xtask::parse() {
-        Xtask::Build { features } => {
-            build::run(features.as_deref());
+        Xtask::Build {
+            features,
+            target_cpu,
+        } => {
+            build::run(features.as_deref(), target_cpu.as_deref());
         }
         Xtask::RegenerateAliases => {
             aliases::generate();
