@@ -21,7 +21,7 @@ pub struct DemoArgs {
 
 /// Build miros, copy the target binary, repoint its interpreter at miros via patchelf, and run it.
 pub fn run(demo: DemoArgs) {
-    let miros = build::run(demo.features.as_deref());
+    let miros = build::run(demo.features.as_deref(), None);
     let patched = std::env::temp_dir().join(format!("miros-demo-{}", std::process::id()));
     fs::copy(&demo.binary, &patched).expect("copy target binary");
 

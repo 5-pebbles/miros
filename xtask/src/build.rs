@@ -14,14 +14,17 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// Build `libmiros.so` (release) and return its path.
-pub fn run(features: Option<&str>) -> PathBuf {
+pub fn run(features: Option<&str>, target_cpu: Option<&str>) -> PathBuf {
     let root = workspace_root();
     let aliases_version_script = crate::aliases::generate();
 
+    let target_cpu_flag = format!("-C target-cpu={}", target_cpu.unwrap_or("native"));
     let mut cargo = Command::new("cargo");
     cargo.current_dir(&root).env(
         "RUSTFLAGS",
-        "-C target-cpu=native -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec --cfg miros_aliases",
+        format!(
+            "{target_cpu_flag} -Z unstable-options -C panic=immediate-abort -Z tls-model=initial-exec --cfg miros_aliases"
+        ),
     );
     cargo.args([
         "rustc",
