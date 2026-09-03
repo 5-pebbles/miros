@@ -10,12 +10,12 @@ Each test documents its expected behavior in comment directives, parsed in order
 
 | Directive | Meaning |
 |-----------|---------|
-| `ARGS "s"` | Pass `s` as command-line arguments, split on whitespace. Must be the first directive. |
+| `ARGS "s"` | Pass `s` as command-line arguments, split on whitespace. |
 | `WAIT-FOR "s"` | Block until `s` appears in the output, then consume through the match. The runner appends `\n` to `s`. |
 | `EXPECT "s"` | At exit, assert `s` appears in the output not consumed by `WAIT-FOR`. The runner appends `\n` to `s`. |
 | `INPUT "s"` | Write `s` to stdin. |
 | `SIGNAL X` | Send signal `X` to the process. `X` is an integer or a symbolic name (`SIGTERM`). |
-| `EXIT X` | Assert the exit status. `X` is an exit code, or `SIGNAL Y` for death by signal. Defaults to `EXIT 0`. Must be the last directive. |
+| `EXIT X` | Assert the exit status. `X` is an exit code, or `SIGNAL Y` for death by signal. Defaults to `EXIT 0`. |
 | `STDERR` | Retarget `WAIT-FOR` and `EXPECT` to stderr for all following directives. |
 | `STDOUT` | Retarget `WAIT-FOR` and `EXPECT` back to stdout (the default). |
 | `EOF` | Close stdin. |
@@ -43,7 +43,7 @@ escape    := "\" ("n" | "t" | "r" | "\" | '"')
 name      := "SIG" [A-Z]+
 ```
 
-An unknown escape or directive is a parse error.
+An unknown escape or directive is a parse error. Use block style comments for non-directives.
 
 ### Example
 
