@@ -65,6 +65,7 @@ int main(void) {
         return 1;
     }
 
+    // WAIT-FOR "signals ok"
     puts("signals ok");
     return 0;
 }

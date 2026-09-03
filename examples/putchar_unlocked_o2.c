@@ -1,7 +1,8 @@
 #include <stdio.h>
 
-// Built -O2: glibc inlines write_ptr at offset 40, hardcoded into .text.
+/* Built -O2: glibc inlines write_ptr at offset 40, hardcoded into .text. */
 int main() {
+    // WAIT-FOR "ABCDE"
     for (int i = 0; i < 5; i++)
         putchar_unlocked('A' + i);
     putchar_unlocked('\n');
