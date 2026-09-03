@@ -110,8 +110,8 @@ Write idiomatic Rust. Iterators, combinators, pattern matching. Not C-in-Rust.
 
 Check the [issues](https://github.com/5-pebbles/miros/issues) for something to work on.
 
+Commit messages follow [COMMIT.md](COMMIT.md).
+
 ### LLM Usage
 
 Use an LLM if you want. The contribution is yours, not the model's. It is not co-authored by Claude, and Claude does not learn from code review. PRs that show no attempt to understand the problem get closed.
-
-Commit messages follow [COMMIT.md](COMMIT.md).
