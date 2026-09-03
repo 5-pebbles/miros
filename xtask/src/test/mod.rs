@@ -38,6 +38,8 @@ pub fn run(filter: Option<String>) {
         .collect();
     sources.sort();
 
+    println!();
+
     let (mut passed, mut failed) = (0, 0);
 
     for source in sources {
@@ -82,9 +84,9 @@ pub fn run(filter: Option<String>) {
                 let failed_text = "FAILED".red().bold();
                 println!("test {stem} ... {failed_text}");
                 error.emit();
+                println!();
             }
         }
-        println!();
     }
 
     println!("\ntest result: {passed} passed; {failed} failed");
