@@ -1,4 +1,9 @@
-use std::{fs, path::PathBuf, process, time::Duration};
+use std::{
+    fs,
+    path::PathBuf,
+    process::{self, Command},
+    time::Duration,
+};
 
 use colored::Colorize;
 
@@ -16,9 +21,16 @@ mod span;
 mod utils;
 
 pub fn run(filter: Option<String>) {
-    examples::run();
-
     let root = build::workspace_root();
+
+    let status = Command::new("cargo")
+        .current_dir(&root)
+        .arg("test")
+        .status()
+        .expect("failed to spawn cargo test");
+    assert!(status.success(), "unit tests failed");
+
+    examples::run();
     let mut sources: Vec<PathBuf> = fs::read_dir(root.join("examples"))
         .expect("read examples directory")
         .map(|entry| entry.expect("read directory entry").path())
