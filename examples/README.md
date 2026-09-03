@@ -52,8 +52,8 @@ An unknown escape or directive is a parse error. Use block style comments for no
 
 int main(void) {
     int deadbeef = 0xdeadbeef;
-    printf("0x%x\n", deadbeef);
     // WAIT-FOR "0xdeadbeef"
+    printf("0x%x\n", deadbeef);
     return 0;
 }
 ```
