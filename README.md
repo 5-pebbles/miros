@@ -116,6 +116,6 @@ Check the [issues](https://github.com/5-pebbles/miros/issues) if you're looking 
 
 ### LLM Usage
 
-I don't care how you get the code; actually that's not true, but only for license conflicts. You're welcome to use an LLM in your contributions; however, it is **your** contribution, not the LLM's. It's not co-authored by Claude. Claude isn't the entity a failure or oversight will be attributed to, nor will Claude learn from my PR review.
+Use an LLM if you want. The contribution is yours, not the model's. It is not co-authored by Claude, and Claude does not learn from code review. PRs that show no attempt to understand the problem get closed.
 
-I will reject any PRs that are obviously LLM-generated; I have my own LLMs. If I wanted one to blindly implement a ticket, I would ask it myself. The back and forth of a PR review is costly to a maintainer, most pay that cost because a review is how new contributors learn. The comments on your code are teaching. If your PR shows you did not try to understand the problem, I stop paying that cost. A good implementation gets rebased, fixed, and merged by me without a word of feedback. A bad one gets closed.
+Commit messages follow [COMMIT.md](COMMIT.md).
