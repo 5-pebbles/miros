@@ -79,8 +79,12 @@ pub enum DiagKind {
     InvalidInteger,
     #[strum(to_string = "duplicate ARGS directive")]
     DuplicateArgs,
-    #[strum(to_string = "duplicate EXIT directive")]
-    DuplicateExit,
+    #[strum(to_string = "duplicate STATUS directive")]
+    DuplicateStatus,
     #[strum(to_string = "duplicate NO-TTY directive for {0}")]
     DuplicateNoTty(Stream),
+    #[strum(to_string = "exit code out of range (0-255)")]
+    ExitCodeRange,
+    #[strum(to_string = "signal number out of range (1-64)")]
+    SignalRange,
 }

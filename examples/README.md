@@ -4,7 +4,9 @@ The examples demonstrate the capabilities of Miros, while also acting as e2e tes
 
 ## Test Case Language Spec
 
-Each test documents its expected behavior in comment directives, parsed in order and executed by the runner (`cargo xtask test`). A directive is a `//` comment followed by a directive.
+Each test documents its expected behavior in comment directives, which the runner (`cargo xtask test`) parses and executes. A directive is a `//` comment that starts its line. Inline `//` comments and block comments are ignored.
+
+Directives come in three kinds. `ARGS`, `STATUS`, and `NO-TTY` are file-scope: they may appear anywhere, and duplicates are an error. `STDOUT` and `STDERR` are order-sensitive: they retarget the output directives that follow them. The rest run sequentially.
 
 ### Directives
 
@@ -14,12 +16,12 @@ Each test documents its expected behavior in comment directives, parsed in order
 | `WAIT-FOR "s"` | Block until `s` appears in the output, then consume through the match. The runner appends `\n` to `s`. |
 | `EXPECT "s"` | At exit, assert `s` appears in the output not consumed by `WAIT-FOR`. The runner appends `\n` to `s`. |
 | `INPUT "s"` | Write `s` to stdin. |
-| `SIGNAL X` | Send signal `X` to the process. `X` is an integer or a symbolic name (`SIGTERM`). |
-| `EXIT X` | Assert the exit status. `X` is an exit code, or `SIGNAL Y` for death by signal. Defaults to `EXIT 0`. |
+| `SIGNAL X` | Send signal `X` to the process. `X` is an integer (1-64) or a symbolic name (`SIGTERM`). |
+| `STATUS X` | Assert the exit status. `X` is an exit code (0-255), or `SIGNAL Y` for death by signal. Defaults to `STATUS 0`. |
 | `STDERR` | Retarget `WAIT-FOR` and `EXPECT` to stderr for all following directives. |
 | `STDOUT` | Retarget `WAIT-FOR` and `EXPECT` back to stdout (the default). |
 | `NO-TTY X` | Run `X` (`STDOUT` or `STDERR`) on a pipe instead of the pseudo-terminal. |
-| `EOF` | Close stdin. |
+| `EOF` | Write `^D` to stdin. The pty delivers it as EOF only when its line buffer is empty, so end `INPUT` text with `\n`. |
 
 The process runs with stdin, stdout, and stderr attached to a pseudo-terminal. `NO-TTY` moves stdout or stderr to a pipe; stdin stays on the pseudo-terminal so `INPUT` and `EOF` keep working.
 
@@ -36,7 +38,7 @@ expect    := "EXPECT"   ws string
 input     := "INPUT"    ws string
 eof       := "EOF"
 signal    := "SIGNAL"   ws (name | int)
-exit      := "EXIT"     ws (int | "SIGNAL" ws (name | int))
+status    := "STATUS"   ws (int | "SIGNAL" ws (name | int))
 stream    := "STDOUT" | "STDERR"
 no-tty    := "NO-TTY"   ws ("STDOUT" | "STDERR")
 args      := "ARGS"     ws string
@@ -45,7 +47,7 @@ escape    := "\" ("n" | "t" | "r" | "\" | '"')
 name      := "SIG" [A-Z]+
 ```
 
-An unknown escape or directive is a parse error. Use block style comments for non-directives.
+An unknown escape, directive, or signal name is a parse error. Use block style comments for non-directives.
 
 ### Example
 

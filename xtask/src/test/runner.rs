@@ -16,7 +16,7 @@ use std::{
 
 use super::{
     diagnostic::Diagnostic,
-    directive::{Directive, ExitExpectation, Stream, TestCase},
+    directive::{Directive, StatusExpectation, Stream, TestCase},
     pty,
 };
 use crate::test::{DIRECTIVE_TIMEOUT, parser::Parser, utils};
@@ -223,24 +223,24 @@ fn optional_pipe(
     }
 }
 
-fn matches_expectation(expectation: &ExitExpectation, status: &ExitStatus) -> bool {
+fn matches_expectation(expectation: &StatusExpectation, status: &ExitStatus) -> bool {
     match expectation {
-        ExitExpectation::Code(code) => status.code() == Some(*code),
-        ExitExpectation::Signal(signal) => status.signal() == Some(*signal),
+        StatusExpectation::Code(code) => status.code() == Some(*code),
+        StatusExpectation::Signal(signal) => status.signal() == Some(*signal),
     }
 }
 
-fn describe_expectation(expectation: &ExitExpectation) -> String {
+fn describe_expectation(expectation: &StatusExpectation) -> String {
     match expectation {
-        ExitExpectation::Code(code) => format!("exit code {code}"),
-        ExitExpectation::Signal(signal) => format!("death by signal {signal}"),
+        StatusExpectation::Code(code) => format!("exit code {code}"),
+        StatusExpectation::Signal(signal) => format!("death by signal {signal}"),
     }
 }
 
 fn describe_status(status: &ExitStatus) -> String {
     match (status.code(), status.signal()) {
-        (Some(code), _) => describe_expectation(&ExitExpectation::Code(code)),
-        (None, Some(signal)) => describe_expectation(&ExitExpectation::Signal(signal)),
+        (Some(code), _) => describe_expectation(&StatusExpectation::Code(code)),
+        (None, Some(signal)) => describe_expectation(&StatusExpectation::Signal(signal)),
         (None, None) => "unknown termination".to_string(),
     }
 }
@@ -387,8 +387,8 @@ impl Session {
         std::mem::take(&mut self.failures)
     }
 
-    fn verify_exit(&mut self, exit: Option<ExitExpectation>) {
-        let expectation = exit.unwrap_or(ExitExpectation::Code(0));
+    fn verify_status(&mut self, status: Option<StatusExpectation>) {
+        let expectation = status.unwrap_or(StatusExpectation::Code(0));
         match self.exit_rx.recv_timeout(DIRECTIVE_TIMEOUT) {
             Ok(Ok(status)) => {
                 self.status = Some(status);
@@ -581,7 +581,7 @@ impl TestRunner {
         if let Err(failures) = session.run_directives(&self.case.directives) {
             return Err(RunError::new(failures, &session));
         }
-        session.verify_exit(self.case.exit);
+        session.verify_status(self.case.status);
         session.verify_output();
         session
             .finish()

@@ -1,6 +1,6 @@
 use super::{
     diagnostic::{DiagKind, Diagnostic},
-    directive::{Directive, ExitExpectation, Stream, TestCase},
+    directive::{Directive, StatusExpectation, Stream, TestCase},
     span::Span,
 };
 
@@ -24,6 +24,13 @@ signal_table! {
 
 fn looks_like_integer(word: &str) -> bool {
     word.starts_with(|character: char| character.is_ascii_digit() || character == '-')
+}
+
+fn parse_integer(word: &str, span: Span) -> Result<i32, Diagnostic> {
+    word.parse::<i32>().map_err(|_| Diagnostic {
+        span,
+        kind: DiagKind::InvalidInteger,
+    })
 }
 
 /// A `//` comment opens a directive only when it is the first token on its line; inline `//` and block comments are ignored.
@@ -90,7 +97,7 @@ impl<'a> Parser<'a> {
             "EOF" => Directive::Eof,
             "SIGNAL" => Directive::Signal(self.signal()?),
             "ARGS" => return self.set_args(span),
-            "EXIT" => return self.set_exit(span),
+            "STATUS" => return self.set_status(span),
             "STDOUT" => return self.select_stream(Stream::Stdout),
             "STDERR" => return self.select_stream(Stream::Stderr),
             "NO-TTY" => return self.set_no_tty(),
@@ -117,14 +124,14 @@ impl<'a> Parser<'a> {
         self.end_of_line()
     }
 
-    fn set_exit(&mut self, span: Span) -> Result<(), Diagnostic> {
-        if self.test_case.exit.is_some() {
+    fn set_status(&mut self, span: Span) -> Result<(), Diagnostic> {
+        if self.test_case.status.is_some() {
             return Err(Diagnostic {
                 span,
-                kind: DiagKind::DuplicateExit,
+                kind: DiagKind::DuplicateStatus,
             });
         }
-        self.test_case.exit = Some(self.exit_expectation()?);
+        self.test_case.status = Some(self.status_expectation()?);
         self.end_of_line()
     }
 
@@ -224,7 +231,14 @@ impl<'a> Parser<'a> {
             });
         }
         if looks_like_integer(word) {
-            return self.integer(word, span);
+            let signal = parse_integer(word, span)?;
+            if !(1..=64).contains(&signal) {
+                return Err(Diagnostic {
+                    span,
+                    kind: DiagKind::SignalRange,
+                });
+            }
+            return Ok(signal);
         }
         signal_number(word).ok_or(Diagnostic {
             span,
@@ -232,29 +246,29 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn exit_expectation(&mut self) -> Result<ExitExpectation, Diagnostic> {
+    fn status_expectation(&mut self) -> Result<StatusExpectation, Diagnostic> {
         self.skip_whitespace();
         let start = self.position;
         let word = self.word();
         let span = self.span_from(start);
         if word == "SIGNAL" {
-            return self.signal().map(ExitExpectation::Signal);
+            return self.signal().map(StatusExpectation::Signal);
         }
         if looks_like_integer(word) {
-            return self.integer(word, span).map(ExitExpectation::Code);
+            let code = parse_integer(word, span)?;
+            if !(0..=255).contains(&code) {
+                return Err(Diagnostic {
+                    span,
+                    kind: DiagKind::ExitCodeRange,
+                });
+            }
+            return Ok(StatusExpectation::Code(code));
         }
         Err(Diagnostic {
             span,
             kind: DiagKind::Expected {
                 expected: "an exit code or SIGNAL",
             },
-        })
-    }
-
-    fn integer(&self, word: &str, span: Span) -> Result<i32, Diagnostic> {
-        word.parse::<i32>().map_err(|_| Diagnostic {
-            span,
-            kind: DiagKind::InvalidInteger,
         })
     }
 

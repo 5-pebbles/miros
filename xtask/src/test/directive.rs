@@ -26,7 +26,7 @@ impl fmt::Display for Stream {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExitExpectation {
+pub enum StatusExpectation {
     Code(i32),
     Signal(i32),
 }
@@ -44,7 +44,7 @@ pub enum Directive {
 pub struct TestCase {
     pub args: Option<String>,
     pub directives: Vec<Directive>,
-    pub exit: Option<ExitExpectation>,
+    pub status: Option<StatusExpectation>,
     /// Indexed by `Stream::index()`; a set flag moves that stream to a pipe.
     pub pipes: [bool; 2],
 }
