@@ -66,6 +66,10 @@ const EXAMPLES: &[Example] = &[
         stem: "notty_check",
         flags: &[],
     },
+    Example {
+        stem: "input_eof",
+        flags: &[],
+    },
 ];
 
 pub fn run() {
