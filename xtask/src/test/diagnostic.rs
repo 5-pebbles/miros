@@ -36,13 +36,18 @@ impl Diagnostic {
             format!(" {line_number} | ").blue().bold(),
             raw.get(line_start..line_end).unwrap()
         );
-        let caret_width = (self.span.end - self.span.start).max(1);
+        let caret_width = raw
+            .get(self.span.start..self.span.end)
+            .map_or(1, |text| text.chars().count().max(1));
+        let leading = raw
+            .get(line_start..self.span.start)
+            .map_or(0, |text| text.chars().count());
         let highlight = format!(
             "{prefix} {}{}",
-            " ".repeat(self.span.start - line_start),
+            " ".repeat(leading),
             "^".repeat(caret_width).red()
         );
-        println!("{header}\n{file_path}\n{prefix}\n{details}\n{highlight}\n{prefix}");
+        eprintln!("{header}\n{file_path}\n{prefix}\n{details}\n{highlight}\n{prefix}");
     }
 
     fn get_line_info(&self, raw: &str) -> (usize, usize) {
@@ -59,19 +64,21 @@ impl Diagnostic {
 }
 
 #[derive(Debug, PartialEq, Clone, EnumDisplay)]
-#[strum(serialize_all = "snake_case")]
 pub enum DiagKind {
     #[strum(to_string = "not a directive (plain comments must use /* */)")]
     UnknownDirective,
     #[strum(to_string = "expected {expected}")]
-    Expected {
-        expected: &'static str,
-    },
+    Expected { expected: &'static str },
+    #[strum(to_string = "unterminated string")]
     UnterminatedString,
     #[strum(to_string = "unknown escape '\\{0}'")]
     UnknownEscape(char),
+    #[strum(to_string = "unknown signal name")]
     UnknownSignal,
+    #[strum(to_string = "not a valid integer")]
     InvalidInteger,
+    #[strum(to_string = "duplicate ARGS directive")]
     DuplicateArgs,
+    #[strum(to_string = "duplicate EXIT directive")]
     DuplicateExit,
 }

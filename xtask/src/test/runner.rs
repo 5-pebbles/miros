@@ -22,10 +22,12 @@ use crate::test::{DIRECTIVE_TIMEOUT, parser::Parser, utils};
 pub enum Failure {
     Pty(io::Error),
     Spawn(io::Error),
+    BinaryMissing { stem: String },
     Fixture(io::Error),
     Wait(io::Error),
     WaitTimeout { text: String, stream: Stream },
     WaitEof { text: String, stream: Stream },
+    DrainTimeout { stream: Stream },
     WriteFailed(io::Error),
     SignalFailed { signal: i32, error: io::Error },
     ExitMismatch { expected: String, actual: String },
@@ -39,6 +41,10 @@ impl fmt::Display for Failure {
         match self {
             Self::Pty(error) => write!(formatter, "pty allocation failed: {error}"),
             Self::Spawn(error) => write!(formatter, "spawn failed: {error}"),
+            Self::BinaryMissing { stem } => write!(
+                formatter,
+                "examples/bin/{stem} not found; add it to EXAMPLES in xtask/src/examples.rs"
+            ),
             Self::Fixture(error) => write!(formatter, "fixture staging failed: {error}"),
             Self::Wait(error) => write!(formatter, "wait failed: {error}"),
             Self::WaitTimeout { text, stream } => write!(
@@ -49,6 +55,11 @@ impl fmt::Display for Failure {
             Self::WaitEof { text, stream } => write!(
                 formatter,
                 "{} closed before {text:?} appeared",
+                stream.label()
+            ),
+            Self::DrainTimeout { stream } => write!(
+                formatter,
+                "timed out waiting for {} to close; output may be incomplete",
                 stream.label()
             ),
             Self::WriteFailed(error) => write!(formatter, "writing to stdin failed: {error}"),
@@ -108,15 +119,16 @@ impl StreamBuffer {
         }
     }
 
-    fn wait_eof(&self, deadline: Instant) {
+    fn wait_eof(&self, deadline: Instant) -> bool {
         let mut state = self.state.lock().unwrap();
         while !state.eof {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return;
+                return false;
             };
             let (guard, _) = self.condvar.wait_timeout(state, remaining).unwrap();
             state = guard;
         }
+        true
     }
 }
 
@@ -317,8 +329,7 @@ impl Session {
 
     fn abort(&mut self) -> Vec<Failure> {
         let _ = utils::kill(self.pid, libc::SIGKILL);
-        // A zombie reaps with its real status even after SIGKILL, so this
-        // records exit 0 for a child that already finished on its own.
+        // SIGKILL on an unreaped zombie is a no-op, so this still returns the child's real status.
         self.status = utils::reap(&self.exit_rx);
         std::mem::take(&mut self.failures)
     }
@@ -345,36 +356,41 @@ impl Session {
     }
 
     fn verify_output(&mut self) {
-        let drain_deadline = Instant::now() + DIRECTIVE_TIMEOUT;
-        for side in &self.sides {
-            side.buffer.wait_eof(drain_deadline);
-        }
-
-        for (text, stream) in std::mem::take(&mut self.expects) {
-            let side = self.sides.get_mut(stream.index()).unwrap();
-            let state = side.buffer.state.lock().unwrap();
-            let needle = format!("{text}\n");
-            if side
-                .claims
-                .claim_first_unclaimed(&state.bytes, needle.as_bytes())
-                .is_none()
-            {
-                self.failures.push(Failure::ExpectMiss { text, stream });
-            }
-        }
-
+        let expects = std::mem::take(&mut self.expects);
+        // sides is ordered by Stream::index().
         for (stream, side) in [Stream::Stdout, Stream::Stderr]
             .into_iter()
-            .zip(self.sides.iter())
+            .zip(self.sides.iter_mut())
         {
+            if !side.buffer.wait_eof(Instant::now() + DIRECTIVE_TIMEOUT) {
+                self.failures.push(Failure::DrainTimeout { stream });
+                continue;
+            }
             let state = side.buffer.state.lock().unwrap();
+            for (text, _) in expects
+                .iter()
+                .filter(|(_, expect_stream)| *expect_stream == stream)
+            {
+                let needle = format!("{text}\n");
+                if side
+                    .claims
+                    .claim_first_unclaimed(&state.bytes, needle.as_bytes())
+                    .is_none()
+                {
+                    self.failures.push(Failure::ExpectMiss {
+                        text: text.clone(),
+                        stream,
+                    });
+                }
+            }
+
             let residue = side.claims.residue(&state.bytes);
             if residue.is_empty() {
                 continue;
             }
             self.failures.push(Failure::UnclaimedOutput {
                 stream,
-                text: String::from_utf8_lossy(&residue).into_owned(),
+                text: lossy_with_note(&residue),
             });
         }
     }
@@ -427,24 +443,31 @@ impl RunError {
 
     pub fn emit(&self) {
         for failure in &self.failures {
-            println!("  {failure}");
+            eprintln!("  {failure}");
         }
         if let Some(status) = &self.status {
-            println!("  status: {status}");
+            eprintln!("  status: {status}");
         }
-        println!("  captured stdout: {}", escaped(&self.stdout));
-        println!("  captured stderr: {}", escaped(&self.stderr));
+        eprintln!("  captured stdout: {}", escaped(&self.stdout));
+        eprintln!("  captured stderr: {}", escaped(&self.stderr));
     }
 }
 
-fn escaped(bytes: &[u8]) -> String {
-    let truncated = bytes.len() > CAPTURE_LIMIT;
-    let shown = bytes.get(..CAPTURE_LIMIT).unwrap_or(bytes);
-    let mut text = format!("{:?}", String::from_utf8_lossy(shown));
-    if truncated {
-        text.push_str(&format!(" … ({} bytes total)", bytes.len()));
+fn with_truncation_note(mut text: String, total_bytes: usize) -> String {
+    if total_bytes > CAPTURE_LIMIT {
+        text.push_str(&format!(" … ({total_bytes} bytes total)"));
     }
     text
+}
+
+fn escaped(bytes: &[u8]) -> String {
+    let shown = bytes.get(..CAPTURE_LIMIT).unwrap_or(bytes);
+    with_truncation_note(format!("{:?}", String::from_utf8_lossy(shown)), bytes.len())
+}
+
+fn lossy_with_note(bytes: &[u8]) -> String {
+    let shown = bytes.get(..CAPTURE_LIMIT).unwrap_or(bytes);
+    with_truncation_note(String::from_utf8_lossy(shown).into_owned(), bytes.len())
 }
 
 pub enum LoadError {
@@ -495,6 +518,11 @@ impl TestRunner {
         }
 
         let binary = examples.join("bin").join(&self.stem);
+        if !binary.exists() {
+            return Err(RunError::without_capture(vec![Failure::BinaryMissing {
+                stem: self.stem.clone(),
+            }]));
+        }
         let mut session = Session::launch(&binary, &self.case, scratch)
             .map_err(|failure| RunError::without_capture(vec![failure]))?;
         if let Err(failures) = session.run_directives(&self.case.directives) {

@@ -67,7 +67,6 @@ pub fn split(master: OwnedFd) -> io::Result<(File, File)> {
 }
 
 fn configure_terminal(slave: &File) -> io::Result<()> {
-    // SAFETY: fd is a valid terminal; settings is fully initialized.
     unsafe {
         if libc::tcsetattr(slave.as_raw_fd(), libc::TCSANOW, &terminal_settings()) == -1 {
             return Err(io::Error::last_os_error());

@@ -77,7 +77,7 @@ pub fn run(filter: Option<String>) {
             Ok(()) => {
                 passed += 1;
                 let ok_text = "OK".green().bold();
-                println!("test {stem} ... {ok_text}",);
+                println!("test {stem} ... {ok_text}");
             }
             Err(error) => {
                 failed += 1;
