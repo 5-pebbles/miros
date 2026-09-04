@@ -58,6 +58,10 @@ const EXAMPLES: &[Example] = &[
         stem: "signal_basic",
         flags: &[],
     },
+    Example {
+        stem: "signal_death",
+        flags: &[],
+    },
 ];
 
 pub fn run() {
