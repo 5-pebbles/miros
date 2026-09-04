@@ -1,4 +1,4 @@
-// LIFO drain, tls-before-key, key-nulled-before-dtor, re-arm capped at 4 rounds.
+/* LIFO drain, tls-before-key, key-nulled-before-dtor, re-arm capped at 4 rounds. */
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,8 +48,10 @@ int main(void) {
         printf("FAIL order=%s rounds=%d\n", order, key_rounds);
         return 1;
     }
+    // WAIT-FOR "thread dtors ok"
     printf("thread dtors ok\n");
 
+    // WAIT-FOR "main dtor"
     __cxa_thread_atexit_impl(main_dtor, NULL, NULL);
     return 0;
 }

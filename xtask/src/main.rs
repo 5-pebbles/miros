@@ -5,6 +5,7 @@ mod bench;
 mod build;
 mod demo;
 mod examples;
+mod test;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Development tasks for miros")]
@@ -26,6 +27,11 @@ enum Xtask {
     Demo(demo::DemoArgs),
     /// Run benchmarks comparing miros against glibc
     Bench(bench::BenchArgs),
+    /// Run the example e2e tests
+    Test {
+        /// Only run tests whose name contains this substring
+        filter: Option<String>,
+    },
 }
 
 fn main() {
@@ -42,5 +48,6 @@ fn main() {
         Xtask::Examples => examples::run(),
         Xtask::Demo(args) => demo::run(args),
         Xtask::Bench(args) => bench::run(args),
+        Xtask::Test { filter } => test::run(filter),
     }
 }

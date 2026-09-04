@@ -80,6 +80,7 @@ int main(void) {
                total_count, total_sum, ITEMS, expected_sum);
         return 1;
     }
+    // WAIT-FOR "cond ok"
     printf("cond ok\n");
     return 0;
 }

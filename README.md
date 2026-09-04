@@ -1,10 +1,10 @@
-# Miros 🌸🌿
+# Miros
 
-A monolithic runtime for x86_64 Linux, written in Rust. It runs unmodified glibc-linked binaries, intercepting symbol resolution and redirecting libc and pthreads calls to its own implementations. ELF loader, dynamic linker, C standard library, pthreads, libm, and memory allocator, fused into a single binary.
+A monolithic runtime for x86_64 Linux, written in Rust. It runs unmodified glibc-linked binaries, intercepting symbol resolution and redirecting libc and pthreads calls to its own implementations. ELF loader, dynamic linker, C standard library, pthreads, libm, and memory allocator.
 
-The split between `ld.so` and libc is a lie. The two depend on each other's internals: undocumented globals, unstable structs like `rtld_global_ro`, interleaved TLS and `pthread_cancel` coordination. They're versioned together, deployed together, and neither starts without the other. Why are they two separate binaries?
+ld.so and libc are versioned and deployed together. Neither starts alone. The two share undocumented globals, unstable structs, and interleaved TLS and `pthread_cancel` state.
 
-## Run a real program on it 🔧
+## Run a real program
 
 `cargo xtask demo` patches the interpreter path in a copy of a binary and runs it under Miros:
 
@@ -37,7 +37,7 @@ Miros [Error]: Found Undefined Symbols [`foo`, `bar`]
 
 Build with `--features lenient-undefined-symbols` to downgrade this to a warning. Unresolved symbols relocate to null, so a program only crashes if it actually calls one.
 
-## Benchmarks 🏁
+## Benchmarks
 
 The benchmarks cover only the allocator. `cargo xtask bench` builds the same C harness against glibc's malloc and against Miros, pins with `taskset`, and reports trimmed medians.
 
@@ -84,25 +84,21 @@ TOTAL                        843.2 ms     670.8 ms   843201639.50   670837565.50
        0.710607881 +- 0.009150266 seconds time elapsed  ( +-  1.29% )
 ```
 
-Ratios below 1.0 mean Miros is faster, above 1.0 mean glibc is faster.
+Below 1.0 is Miros faster, above is glibc faster.
 
-The two losses are the price of security features. Randomized slot selection costs `tight_32`: glibc hands back the slot it just freed, Miros picks a random one. And binned size classes can't grow an allocation in place the way glibc's realloc does, so `realloc_32_to_8192` pays for a fresh allocation and a copy on every class crossing.
+The `tight_32` and `realloc_32_to_8192` losses come from security features. Randomized slot selection costs the tight loop. Binned size classes can't grow an allocation in place the way glibc's realloc does, so each class crossing pays for a fresh allocation and a copy. Run with `--perf` to collect `perf stat` counters for the cache-level view.
 
-The allocator is the default, so I decided to make it do everything semi-well rather than win one benchmark: binned size classes, out-of-band metadata, and randomized slot selection within spans. Run with `--perf` to collect `perf stat` counters for the cache-level view.
+## Blog series
 
-## Blog series 📝
+The build is documented at [auxv.org](https://auxv.org), with the usual code drift since the posts.
 
-The build is documented at [auxv.org](https://auxv.org). These have drifted from the current code:
-
-- [Frankenstein's Monster 🧟](https://auxv.org/projects/miros/frankensteins_monster) - what ELF files actually are and what a dynamic linker does with them
+- [Frankenstein's Monster 🧟](https://auxv.org/projects/miros/frankensteins_monster) - what ELF files are and what a dynamic linker does with them
 - [Where to `_start`?](https://auxv.org/projects/miros/where_to__start) - stack layout, the System V ABI, and bootstrapping from naked assembly into Rust
-- [Slayer of Dragons, Eater of Bugs 🐔](https://auxv.org/projects/miros/slayer_of_dragons_eater_of_bugs) - debugging the runtime with `rust-lldb`, `readelf`, and a calculator
+- [Slayer of Dragons, Eater of Bugs 🐔](https://auxv.org/projects/miros/slayer_of_dragons_eater_of_bugs) - debugging the runtime with `rust-lldb` and `readelf`
 
-## Contributing 🤝
+## Contributing
 
-Contributions are welcome. Write idiomatic Rust (iterators, combinators, pattern matching), not C-in-Rust.
-
-Code map:
+Write idiomatic Rust. Iterators, combinators, pattern matching. Not C-in-Rust.
 
 - **`src/start/`** - `_start`, stack parsing, the `Bootstrap<Stage>` machine
 - **`src/elf/`** - ELF format types
@@ -112,5 +108,10 @@ Code map:
 - **`src/tls/`** - TLS layout, module registry, thread control blocks
 - **`src/syscall/`** - raw syscalls in inline assembly
 
-Check the [issues](https://github.com/5-pebbles/miros/issues) if you're looking for something to work on.
+Check the [issues](https://github.com/5-pebbles/miros/issues) for something to work on.
 
+Commit messages follow [COMMIT.md](COMMIT.md).
+
+### LLM Usage
+
+Use an LLM if you want. The contribution is yours, not the model's. It is not co-authored by Claude, and Claude does not learn from code review. PRs that show no attempt to understand the problem get closed.
