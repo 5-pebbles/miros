@@ -3,7 +3,7 @@ use std::path::Path;
 use colored::Colorize;
 use strum::Display as EnumDisplay;
 
-use super::span::Span;
+use super::{directive::Stream, span::Span};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Diagnostic {
@@ -81,4 +81,6 @@ pub enum DiagKind {
     DuplicateArgs,
     #[strum(to_string = "duplicate EXIT directive")]
     DuplicateExit,
+    #[strum(to_string = "duplicate NO-TTY directive for {0}")]
+    DuplicateNoTty(Stream),
 }

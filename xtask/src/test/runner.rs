@@ -1,9 +1,12 @@
 use std::{
     fmt,
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, PipeReader, PipeWriter, Read, Write},
     ops::Range,
-    os::unix::process::ExitStatusExt,
+    os::{
+        fd::{AsRawFd, OwnedFd},
+        unix::process::ExitStatusExt,
+    },
     path::{Path, PathBuf},
     process::ExitStatus,
     sync::{Arc, Condvar, Mutex, mpsc},
@@ -21,6 +24,7 @@ use crate::test::{DIRECTIVE_TIMEOUT, parser::Parser, utils};
 #[derive(Debug)]
 pub enum Failure {
     Pty(io::Error),
+    Pipe(io::Error),
     Spawn(io::Error),
     BinaryMissing { stem: String },
     Fixture(io::Error),
@@ -40,6 +44,7 @@ impl fmt::Display for Failure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Pty(error) => write!(formatter, "pty allocation failed: {error}"),
+            Self::Pipe(error) => write!(formatter, "pipe creation failed: {error}"),
             Self::Spawn(error) => write!(formatter, "spawn failed: {error}"),
             Self::BinaryMissing { stem } => write!(
                 formatter,
@@ -132,7 +137,7 @@ impl StreamBuffer {
     }
 }
 
-fn spawn_reader(source: File, buffer: Arc<StreamBuffer>) {
+fn spawn_reader(source: impl Read + Send + 'static, buffer: Arc<StreamBuffer>) {
     thread::spawn(move || {
         let mut source = source;
         let mut chunk = [0u8; 4096];
@@ -207,6 +212,17 @@ struct Side {
     cursor: usize,
 }
 
+fn optional_pipe(
+    case: &TestCase,
+    stream: Stream,
+) -> Result<Option<(PipeReader, PipeWriter)>, Failure> {
+    if *case.pipes.get(stream.index()).unwrap() {
+        io::pipe().map(Some).map_err(Failure::Pipe)
+    } else {
+        Ok(None)
+    }
+}
+
 fn matches_expectation(expectation: &ExitExpectation, status: &ExitStatus) -> bool {
     match expectation {
         ExitExpectation::Code(code) => status.code() == Some(*code),
@@ -241,22 +257,59 @@ struct Session {
 
 impl Session {
     fn launch(binary: &Path, case: &TestCase, scratch: &Path) -> Result<Self, Failure> {
-        // stdin+stdout share one pty; stderr gets its own so streams stay attributable.
+        // stdin always rides the pty; NO-TTY moves stdout or stderr to a plain pipe.
         let inout = pty::open().map_err(Failure::Pty)?;
-        let err = pty::open().map_err(Failure::Pty)?;
-        let mut child =
-            utils::spawn_child(binary, case, scratch, &inout, &err).map_err(Failure::Spawn)?;
+        let stdout_pipe = optional_pipe(case, Stream::Stdout)?;
+        let stderr_pipe = optional_pipe(case, Stream::Stderr)?;
+        let stderr_pty = if stderr_pipe.is_none() {
+            Some(pty::open().map_err(Failure::Pty)?)
+        } else {
+            None
+        };
+
+        let stdout_source = match &stdout_pipe {
+            Some((_, writer)) => writer.as_raw_fd(),
+            None => inout.slave.as_raw_fd(),
+        };
+        let stderr_source = match (&stderr_pipe, &stderr_pty) {
+            (Some((_, writer)), _) => writer.as_raw_fd(),
+            (None, Some(pty)) => pty.slave.as_raw_fd(),
+            (None, None) => unreachable!("stderr is either a pipe or a pty"),
+        };
+
+        let mut child = utils::spawn_child(binary, case, scratch, [
+            inout.slave.as_raw_fd(),
+            stdout_source,
+            stderr_source,
+        ])
+        .map_err(Failure::Spawn)?;
         drop(inout.slave);
-        drop(err.slave);
+
+        // The pty master splits into the INPUT writer and, absent NO-TTY STDOUT, the stdout reader.
+        let (inout_reader, writer) = pty::split(inout.master).map_err(Failure::Pty)?;
+        let stdout_reader = match stdout_pipe {
+            Some((reader, writer)) => {
+                drop(writer);
+                File::from(OwnedFd::from(reader))
+            }
+            None => inout_reader,
+        };
+        let stderr_reader = match (stderr_pipe, stderr_pty) {
+            (Some((reader, writer)), _) => {
+                drop(writer);
+                File::from(OwnedFd::from(reader))
+            }
+            (None, Some(pty)) => File::from(pty.master),
+            (None, None) => unreachable!("stderr is either a pipe or a pty"),
+        };
 
         let sides: [Side; 2] = std::array::from_fn(|_| Side::default());
-        let (inout_reader, writer) = pty::split(inout.master).map_err(Failure::Pty)?;
         spawn_reader(
-            inout_reader,
+            stdout_reader,
             Arc::clone(&sides.get(Stream::Stdout.index()).unwrap().buffer),
         );
         spawn_reader(
-            File::from(err.master),
+            stderr_reader,
             Arc::clone(&sides.get(Stream::Stderr.index()).unwrap().buffer),
         );
 

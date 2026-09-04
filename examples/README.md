@@ -18,9 +18,10 @@ Each test documents its expected behavior in comment directives, parsed in order
 | `EXIT X` | Assert the exit status. `X` is an exit code, or `SIGNAL Y` for death by signal. Defaults to `EXIT 0`. |
 | `STDERR` | Retarget `WAIT-FOR` and `EXPECT` to stderr for all following directives. |
 | `STDOUT` | Retarget `WAIT-FOR` and `EXPECT` back to stdout (the default). |
+| `NO-TTY X` | Run `X` (`STDOUT` or `STDERR`) on a pipe instead of the pseudo-terminal. |
 | `EOF` | Close stdin. |
 
-The process runs with stdin, stdout, and stderr attached to a pseudo-terminal.
+The process runs with stdin, stdout, and stderr attached to a pseudo-terminal. `NO-TTY` moves stdout or stderr to a pipe; stdin stays on the pseudo-terminal so `INPUT` and `EOF` keep working.
 
 ### Matching
 
@@ -29,7 +30,7 @@ The process runs with stdin, stdout, and stderr attached to a pseudo-terminal.
 ### Grammar
 
 ```
-directive := "//" ws (wait | expect | input | eof | signal | exit | stream | args)
+directive := "//" ws (wait | expect | input | eof | signal | exit | stream | no-tty | args)
 wait      := "WAIT-FOR" ws string
 expect    := "EXPECT"   ws string
 input     := "INPUT"    ws string
@@ -37,6 +38,7 @@ eof       := "EOF"
 signal    := "SIGNAL"   ws (name | int)
 exit      := "EXIT"     ws (int | "SIGNAL" ws (name | int))
 stream    := "STDOUT" | "STDERR"
+no-tty    := "NO-TTY"   ws ("STDOUT" | "STDERR")
 args      := "ARGS"     ws string
 string    := '"' (literal-char | escape)* '"'
 escape    := "\" ("n" | "t" | "r" | "\" | '"')

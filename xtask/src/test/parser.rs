@@ -93,6 +93,7 @@ impl<'a> Parser<'a> {
             "EXIT" => return self.set_exit(span),
             "STDOUT" => return self.select_stream(Stream::Stdout),
             "STDERR" => return self.select_stream(Stream::Stderr),
+            "NO-TTY" => return self.set_no_tty(),
             _ => {
                 return Err(Diagnostic {
                     span,
@@ -129,6 +130,34 @@ impl<'a> Parser<'a> {
 
     fn select_stream(&mut self, stream: Stream) -> Result<(), Diagnostic> {
         self.current_stream = stream;
+        self.end_of_line()
+    }
+
+    fn set_no_tty(&mut self) -> Result<(), Diagnostic> {
+        self.skip_whitespace();
+        let start = self.position;
+        let word = self.word();
+        let span = self.span_from(start);
+        let stream = match word {
+            "STDOUT" => Stream::Stdout,
+            "STDERR" => Stream::Stderr,
+            _ => {
+                return Err(Diagnostic {
+                    span,
+                    kind: DiagKind::Expected {
+                        expected: "STDOUT or STDERR",
+                    },
+                });
+            }
+        };
+        let pipe = self.test_case.pipes.get_mut(stream.index()).unwrap();
+        if *pipe {
+            return Err(Diagnostic {
+                span,
+                kind: DiagKind::DuplicateNoTty(stream),
+            });
+        }
+        *pipe = true;
         self.end_of_line()
     }
 

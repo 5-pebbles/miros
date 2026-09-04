@@ -1,12 +1,12 @@
 use std::{
     fs, io,
-    os::{fd::AsRawFd, unix::process::CommandExt},
+    os::{fd::RawFd, unix::process::CommandExt},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
     sync::mpsc,
 };
 
-use crate::test::{DIRECTIVE_TIMEOUT, directive::TestCase, pty};
+use crate::test::{DIRECTIVE_TIMEOUT, directive::TestCase};
 
 pub fn prepare_scratch(stem: &str) -> PathBuf {
     let scratch = std::env::temp_dir().join(format!("miros-test-{stem}-{}", std::process::id()));
@@ -46,12 +46,12 @@ pub fn reap(exit_rx: &mpsc::Receiver<io::Result<ExitStatus>>) -> Option<ExitStat
         .and_then(Result::ok)
 }
 
+/// The fds the child's 0/1/2 dup2 from; the caller must keep the owning handles open until after `spawn` returns.
 pub fn spawn_child(
     binary: &Path,
     case: &TestCase,
     scratch: &Path,
-    inout: &pty::Pty,
-    err: &pty::Pty,
+    sources: [RawFd; 3],
 ) -> io::Result<Child> {
     let mut command = Command::new(binary);
     command
@@ -63,16 +63,11 @@ pub fn spawn_child(
         command.args(arguments.split_whitespace());
     }
 
-    let inout_slave = inout.slave.as_raw_fd();
-    let err_slave = err.slave.as_raw_fd();
     // SAFETY: dup2 clears FD_CLOEXEC on the targets,
     // so 0/1/2 survive exec while the CLOEXEC originals do not.
     unsafe {
         command.pre_exec(move || {
-            for (target, source) in [inout_slave, inout_slave, err_slave]
-                .into_iter()
-                .enumerate()
-            {
+            for (target, source) in sources.into_iter().enumerate() {
                 if libc::dup2(source, target as i32) == -1 {
                     return Err(io::Error::last_os_error());
                 }

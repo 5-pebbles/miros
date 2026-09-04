@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Stream {
     Stdout,
@@ -14,6 +16,12 @@ impl Stream {
             Self::Stdout => "stdout",
             Self::Stderr => "stderr",
         }
+    }
+}
+
+impl fmt::Display for Stream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.label())
     }
 }
 
@@ -37,4 +45,6 @@ pub struct TestCase {
     pub args: Option<String>,
     pub directives: Vec<Directive>,
     pub exit: Option<ExitExpectation>,
+    /// Indexed by `Stream::index()`; a set flag moves that stream to a pipe.
+    pub pipes: [bool; 2],
 }
