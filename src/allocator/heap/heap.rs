@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::allocator::{
-    class_region::ClassRegion,
     heap::{class_heap::ThreadClassHeap, magazine::Magazines},
     non_crypto_rng::HeapRng,
+    primary::PrimaryAllocator,
     size_classes::{SizeClass, SIZE_CLASS_COUNT},
 };
 
@@ -68,34 +68,40 @@ impl Heap {
     #[inline(always)]
     pub unsafe fn alloc_small(
         &mut self,
-        global_regions: &[ClassRegion; SIZE_CLASS_COUNT],
+        primary: &PrimaryAllocator,
         size_class: SizeClass,
     ) -> Option<NonNull<u8>> {
         // Refill at the low-water mark so the draw always has a wide pool to randomize over.
         if self.magazines.needs_refill(size_class) {
-            self.refill_class(size_class, &global_regions[size_class.index()]);
+            self.refill_class(size_class, primary);
         }
         self.magazines.class(size_class).draw_random(&mut self.rng)
     }
 
     #[cold]
     #[inline(never)]
-    unsafe fn refill_class(&mut self, size_class: SizeClass, region: &ClassRegion) {
+    unsafe fn refill_class(&mut self, size_class: SizeClass, primary: &PrimaryAllocator) {
         let mut magazine = self.magazines.class(size_class);
-        self.classes[size_class.index()].refill(&mut magazine, region, self.heap_id, &mut self.rng);
+        self.classes[size_class.index()].refill(
+            &mut magazine,
+            primary,
+            size_class,
+            self.heap_id,
+            &mut self.rng,
+        );
     }
 
     /// Stage the free in the magazine; a full magazine spills back to the span bitmap, in bulk.
     #[inline(always)]
     pub unsafe fn dealloc_local(
         &mut self,
-        region: &ClassRegion,
+        primary: &PrimaryAllocator,
         size_class: SizeClass,
         pointer: *mut u8,
     ) {
         let mut magazine = self.magazines.class(size_class);
         if !magazine.try_push(pointer) {
-            self.classes[size_class.index()].flush_to_span(&mut magazine, region);
+            self.classes[size_class.index()].flush_to_span(&mut magazine, primary);
             // Flush drains to the low-water mark, so a slot is always free here.
             let pushed = magazine.try_push(pointer);
             debug_assert!(pushed, "magazine full immediately after flush");
@@ -103,17 +109,19 @@ impl Heap {
     }
 
     /// On thread exit, flush magazines back to their span bitmaps (still marked taken there), then abandon the spans.
-    pub unsafe fn abandon_all(&mut self, global_regions: &[ClassRegion; SIZE_CLASS_COUNT]) {
+    pub unsafe fn abandon_all(&mut self, primary: &PrimaryAllocator) {
         for class_index in 0..SIZE_CLASS_COUNT {
-            let global = &global_regions[class_index];
+            let size_class = SizeClass::from_raw(class_index as u8);
 
-            let mut magazine = self.magazines.class(SizeClass::from_raw(class_index as u8));
+            let mut magazine = self.magazines.class(size_class);
             while let Some(pointer) = magazine.pop() {
-                let span_node = global.span_for_pointer(pointer);
+                // SAFETY: magazine slots were drawn from spans, so the window exists.
+                let region = primary.window_for_pointer(pointer).unwrap_unchecked();
+                let span_node = region.span_for_pointer(pointer);
                 span_node.as_ref().value.dealloc_slot(pointer);
             }
 
-            self.classes[class_index].abandon_all(global);
+            self.classes[class_index].abandon_all(primary, size_class);
         }
     }
 }

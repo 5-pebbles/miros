@@ -6,7 +6,6 @@
 #![feature(type_changing_struct_update)]
 #![feature(thread_local)]
 #![feature(stmt_expr_attributes)]
-#![feature(maybe_uninit_array_assume_init)]
 #![feature(ptr_metadata)]
 #![allow(dead_code)]
 #![allow(suspicious_runtime_symbol_definitions)]

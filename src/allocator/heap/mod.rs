@@ -7,9 +7,7 @@ mod class_heap;
 pub mod heap;
 pub mod magazine;
 
-use super::{
-    global_class_regions, pseudorandom_bytes, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
-};
+use super::{primary, pseudorandom_bytes, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{allocator::heap::heap::Heap, libc::mem::mmap, page_size::round_up_to_page_size};
 
 /// This thread's heap, installed eagerly at thread start so the fast path is a single `%fs`-relative load with no init check.
@@ -56,7 +54,7 @@ pub unsafe fn abandon_heap() {
         return;
     };
 
-    storage.as_mut().abandon_all(global_class_regions());
+    storage.as_mut().abandon_all(primary());
 
     let mut pool = FREE_HEAP_LIST.lock().unwrap_unchecked();
     *(storage.as_ptr() as *mut Option<NonNull<Heap>>) = pool.0;
