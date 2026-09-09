@@ -70,6 +70,10 @@ const EXAMPLES: &[Example] = &[
         stem: "input_eof",
         flags: &[],
     },
+    Example {
+        stem: "malloc_grow",
+        flags: &[],
+    },
 ];
 
 pub fn run() {

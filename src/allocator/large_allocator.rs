@@ -1,7 +1,6 @@
-use core::ptr;
 use std::{
     alloc::Layout,
-    ptr::{null_mut, NonNull},
+    ptr::{self, null_mut, NonNull},
 };
 
 use super::{ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
@@ -14,10 +13,10 @@ use crate::{
     },
 };
 
-const CAPACITY: usize = 8;
+const CACHE_CAPACITY: usize = 8;
 
 type EntryIndex = u8;
-const _: () = assert!(CAPACITY <= EntryIndex::MAX as usize);
+const _: () = assert!(CACHE_CAPACITY <= EntryIndex::MAX as usize);
 
 pub struct LargeAllocator {
     metadata: MetadataAllocator<LinkedListNode<LargeRegion>>,
@@ -74,8 +73,8 @@ impl LargeAllocator {
                 mapped_bytes,
                 DATA_PAGE_PROTECTION,
                 ANONYMOUS_PRIVATE_MAP,
-                -1, /* file_descriptor */
-                0,  /* file_offset */
+                -1,
+                0,
             )
         };
         // The kernel returns `-errno` (a small negative) on failure; a valid mapping is always a positive address.
@@ -150,7 +149,7 @@ pub struct LargeRegion {
 }
 
 pub struct LargeCache {
-    entries: [LargeRegion; CAPACITY],
+    entries: [LargeRegion; CACHE_CAPACITY],
     entry_count: EntryIndex,
 }
 
@@ -161,7 +160,7 @@ impl LargeCache {
                 pointer: ptr::null_mut(),
                 size_in_bytes: 0,
                 zeroed: false,
-            }; CAPACITY],
+            }; CACHE_CAPACITY],
             entry_count: 0,
         }
     }
@@ -174,21 +173,22 @@ impl LargeCache {
             .filter(|(_, entry)| entry.size_in_bytes >= minimum_bytes)
             .min_by_key(|(_, entry)| entry.size_in_bytes)?;
 
-        let region = self.entries[index];
+        let region = *self.entries.get(index).unwrap();
         self.entry_count -= 1;
-        self.entries[index] = self.entries[self.entry_count as usize];
+        *self.entries.get_mut(index).unwrap() =
+            *self.entries.get(self.entry_count as usize).unwrap();
         Some(region)
     }
 
     /// Attempt to cache a freed region for reuse. Returns `true` if stored,
     /// `false` if the cache is full and the caller should unmap.
     pub fn park(&mut self, mut region: LargeRegion) -> bool {
-        if (self.entry_count as usize) >= CAPACITY {
+        if (self.entry_count as usize) >= CACHE_CAPACITY {
             return false;
         }
 
         region.zeroed = false;
-        self.entries[self.entry_count as usize] = region;
+        *self.entries.get_mut(self.entry_count as usize).unwrap() = region;
         self.entry_count += 1;
         true
     }

@@ -1,85 +1,95 @@
 use std::{
     alloc::Layout,
-    mem::MaybeUninit,
     ptr::{self, null_mut, NonNull},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Mutex,
+    },
 };
 
 use super::{
-    class_region::{ClassRegion, CLASS_REGION_SHIFT, CLASS_REGION_SIZE},
-    heap::get_heap,
+    class_window::ClassWindow,
+    heap::{get_heap, HeapId},
     large_allocator::LargeAllocator,
     size_classes::{SizeClass, SIZE_CLASS_COUNT},
+    span::Span,
+    window_directory::WindowDirectory,
     ANONYMOUS_PRIVATE_MAP, GUARD_PAGE_PROTECTION,
 };
-use crate::libc::mem::{mmap, munmap};
+use crate::{
+    libc::mem::{mmap, munmap},
+    utils::linked_list::{LinkedList, LinkedListNode},
+};
 
-const SUPER_REGION_WINDOW_COUNT: usize = SIZE_CLASS_COUNT.next_power_of_two();
-const SUPER_REGION_SIZE: usize = CLASS_REGION_SIZE * SUPER_REGION_WINDOW_COUNT;
-
-unsafe fn reserve_super_region() -> NonNull<u8> {
+/// Reserve PROT_NONE address space and trim it to an `alignment`-aligned mapping of `bytes`.
+/// `None` when the kernel refuses the mapping.
+unsafe fn reserve_aligned(bytes: usize, alignment: usize) -> Option<NonNull<u8>> {
     let raw = mmap(
         null_mut(),
-        SUPER_REGION_SIZE * 2,
+        bytes + alignment,
         GUARD_PAGE_PROTECTION,
         ANONYMOUS_PRIVATE_MAP,
         -1,
         0,
     );
-    assert!((raw as isize) > 0, "super-region reservation failed");
+    if (raw as isize) <= 0 {
+        return None;
+    }
 
     let raw_address = raw.addr();
-    let aligned_address = (raw_address + SUPER_REGION_SIZE - 1) & !(SUPER_REGION_SIZE - 1);
+    let aligned_address = (raw_address + alignment - 1) & !(alignment - 1);
     let leading_slack = aligned_address - raw_address;
-    let trailing_slack = SUPER_REGION_SIZE - leading_slack;
+    let trailing_slack = alignment - leading_slack;
 
     if leading_slack > 0 {
         munmap(raw, leading_slack);
     }
     if trailing_slack > 0 {
-        munmap(raw.add(leading_slack + SUPER_REGION_SIZE), trailing_slack);
+        munmap(raw.add(leading_slack + bytes), trailing_slack);
     }
 
-    let aligned = raw.add(leading_slack);
-    debug_assert!(aligned.addr() % SUPER_REGION_SIZE == 0);
-    NonNull::new_unchecked(aligned)
+    // SAFETY: the aligned address sits inside a mapping the kernel just returned, so it is non-null.
+    Some(NonNull::new_unchecked(raw.add(leading_slack)))
 }
 
-/// The shared half: every mutable field sits behind a lock, so threads route through `&self`.
+/// The shared half: every mutable field sits behind a lock or an atomic, so threads route through `&self`.
 pub struct PrimaryAllocator {
-    super_base: NonNull<u8>,
-    class_regions: [ClassRegion; SIZE_CLASS_COUNT],
+    window_directory: WindowDirectory,
+    /// Each class's newest window, where span carving starts. Replaced only by minting.
+    current_windows: [AtomicUsize; SIZE_CLASS_COUNT],
+    /// Orphaned spans pooled per class, mixing spans from every window of that class.
+    abandoned: [Mutex<LinkedList<Span>>; SIZE_CLASS_COUNT],
+    /// Serializes window minting only; span carving and routing stay lock-free.
+    growth: Mutex<()>,
     large_allocator: Mutex<LargeAllocator>,
     pseudorandom_bytes: u128,
 }
 
 impl PrimaryAllocator {
     pub unsafe fn new(pseudorandom_bytes: [u8; 16]) -> Self {
-        let super_base = reserve_super_region();
+        // Every class's first window comes from one reservation, so the common case never mints.
+        let bootstrap_base =
+            reserve_aligned(SIZE_CLASS_COUNT * ClassWindow::SIZE, ClassWindow::SIZE)
+                .expect("bootstrap window reservation failed");
 
-        let mut class_regions: [MaybeUninit<ClassRegion>; SIZE_CLASS_COUNT] =
-            [const { MaybeUninit::uninit() }; SIZE_CLASS_COUNT];
-
-        (0..SIZE_CLASS_COUNT).for_each(|class_index| {
+        let window_directory = WindowDirectory::new();
+        let current_windows = std::array::from_fn(|class_index| {
             let size_class = SizeClass::from_raw(class_index as u8);
-            let base = unsafe {
-                NonNull::new_unchecked(super_base.as_ptr().add(class_index * CLASS_REGION_SIZE))
-            };
-            class_regions[class_index].write(unsafe { ClassRegion::new(size_class, base) });
+            let base = bootstrap_base.byte_add(class_index * ClassWindow::SIZE);
+            let window = window_directory
+                .mint(size_class, base)
+                .expect("bootstrap window mint failed");
+            AtomicUsize::new(window as *const ClassWindow as usize)
         });
 
-        let class_regions = MaybeUninit::array_assume_init(class_regions);
-
         Self {
-            super_base,
-            class_regions,
+            window_directory,
+            current_windows,
+            abandoned: [const { Mutex::new(LinkedList::new()) }; SIZE_CLASS_COUNT],
+            growth: Mutex::new(()),
             large_allocator: Mutex::new(LargeAllocator::new()),
             pseudorandom_bytes: u128::from_ne_bytes(pseudorandom_bytes),
         }
-    }
-
-    pub fn class_regions(&self) -> &[ClassRegion; SIZE_CLASS_COUNT] {
-        &self.class_regions
     }
 
     pub fn pseudorandom_bytes(&self) -> u128 {
@@ -96,14 +106,7 @@ impl PrimaryAllocator {
 
     #[inline(always)]
     unsafe fn alloc_small(&self, size_class: SizeClass) -> Option<NonNull<u8>> {
-        get_heap()
-            .alloc_small(&self.class_regions, size_class)
-            .or_else(|| {
-                // Window exhausted: satisfy the request from the large path instead of failing.
-                let fallback_layout =
-                    Layout::from_size_align_unchecked(size_class.slot_size_in_bytes(), 1);
-                self.alloc_large(fallback_layout)
-            })
+        get_heap().alloc_small(self, size_class)
     }
 
     #[inline(always)]
@@ -139,8 +142,8 @@ impl PrimaryAllocator {
         if pointer.is_null() {
             return;
         }
-        match self.class_from_pointer(pointer) {
-            Some(size_class) => self.dealloc_small(pointer, size_class),
+        match self.window_for_pointer(pointer) {
+            Some(window) => self.dealloc_small(window, pointer),
             None => self.dealloc_large(pointer),
         }
     }
@@ -150,14 +153,13 @@ impl PrimaryAllocator {
     }
 
     #[inline(always)]
-    unsafe fn dealloc_small(&self, pointer: *mut u8, size_class: SizeClass) {
-        let region = &self.class_regions[size_class.index()];
-        let span_node = region.span_for_pointer(pointer);
+    unsafe fn dealloc_small(&self, window: &'static ClassWindow, pointer: *mut u8) {
+        let span_node = window.span_for_pointer(pointer);
         let span = &span_node.as_ref().value;
 
         let heap = get_heap();
         if span.owner() == heap.id() {
-            heap.dealloc_local(region, size_class, pointer);
+            heap.dealloc_local(self, window.size_class(), pointer);
         } else {
             span.remote_dealloc_slot(pointer);
         }
@@ -180,7 +182,8 @@ impl PrimaryAllocator {
             return None;
         }
 
-        let old_class = self.class_from_pointer(pointer);
+        let old_window = self.window_for_pointer(pointer);
+        let old_class = old_window.map(|window| window.size_class());
         let new_class = SizeClass::from_layout(new_size, 1);
 
         if old_class.is_some() && old_class == new_class {
@@ -209,22 +212,98 @@ impl PrimaryAllocator {
             old_class,
         );
 
-        match old_class {
-            Some(size_class) => self.dealloc_small(pointer, size_class),
+        match old_window {
+            Some(window) => self.dealloc_small(window, pointer),
             None => self.dealloc_large(pointer),
         }
         Some(new_pointer)
     }
 
+    /// The window containing `pointer`, or `None` when it is a large-path allocation.
     #[inline(always)]
-    fn class_from_pointer(&self, pointer: *mut u8) -> Option<SizeClass> {
-        let offset = pointer.addr().wrapping_sub(self.super_base.as_ptr().addr());
-        // One bound covers both the super-region edge and the unused padding windows past class 13.
-        if offset >= SIZE_CLASS_COUNT * CLASS_REGION_SIZE {
-            return None;
+    pub(super) fn window_for_pointer(&self, pointer: *mut u8) -> Option<&'static ClassWindow> {
+        self.window_directory.lookup(pointer)
+    }
+
+    #[inline(always)]
+    fn current_window(&self, size_class: SizeClass) -> &'static ClassWindow {
+        let address = self
+            .current_windows
+            .get(size_class.index())
+            .unwrap()
+            .load(Ordering::Acquire);
+        // SAFETY: set at init and only ever replaced with a newer live window, never null.
+        unsafe { &*(address as *const ClassWindow) }
+    }
+
+    /// Carve a fresh span from the class's current window, minting a successor when it is exhausted.
+    /// `None` only when the kernel refuses the reservation.
+    #[cold]
+    pub(super) unsafe fn create_span(
+        &self,
+        size_class: SizeClass,
+        owner: HeapId,
+    ) -> Option<NonNull<LinkedListNode<Span>>> {
+        let mut window = self.current_window(size_class);
+        loop {
+            if let Some(span_node) = window.create_span(owner) {
+                return Some(span_node);
+            }
+            window = self.mint_successor_window(size_class, window)?;
         }
-        let class_index = offset >> CLASS_REGION_SHIFT;
-        Some(SizeClass::from_raw(class_index as u8))
+    }
+
+    /// Replace the exhausted window with a fresh one. The re-check under the lock keeps concurrent exhaustion in the same class from minting twice.
+    /// `None` when the kernel refuses a mapping; a reservation whose mint failed stays mapped, which only matters at address-space exhaustion.
+    #[cold]
+    unsafe fn mint_successor_window(
+        &self,
+        size_class: SizeClass,
+        exhausted: &ClassWindow,
+    ) -> Option<&'static ClassWindow> {
+        let _guard = self.growth.lock().unwrap_unchecked();
+
+        let current = self.current_window(size_class);
+        if !ptr::eq(current, exhausted) {
+            // Another thread minted while we waited; the newer window has fresh space.
+            return Some(current);
+        }
+
+        let window_base = reserve_aligned(ClassWindow::SIZE, ClassWindow::SIZE)?;
+        let window = self.window_directory.mint(size_class, window_base)?;
+        self.current_windows
+            .get(size_class.index())
+            .unwrap()
+            .store(window as *const ClassWindow as usize, Ordering::Release);
+        Some(window)
+    }
+
+    /// Hand an exiting heap's per-class `list` to the abandoned pool, emptying it.
+    pub(super) unsafe fn abandon_list(&self, size_class: SizeClass, list: &mut LinkedList<Span>) {
+        self.abandoned
+            .get(size_class.index())
+            .unwrap()
+            .lock()
+            .unwrap_unchecked()
+            .prepend_adopt(list);
+    }
+
+    /// Claim one abandoned span for `new_owner`. Exactly one thread can claim any span.
+    pub(super) unsafe fn adopt_span(
+        &self,
+        size_class: SizeClass,
+        new_owner: HeapId,
+    ) -> Option<NonNull<LinkedListNode<Span>>> {
+        let span_node = self
+            .abandoned
+            .get(size_class.index())
+            .unwrap()
+            .lock()
+            .unwrap_unchecked()
+            .pop()?;
+
+        span_node.as_ref().value.set_owner(new_owner);
+        Some(span_node)
     }
 }
 

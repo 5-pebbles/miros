@@ -2,9 +2,10 @@ use std::ptr::NonNull;
 
 use crate::{
     allocator::{
-        class_region::ClassRegion,
-        heap::{heap::HeapId, magazine::Magazine},
+        heap::{magazine::Magazine, HeapId},
         non_crypto_rng::HeapRng,
+        primary::PrimaryAllocator,
+        size_classes::SizeClass,
         span::Span,
     },
     utils::linked_list::{LinkedList, LinkedListNode},
@@ -14,6 +15,9 @@ use crate::{
 pub(super) struct ThreadClassHeap {
     partial_spans: LinkedList<Span>,
     full_spans: LinkedList<Span>,
+    /// The one hot reserve span, pages still resident.
+    hot_reserve: Option<NonNull<LinkedListNode<Span>>>,
+    // Holds only spans whose pages are discarded.
     empty_spans: LinkedList<Span>,
 }
 
@@ -22,22 +26,25 @@ impl ThreadClassHeap {
         Self {
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
+            hot_reserve: None,
             empty_spans: LinkedList::new(),
         }
     }
 
     /// Refill `magazine` to capacity from this class's spans.
-    /// Returns early only when the waterfall is dry (the 16 GB window is exhausted).
+    /// Returns early only when the kernel refuses fresh address space.
     #[cold]
     pub(super) unsafe fn refill(
         &mut self,
         magazine: &mut Magazine,
-        global: &ClassRegion,
+        primary: &PrimaryAllocator,
+        size_class: SizeClass,
         owner: HeapId,
         random: &mut HeapRng,
     ) {
         while magazine.remaining_capacity() > 0 {
-            if self.partial_spans.is_empty() && !self.replenish_partial(global, owner) {
+            if self.partial_spans.is_empty() && !self.replenish_partial(primary, size_class, owner)
+            {
                 return;
             }
             let span_node = self.partial_spans.front().unwrap_unchecked();
@@ -62,8 +69,13 @@ impl ThreadClassHeap {
         }
     }
 
-    /// Ensure `partial_spans` is non-empty. `false` only when the 16 GB window is exhausted.
-    unsafe fn replenish_partial(&mut self, global: &ClassRegion, owner: HeapId) -> bool {
+    /// Ensure `partial_spans` is non-empty. `false` only when the kernel refuses fresh address space.
+    unsafe fn replenish_partial(
+        &mut self,
+        primary: &PrimaryAllocator,
+        size_class: SizeClass,
+        owner: HeapId,
+    ) -> bool {
         loop {
             if !self.partial_spans.is_empty() {
                 return true;
@@ -72,14 +84,13 @@ impl ThreadClassHeap {
             if self.reclaim_remote_frees() {
                 continue;
             }
-            if !self.empty_spans.is_empty() {
-                self.reactivate_span();
+            if self.reactivate_span() {
                 continue;
             }
-            if self.adopt_span(global, owner) {
+            if self.adopt_span(primary, size_class, owner) {
                 continue;
             }
-            match global.create_span(owner) {
+            match primary.create_span(size_class, owner) {
                 Some(span_node) => self.partial_spans.push(span_node),
                 None => return false,
             }
@@ -87,15 +98,21 @@ impl ThreadClassHeap {
     }
 
     /// Drain the magazine's overflow down to its low-water mark, returning slots to spans in bulk.
-    pub(super) unsafe fn flush_to_span(&mut self, magazine: &mut Magazine, region: &ClassRegion) {
+    pub(super) unsafe fn flush_to_span(
+        &mut self,
+        magazine: &mut Magazine,
+        primary: &PrimaryAllocator,
+    ) {
         while let Some(pointer) = magazine.pop_above_low_water() {
-            let span_node = region.span_for_pointer(pointer);
+            // SAFETY: magazine slots were drawn from spans, so the window exists.
+            let window = primary.window_for_pointer(pointer).unwrap_unchecked();
+            let span_node = window.span_for_pointer(pointer);
             self.dealloc_to_span(span_node, pointer);
         }
     }
 
     /// Return one slot to its span bitmap and fix up list membership.
-    pub(super) unsafe fn dealloc_to_span(
+    unsafe fn dealloc_to_span(
         &mut self,
         span_node: NonNull<LinkedListNode<Span>>,
         pointer: *mut u8,
@@ -149,9 +166,14 @@ impl ThreadClassHeap {
         made_progress
     }
 
-    /// Claim one span from the global abandoned pool, draining any frees it accumulated while orphaned.
-    unsafe fn adopt_span(&mut self, global: &ClassRegion, owner: HeapId) -> bool {
-        let span_node = match global.adopt_span(owner) {
+    /// Claim one abandoned span, draining any frees it accumulated while orphaned.
+    unsafe fn adopt_span(
+        &mut self,
+        primary: &PrimaryAllocator,
+        size_class: SizeClass,
+        owner: HeapId,
+    ) -> bool {
+        let span_node = match primary.adopt_span(size_class, owner) {
             Some(span_node) => span_node,
             None => return false,
         };
@@ -162,20 +184,29 @@ impl ThreadClassHeap {
         true
     }
 
-    pub(super) unsafe fn abandon_all(&mut self, global: &ClassRegion) {
-        global.abandon_list(&mut self.partial_spans);
-        global.abandon_list(&mut self.full_spans);
-        global.abandon_list(&mut self.empty_spans);
+    pub(super) unsafe fn abandon_all(&mut self, primary: &PrimaryAllocator, size_class: SizeClass) {
+        primary.abandon_list(size_class, &mut self.partial_spans);
+        primary.abandon_list(size_class, &mut self.full_spans);
+        primary.abandon_list(size_class, &mut self.empty_spans);
     }
 
-    unsafe fn reactivate_span(&mut self) {
-        let span_node = self.empty_spans.pop().unwrap_unchecked();
+    /// The reserve is the hot path; everything in `empty_spans` re-faults on reactivation.
+    unsafe fn reactivate_span(&mut self) -> bool {
+        let Some(span_node) = self.hot_reserve.take().or_else(|| self.empty_spans.pop()) else {
+            return false;
+        };
         span_node.as_ref().value.reinitialize();
         self.partial_spans.push(span_node);
+        true
     }
 
+    /// The first empty span becomes the hot reserve; the previous reserve is demoted and its pages discarded.
     unsafe fn release_empty_span(&mut self, span_node: NonNull<LinkedListNode<Span>>) {
-        // TODO: madvise(MADV_DONTNEED) the data pages; reactivate_span must then re-mprotect.
-        self.empty_spans.push(span_node);
+        let Some(demoted) = self.hot_reserve.replace(span_node) else {
+            return;
+        };
+
+        demoted.as_ref().value.discard_data_pages();
+        self.empty_spans.push(demoted);
     }
 }

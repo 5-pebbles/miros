@@ -9,28 +9,28 @@ const C_ABI_MIN_ALIGNMENT: usize = 16;
 pub struct SizeClass(u8);
 
 impl SizeClass {
-    /// Map an allocation request to the tightest size class whose slot satisfies both the requested `size` and `align`.
-    /// Returns `None` when the request exceeds [`MAX_SLOT_SIZE`].
+    /// `None` when the request exceeds [`MAX_SIZE_CLASS_SIZE`].
     ///
-    /// Because every class is a power of two, any slot >= `align` is naturally aligned.
-    /// We take `max(size, align, C_ABI_MIN_ALIGNMENT)` then round up to the next power of two.
+    /// Every class is a multiple of 16, so pow2 aligns up to 16 hold at every slot; a larger pow2 align holds iff it divides the slot size, since span bases are multiples of the pow2 span stride.
     #[inline(always)]
     pub fn from_layout(size: usize, align: usize) -> Option<Self> {
-        let effective_size = size.max(align).max(C_ABI_MIN_ALIGNMENT);
+        // Rust and C only produce pow2 aligns; the promotion is defensive.
+        let effective_align = align.next_power_of_two();
+        let effective_size = size.max(effective_align).max(C_ABI_MIN_ALIGNMENT);
         if effective_size > MAX_SIZE_CLASS_SIZE {
             return None;
         }
 
-        // Sizes at or below the minimum class all land in index 0.
-        // SAFETY: Only works as long as size classes are powers of two.
-        let minimum_slot_size = 1usize << SIZE_CLASS_BASE_EXPONENT;
-        let rounded = effective_size.next_power_of_two().max(minimum_slot_size);
+        let bucket_index = (effective_size - 1) / C_ABI_MIN_ALIGNMENT;
+        let mut class_index = *SIZE_CLASS_LOOKUP.get(bucket_index).unwrap() as usize;
 
-        // All classes are contiguous powers of two starting at BASE_EXPONENT,
-        // so trailing_zeros gives the exponent and subtracting the base gives the index.
-        let index = rounded.trailing_zeros() - SIZE_CLASS_BASE_EXPONENT;
-        debug_assert!((index as usize) < SIZE_CLASS_COUNT);
-        Some(SizeClass(index as u8))
+        if effective_align > C_ABI_MIN_ALIGNMENT {
+            // The largest class is a pow2 >= effective_align, so the scan stays inside the table.
+            while SIZE_CLASSES.get(class_index).unwrap().slot_size_in_bytes % effective_align != 0 {
+                class_index += 1;
+            }
+        }
+        Some(SizeClass(class_index as u8))
     }
 
     #[inline(always)]
@@ -44,8 +44,7 @@ impl SizeClass {
         self.0 as usize
     }
 
-    /// Spans pack contiguously: `span_length` is a power of two,
-    /// so the stride is exactly the span length and pointer-to-span stays a single shift.
+    /// The stride is the next pow2 at or above the span length; the padding inside it stays unmapped.
     pub const fn span_stride_shift(&self) -> u32 {
         self.span_length_in_bytes()
             .next_power_of_two()
@@ -58,8 +57,8 @@ impl SizeClass {
     }
 
     #[inline(always)]
-    pub const fn slot_shift(&self) -> u32 {
-        SIZE_CLASSES[self.0 as usize].slot_shift
+    pub const fn slot_index(&self, offset_into_span: usize) -> u16 {
+        SIZE_CLASSES[self.0 as usize].slot_index(offset_into_span)
     }
 
     #[inline(always)]
@@ -75,27 +74,37 @@ impl SizeClass {
 
 pub struct SizeClassInfo {
     pub(crate) slot_size_in_bytes: usize,
-    /// Allows shifting offset instead of an expensive div instruction.
-    // SAFETY: This only works as long as all size classes are powers of 2...
-    slot_shift: u32,
+    slot_reciprocal: u64,
     slots_per_span: u32,
     span_length_in_bytes: usize,
 }
 
+/// Exact for every offset whose product with the reciprocal error term stays below 2^64: span offsets are under 2^20 and the error term is under the slot size (at most 2^17), so the product is under 2^37.
+const fn reciprocal(divisor: usize) -> u64 {
+    let numerator = 1u128 << 64;
+    let divisor = divisor as u128;
+    ((numerator + divisor - 1) / divisor) as u64
+}
+
 impl SizeClassInfo {
     const fn new(slot_size_in_bytes: usize) -> Self {
-        assert!(slot_size_in_bytes.is_power_of_two());
+        // The multiple-of-16 property `from_layout`'s align shortcut depends on.
+        assert!(slot_size_in_bytes % C_ABI_MIN_ALIGNMENT == 0);
 
-        let slot_shift = slot_size_in_bytes.trailing_zeros();
         let slots_per_span =
             (MAX_SIZE_CLASS_SIZE / slot_size_in_bytes).clamp(8, MAX_SLOTS_PER_SPAN) as u32;
 
         Self {
             slot_size_in_bytes,
-            slot_shift,
+            slot_reciprocal: reciprocal(slot_size_in_bytes),
             slots_per_span,
             span_length_in_bytes: slot_size_in_bytes * slots_per_span as usize,
         }
+    }
+
+    #[inline(always)]
+    const fn slot_index(&self, offset_into_span: usize) -> u16 {
+        (((offset_into_span as u128) * (self.slot_reciprocal as u128)) >> 64) as u16
     }
 }
 
@@ -123,10 +132,25 @@ unsafe fn copy_slot_inline<const SIZE: usize>(source: *const u8, dest: *mut u8) 
 
 macro_rules! define_size_classes {
     ($($sizes:expr),+) => {
-        pub const SIZE_CLASS_BASE_EXPONENT: u32 = SIZE_CLASSES[0].slot_size_in_bytes.trailing_zeros();
         pub const MAX_SIZE_CLASS_SIZE: usize = define_size_classes!(@last $($sizes),+);
         pub const SIZE_CLASS_COUNT: usize = [$($sizes),+].len();
         pub const SIZE_CLASSES: &[SizeClassInfo; SIZE_CLASS_COUNT] = &[$(SizeClassInfo::new($sizes)),+];
+
+        /// Bucket `b` covers request sizes in `(b * 16, b * 16 + 16]` and stores the tightest class covering them.
+        pub const SIZE_CLASS_LOOKUP: [u8; MAX_SIZE_CLASS_SIZE / C_ABI_MIN_ALIGNMENT] = {
+            let mut table = [0u8; MAX_SIZE_CLASS_SIZE / C_ABI_MIN_ALIGNMENT];
+            let mut class_index = 0usize;
+            let mut bucket = 0usize;
+            while bucket < table.len() {
+                // A slot above the bucket floor covers it: slots are multiples of 16 and the bucket's top is floor + 16.
+                while SIZE_CLASSES[class_index].slot_size_in_bytes <= bucket * C_ABI_MIN_ALIGNMENT {
+                    class_index += 1;
+                }
+                table[bucket] = class_index as u8;
+                bucket += 1;
+            }
+            table
+        };
 
         impl SizeClass {
             /// Copy exactly one slot's worth of bytes from `source` to `dest`.
@@ -152,6 +176,9 @@ macro_rules! define_size_classes {
     };
 }
 
+// 48 classes; the per-thread magazine pointer array (~6 KB) caps the count.
 define_size_classes!(
-    16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072
+    16, 32, 48, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 448, 512, 640, 768, 896, 1024,
+    1280, 1536, 1792, 2048, 2560, 3072, 3584, 4096, 5120, 6144, 7168, 8192, 10240, 12288, 14336,
+    16384, 20480, 24576, 28672, 32768, 40960, 49152, 57344, 65536, 81920, 98304, 114688, 131072
 );

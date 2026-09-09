@@ -22,13 +22,13 @@ pub struct MagazineLayout {
 }
 
 impl MagazineLayout {
-    const fn magazine_capacity(slot_size_in_bytes: usize) -> usize {
+    const fn capacity_for(slot_size_in_bytes: usize) -> usize {
         (MAX_MAGAZINE_BYTES / slot_size_in_bytes)
             .clamp(MIN_MAGAZINE_CAPACITY, MAX_MAGAZINE_CAPACITY)
     }
 
     /// Refill trigger; lower mark -> larger batches, fewer span queries.
-    const fn magazine_low_water(capacity: u16) -> u16 {
+    const fn low_water_for(capacity: u16) -> u16 {
         // TODO: Arbitrary fraction for now.
         capacity / 4
     }
@@ -43,8 +43,8 @@ impl MagazineLayout {
         let mut offset: u16 = 0;
         let mut index = 0;
         while index < SIZE_CLASS_COUNT {
-            let capacity = Self::magazine_capacity(SIZE_CLASSES[index].slot_size_in_bytes) as u16;
-            let low_water = Self::magazine_low_water(capacity);
+            let capacity = Self::capacity_for(SIZE_CLASSES[index].slot_size_in_bytes) as u16;
+            let low_water = Self::low_water_for(capacity);
             layout[index] = MagazineLayout {
                 capacity,
                 low_water,
@@ -112,7 +112,7 @@ impl Magazines {
 }
 
 pub(crate) struct Magazine<'a> {
-    // SAFETY: Internally we have to make sure every pushed pointer in slots `[0..count)` are non-null.
+    // Invariant: slots in `[0..count)` are non-null.
     view: &'a mut [*mut u8],
     count: &'a mut u16,
     low_water: u16,
@@ -180,10 +180,8 @@ impl<'a> Magazine<'a> {
     #[inline(always)]
     pub fn refill(&mut self, claimed: impl Iterator<Item = *mut u8>) {
         for pointer in claimed {
-            unsafe {
-                *self.view.get_unchecked_mut(*self.count as usize) = pointer;
-            }
-            *self.count += 1;
+            let pushed = self.try_push(pointer);
+            debug_assert!(pushed, "claimed slots exceed magazine capacity");
         }
     }
 }
