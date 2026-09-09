@@ -102,8 +102,8 @@ impl ThreadClassHeap {
     ) {
         while let Some(pointer) = magazine.pop_above_low_water() {
             // SAFETY: magazine slots were drawn from spans, so the window exists.
-            let region = primary.window_for_pointer(pointer).unwrap_unchecked();
-            let span_node = region.span_for_pointer(pointer);
+            let window = primary.window_for_pointer(pointer).unwrap_unchecked();
+            let span_node = window.span_for_pointer(pointer);
             self.dealloc_to_span(span_node, pointer);
         }
     }

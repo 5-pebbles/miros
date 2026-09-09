@@ -1,4 +1,4 @@
-mod class_region;
+mod class_window;
 mod heap;
 mod large_allocator;
 mod non_crypto_rng;

@@ -11,13 +11,9 @@ use crate::{
     utils::linked_list::LinkedListNode,
 };
 
-/// Log2 of the per-window size. 2^34 = 16 GB, the granularity at which a class grows.
-pub(super) const CLASS_REGION_SHIFT: u32 = 34;
-pub(super) const CLASS_REGION_SIZE: usize = 1 << CLASS_REGION_SHIFT;
-
 /// One class's slice of address space: a 16 GB window plus its span metadata.
 /// Lives inside a `WindowDirectory` slot; `base` doubles as the publication flag.
-pub struct ClassRegion {
+pub struct ClassWindow {
     /// Zero until `publish` runs, which is why an empty directory slot reads as a miss.
     base: AtomicUsize,
     size_class: SizeClass,
@@ -28,12 +24,16 @@ pub struct ClassRegion {
     span_cursor: AtomicUsize,
 }
 
-impl ClassRegion {
+impl ClassWindow {
+    /// Log2 of the window size. 2^34 = 16 GB, the granularity at which a class grows.
+    pub const SIZE_SHIFT: u32 = 34;
+    pub const SIZE: usize = 1 << Self::SIZE_SHIFT;
+
     /// `None` when the kernel refuses the metadata mapping. `base` stays unpublished.
     pub(super) unsafe fn new(size_class: SizeClass) -> Option<Self> {
         let span_stride_shift = size_class.span_stride_shift();
 
-        let max_spans = CLASS_REGION_SIZE >> span_stride_shift;
+        let max_spans = Self::SIZE >> span_stride_shift;
         // One inline node per span; NORESERVE keeps the range virtual until a span faults its page in.
         let metadata_byte_count = max_spans * size_of::<LinkedListNode<Span>>();
         let metadata = mmap(
@@ -57,7 +57,7 @@ impl ClassRegion {
         })
     }
 
-    /// The mint's last write: the `Release` store pairs with `lookup`'s `Acquire` load, so a reader that sees a nonzero base sees the whole region.
+    /// The mint's last write: the `Release` store pairs with `lookup`'s `Acquire` load, so a reader that sees a nonzero base sees the whole window.
     pub(super) fn publish(&self, base: NonNull<u8>) {
         self.base.store(base.addr().get(), Ordering::Release);
     }
@@ -76,7 +76,7 @@ impl ClassRegion {
         let offset = pointer.addr() - self.base.load(Ordering::Relaxed);
         let span_number = offset >> self.span_stride_shift;
         debug_assert!(
-            span_number < CLASS_REGION_SIZE >> self.span_stride_shift,
+            span_number < Self::SIZE >> self.span_stride_shift,
             "span number exceeds window capacity"
         );
 
@@ -99,7 +99,7 @@ impl ClassRegion {
             .span_cursor
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |cursor| {
                 let next = cursor + padded_stride;
-                (next <= CLASS_REGION_SIZE).then_some(next)
+                (next <= Self::SIZE).then_some(next)
             })
             .ok()?;
 
@@ -114,7 +114,7 @@ impl ClassRegion {
             DATA_PAGE_PROTECTION,
         );
 
-        // Span N's node lives at a fixed offset in the metadata region;
+        // Span N's node lives at a fixed offset in the metadata array;
         // the write faults its backing page in on first use.
         let span_node = self.metadata_base.add(span_number);
         ptr::write(

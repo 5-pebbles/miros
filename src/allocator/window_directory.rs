@@ -4,29 +4,27 @@ use std::{
 };
 
 use super::{
-    class_region::{ClassRegion, CLASS_REGION_SHIFT},
-    size_classes::SizeClass,
-    ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
+    class_window::ClassWindow, size_classes::SizeClass, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION,
 };
 use crate::libc::mem::mmap;
 
-/// One slot per 16 GB slice of the 47-bit user address space, indexed by `address >> 34`.
-/// All of miros's mappings stay below bit 47: unhinted mmaps on a 5-level-paging kernel still default to the 47-bit task size, and the directory bound-checks anyway.
-const WINDOW_ENTRY_COUNT: usize = 1 << (47 - CLASS_REGION_SHIFT);
-
 /// Routes a pointer to its class window. Windows are 16 GB-aligned and 16 GB-sized, so the window number is the pointer's address shifted down, and one direct load resolves it.
-/// Each slot is the window's `ClassRegion` itself, so the lookup's one load also fixes the region's fields.
+/// Each slot is the `ClassWindow` itself, so the lookup's one load also fixes the window's fields.
 ///
 /// A slot is minted under the allocator's growth lock. Nothing can read it during the mint: a reader only probes the slot of the slice its pointer lives in, the window's own reservation blocks every other mapping from that slice, and none of its slots have been handed out yet.
 /// `publish` is therefore the only ordering the free path ever depends on.
 pub(super) struct WindowDirectory {
-    slots: NonNull<ClassRegion>,
+    slots: NonNull<ClassWindow>,
 }
 
 impl WindowDirectory {
+    /// One slot per 16 GB slice of the 47-bit user address space, indexed by `address >> 34`.
+    /// All of miros's mappings stay below bit 47: unhinted mmaps on a 5-level-paging kernel still default to the 47-bit task size, and the directory bound-checks anyway.
+    const SLOT_COUNT: usize = 1 << (47 - ClassWindow::SIZE_SHIFT);
+
     /// The slot array is kernel-zeroed, so every base reads 0 and every lookup misses.
     pub(super) unsafe fn new() -> Self {
-        let directory_bytes = WINDOW_ENTRY_COUNT * size_of::<ClassRegion>();
+        let directory_bytes = Self::SLOT_COUNT * size_of::<ClassWindow>();
         let slots = mmap(
             null_mut(),
             directory_bytes,
@@ -36,7 +34,7 @@ impl WindowDirectory {
             0,
         );
         let slots = (slots as isize > 0)
-            .then(|| slots as *mut ClassRegion)
+            .then(|| slots as *mut ClassWindow)
             .expect("window directory mmap failed");
         Self {
             slots: NonNull::new_unchecked(slots),
@@ -50,24 +48,24 @@ impl WindowDirectory {
         &self,
         size_class: SizeClass,
         base: NonNull<u8>,
-    ) -> Option<&'static ClassRegion> {
-        let index = base.addr().get() >> CLASS_REGION_SHIFT;
-        if index >= WINDOW_ENTRY_COUNT {
+    ) -> Option<&'static ClassWindow> {
+        let index = base.addr().get() >> ClassWindow::SIZE_SHIFT;
+        if index >= Self::SLOT_COUNT {
             return None;
         }
 
         let slot = self.slots.as_ptr().add(index);
-        let region = ClassRegion::new(size_class)?;
-        ptr::write(slot, region);
+        let window = ClassWindow::new(size_class)?;
+        ptr::write(slot, window);
         (*slot).publish(base);
         Some(&*slot)
     }
 
     /// The window containing `pointer`, or `None` when it lies outside every class window.
     #[inline(always)]
-    pub(super) fn lookup(&self, pointer: *const u8) -> Option<&'static ClassRegion> {
-        let index = pointer.addr() >> CLASS_REGION_SHIFT;
-        if index >= WINDOW_ENTRY_COUNT {
+    pub(super) fn lookup(&self, pointer: *const u8) -> Option<&'static ClassWindow> {
+        let index = pointer.addr() >> ClassWindow::SIZE_SHIFT;
+        if index >= Self::SLOT_COUNT {
             return None;
         }
 

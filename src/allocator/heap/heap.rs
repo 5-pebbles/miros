@@ -116,8 +116,8 @@ impl Heap {
             let mut magazine = self.magazines.class(size_class);
             while let Some(pointer) = magazine.pop() {
                 // SAFETY: magazine slots were drawn from spans, so the window exists.
-                let region = primary.window_for_pointer(pointer).unwrap_unchecked();
-                let span_node = region.span_for_pointer(pointer);
+                let window = primary.window_for_pointer(pointer).unwrap_unchecked();
+                let span_node = window.span_for_pointer(pointer);
                 span_node.as_ref().value.dealloc_slot(pointer);
             }
 

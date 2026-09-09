@@ -8,7 +8,7 @@ use std::{
 };
 
 use super::{
-    class_region::{ClassRegion, CLASS_REGION_SIZE},
+    class_window::ClassWindow,
     heap::{get_heap, heap::HeapId},
     large_allocator::LargeAllocator,
     size_classes::{SizeClass, SIZE_CLASS_COUNT},
@@ -21,10 +21,7 @@ use crate::{
     utils::linked_list::{LinkedList, LinkedListNode},
 };
 
-/// Every class's first window comes from one reservation, so the common case never mints.
-const BOOTSTRAP_WINDOW_COUNT: usize = SIZE_CLASS_COUNT;
-
-/// Reserve PROT_NONE address space and trim it to an `alignment`-aligned region of `bytes`.
+/// Reserve PROT_NONE address space and trim it to an `alignment`-aligned mapping of `bytes`.
 /// `None` when the kernel refuses the mapping.
 unsafe fn reserve_aligned(bytes: usize, alignment: usize) -> Option<NonNull<u8>> {
     let raw = mmap(
@@ -70,20 +67,19 @@ pub struct PrimaryAllocator {
 
 impl PrimaryAllocator {
     pub unsafe fn new(pseudorandom_bytes: [u8; 16]) -> Self {
-        let bootstrap_base = reserve_aligned(
-            BOOTSTRAP_WINDOW_COUNT * CLASS_REGION_SIZE,
-            CLASS_REGION_SIZE,
-        )
-        .expect("bootstrap window reservation failed");
+        // Every class's first window comes from one reservation, so the common case never mints.
+        let bootstrap_base =
+            reserve_aligned(SIZE_CLASS_COUNT * ClassWindow::SIZE, ClassWindow::SIZE)
+                .expect("bootstrap window reservation failed");
 
         let window_directory = WindowDirectory::new();
         let current_windows = std::array::from_fn(|class_index| {
             let size_class = SizeClass::from_raw(class_index as u8);
-            let base = bootstrap_base.byte_add(class_index * CLASS_REGION_SIZE);
-            let region = window_directory
+            let base = bootstrap_base.byte_add(class_index * ClassWindow::SIZE);
+            let window = window_directory
                 .mint(size_class, base)
                 .expect("bootstrap window mint failed");
-            AtomicUsize::new(region as *const ClassRegion as usize)
+            AtomicUsize::new(window as *const ClassWindow as usize)
         });
 
         Self {
@@ -147,7 +143,7 @@ impl PrimaryAllocator {
             return;
         }
         match self.window_for_pointer(pointer) {
-            Some(region) => self.dealloc_small(region, pointer),
+            Some(window) => self.dealloc_small(window, pointer),
             None => self.dealloc_large(pointer),
         }
     }
@@ -157,13 +153,13 @@ impl PrimaryAllocator {
     }
 
     #[inline(always)]
-    unsafe fn dealloc_small(&self, region: &'static ClassRegion, pointer: *mut u8) {
-        let span_node = region.span_for_pointer(pointer);
+    unsafe fn dealloc_small(&self, window: &'static ClassWindow, pointer: *mut u8) {
+        let span_node = window.span_for_pointer(pointer);
         let span = &span_node.as_ref().value;
 
         let heap = get_heap();
         if span.owner() == heap.id() {
-            heap.dealloc_local(self, region.size_class(), pointer);
+            heap.dealloc_local(self, window.size_class(), pointer);
         } else {
             span.remote_dealloc_slot(pointer);
         }
@@ -186,8 +182,8 @@ impl PrimaryAllocator {
             return None;
         }
 
-        let old_region = self.window_for_pointer(pointer);
-        let old_class = old_region.map(|region| region.size_class());
+        let old_window = self.window_for_pointer(pointer);
+        let old_class = old_window.map(|window| window.size_class());
         let new_class = SizeClass::from_layout(new_size, 1);
 
         if old_class.is_some() && old_class == new_class {
@@ -216,8 +212,8 @@ impl PrimaryAllocator {
             old_class,
         );
 
-        match old_region {
-            Some(region) => self.dealloc_small(region, pointer),
+        match old_window {
+            Some(window) => self.dealloc_small(window, pointer),
             None => self.dealloc_large(pointer),
         }
         Some(new_pointer)
@@ -225,15 +221,15 @@ impl PrimaryAllocator {
 
     /// The window containing `pointer`, or `None` when it is a large-path allocation.
     #[inline(always)]
-    pub(super) fn window_for_pointer(&self, pointer: *mut u8) -> Option<&'static ClassRegion> {
+    pub(super) fn window_for_pointer(&self, pointer: *mut u8) -> Option<&'static ClassWindow> {
         self.window_directory.lookup(pointer)
     }
 
     #[inline(always)]
-    fn current_window(&self, size_class: SizeClass) -> &'static ClassRegion {
+    fn current_window(&self, size_class: SizeClass) -> &'static ClassWindow {
         let address = self.current_windows[size_class.index()].load(Ordering::Acquire);
         // SAFETY: set at init and only ever replaced with a newer live window, never null.
-        unsafe { &*(address as *const ClassRegion) }
+        unsafe { &*(address as *const ClassWindow) }
     }
 
     /// Carve a fresh span from the class's current window, minting a successor when it is exhausted.
@@ -259,8 +255,8 @@ impl PrimaryAllocator {
     unsafe fn mint_successor_window(
         &self,
         size_class: SizeClass,
-        exhausted: &ClassRegion,
-    ) -> Option<&'static ClassRegion> {
+        exhausted: &ClassWindow,
+    ) -> Option<&'static ClassWindow> {
         let _guard = self.growth.lock().unwrap_unchecked();
 
         let current = self.current_window(size_class);
@@ -269,11 +265,11 @@ impl PrimaryAllocator {
             return Some(current);
         }
 
-        let window_base = reserve_aligned(CLASS_REGION_SIZE, CLASS_REGION_SIZE)?;
-        let region = self.window_directory.mint(size_class, window_base)?;
+        let window_base = reserve_aligned(ClassWindow::SIZE, ClassWindow::SIZE)?;
+        let window = self.window_directory.mint(size_class, window_base)?;
         self.current_windows[size_class.index()]
-            .store(region as *const ClassRegion as usize, Ordering::Release);
-        Some(region)
+            .store(window as *const ClassWindow as usize, Ordering::Release);
+        Some(window)
     }
 
     /// Hand an exiting heap's per-class `list` to the abandoned pool, emptying it.
