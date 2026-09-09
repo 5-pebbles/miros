@@ -2,7 +2,7 @@ use std::ptr::NonNull;
 
 use crate::{
     allocator::{
-        heap::{heap::HeapId, magazine::Magazine},
+        heap::{magazine::Magazine, HeapId},
         non_crypto_rng::HeapRng,
         primary::PrimaryAllocator,
         size_classes::SizeClass,
@@ -16,7 +16,7 @@ pub(super) struct ThreadClassHeap {
     partial_spans: LinkedList<Span>,
     full_spans: LinkedList<Span>,
     /// The one hot reserve span, pages still resident.
-    empty_reserved_for_reuse: Option<NonNull<LinkedListNode<Span>>>,
+    hot_reserve: Option<NonNull<LinkedListNode<Span>>>,
     // Holds only spans whose pages are discarded.
     empty_spans: LinkedList<Span>,
 }
@@ -26,7 +26,7 @@ impl ThreadClassHeap {
         Self {
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
-            empty_reserved_for_reuse: None,
+            hot_reserve: None,
             empty_spans: LinkedList::new(),
         }
     }
@@ -112,7 +112,7 @@ impl ThreadClassHeap {
     }
 
     /// Return one slot to its span bitmap and fix up list membership.
-    pub(super) unsafe fn dealloc_to_span(
+    unsafe fn dealloc_to_span(
         &mut self,
         span_node: NonNull<LinkedListNode<Span>>,
         pointer: *mut u8,
@@ -192,11 +192,7 @@ impl ThreadClassHeap {
 
     /// The reserve is the hot path; everything in `empty_spans` re-faults on reactivation.
     unsafe fn reactivate_span(&mut self) -> bool {
-        let Some(span_node) = self
-            .empty_reserved_for_reuse
-            .take()
-            .or_else(|| self.empty_spans.pop())
-        else {
+        let Some(span_node) = self.hot_reserve.take().or_else(|| self.empty_spans.pop()) else {
             return false;
         };
         span_node.as_ref().value.reinitialize();
@@ -206,7 +202,7 @@ impl ThreadClassHeap {
 
     /// The first empty span becomes the hot reserve; the previous reserve is demoted and its pages discarded.
     unsafe fn release_empty_span(&mut self, span_node: NonNull<LinkedListNode<Span>>) {
-        let Some(demoted) = self.empty_reserved_for_reuse.replace(span_node) else {
+        let Some(demoted) = self.hot_reserve.replace(span_node) else {
             return;
         };
 

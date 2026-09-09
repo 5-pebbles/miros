@@ -15,7 +15,7 @@ pub const MAX_SLOTS_PER_SPAN: usize = BITMAP_WORD_COUNT * BitmapWord::BITS as us
 pub type SlotIndex = u16;
 const _: () = assert!(MAX_SLOTS_PER_SPAN <= SlotIndex::MAX as usize);
 
-fn word_and_bit(slot_index: u16) -> (usize, usize) {
+fn word_and_bit(slot_index: SlotIndex) -> (usize, usize) {
     (
         slot_index as usize / BitmapWord::BITS as usize,
         slot_index as usize % BitmapWord::BITS as usize,
@@ -36,12 +36,13 @@ impl Occupancy<BitmapWord> {
 
         let mut bitmap = [0; BITMAP_WORD_COUNT];
         // Out-of-range words pre-marked full; the partial word keeps its low slots free.
-        bitmap[full_words..BITMAP_WORD_COUNT]
-            .iter_mut()
-            .for_each(|word| *word = BitmapWord::MAX);
         bitmap
-            .get_mut(full_words)
-            .map(|word| *word = BitmapWord::MAX << trailing_bits);
+            .get_mut(full_words..BITMAP_WORD_COUNT)
+            .unwrap()
+            .fill(BitmapWord::MAX);
+        if let Some(word) = bitmap.get_mut(full_words) {
+            *word = BitmapWord::MAX << trailing_bits;
+        }
 
         // `checked_shl` yields 0 when slots fill every word exactly (live_words == 64).
         let live_words = full_words + (trailing_bits > 0) as usize;
@@ -65,7 +66,7 @@ impl Occupancy<BitmapWord> {
             .wrapping_add(free_words.rotate_right(word_rotation).trailing_zeros())
             & 63) as usize;
 
-        let free = !self.bitmap[word_index];
+        let free = !self.bitmap.get(word_index).unwrap();
         debug_assert_ne!(free, 0, "summary clear but word is full");
 
         // Whole word if it fits in `max`; else a random window: rotate, take the lowest `max` set bits (PDEP), rotate back.
@@ -78,17 +79,17 @@ impl Occupancy<BitmapWord> {
             window.rotate_left(bit_rotation)
         };
 
-        self.bitmap[word_index] |= claimed;
-        if self.bitmap[word_index] == BitmapWord::MAX {
-            self.summary |= (1 as BitmapWord) << word_index;
+        *self.bitmap.get_mut(word_index).unwrap() |= claimed;
+        if *self.bitmap.get(word_index).unwrap() == BitmapWord::MAX {
+            self.summary |= 1 << word_index;
         }
         Some((word_index, claimed))
     }
 
     pub fn release_slot(&mut self, slot_index: SlotIndex) {
         let (word, bit) = word_and_bit(slot_index);
-        self.bitmap[word] &= !((1 as BitmapWord) << bit);
-        self.summary &= !((1 as BitmapWord) << word);
+        *self.bitmap.get_mut(word).unwrap() &= !(1 << bit);
+        self.summary &= !(1 << word);
     }
 
     pub fn release_slots_by_word(&mut self, word_index: usize, freed: BitmapWord) {
@@ -96,16 +97,16 @@ impl Occupancy<BitmapWord> {
             return;
         }
         assert!(
-            freed & !self.bitmap[word_index] == 0,
+            freed & !self.bitmap.get(word_index).unwrap() == 0,
             "remote free of an unallocated slot (double-free or wild-free)"
         );
-        self.bitmap[word_index] &= !freed;
+        *self.bitmap.get_mut(word_index).unwrap() &= !freed;
         self.summary &= !(1 << word_index);
     }
 
     pub fn is_slot_occupied(&self, slot_index: SlotIndex) -> bool {
         let (word, bit) = word_and_bit(slot_index);
-        self.bitmap[word] & ((1 as BitmapWord) << bit) != 0
+        self.bitmap.get(word).unwrap() & (1 << bit) != 0
     }
 }
 
@@ -121,10 +122,12 @@ impl Occupancy<Atomic<BitmapWord>> {
     pub unsafe fn remote_dealloc_slot(&self, slot_index: SlotIndex) {
         let (word, bit) = word_and_bit(slot_index);
 
-        self.bitmap[word].fetch_or((1 as BitmapWord) << bit, Ordering::Release);
+        self.bitmap
+            .get(word)
+            .unwrap()
+            .fetch_or(1 << bit, Ordering::Release);
         // Summary written after the word so an observed summary bit implies the word is visible.
-        self.summary
-            .fetch_or((1 as BitmapWord) << word, Ordering::Release);
+        self.summary.fetch_or(1 << word, Ordering::Release);
     }
 
     pub fn has_remote_frees(&self) -> bool {
@@ -140,7 +143,11 @@ impl Occupancy<Atomic<BitmapWord>> {
             let word_index = pending_words.trailing_zeros() as usize;
             pending_words &= pending_words - 1;
 
-            let word = self.bitmap[word_index].swap(0, Ordering::Acquire);
+            let word = self
+                .bitmap
+                .get(word_index)
+                .unwrap()
+                .swap(0, Ordering::Acquire);
             Some((word_index, word))
         })
     }

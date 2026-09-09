@@ -7,7 +7,7 @@ pub use occupancy::{BitmapWord, MAX_SLOTS_PER_SPAN};
 use super::size_classes::SizeClass;
 use crate::{
     allocator::{
-        heap::heap::{AtomicHeapId, HeapId},
+        heap::{AtomicHeapId, HeapId},
         span::occupancy::{LocalOccupancy, RemoteOccupancy, SlotIndex},
     },
     libc::mem::madvise,

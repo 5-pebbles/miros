@@ -6,7 +6,7 @@ use std::{
 
 use super::{size_classes::SizeClass, span::Span, ANONYMOUS_PRIVATE_MAP, DATA_PAGE_PROTECTION};
 use crate::{
-    allocator::heap::heap::HeapId,
+    allocator::heap::HeapId,
     libc::mem::{mmap, mprotect},
     utils::linked_list::LinkedListNode,
 };
@@ -114,8 +114,8 @@ impl ClassWindow {
             DATA_PAGE_PROTECTION,
         );
 
-        // Span N's node lives at a fixed offset in the metadata array;
-        // the write faults its backing page in on first use.
+        // Span N's node lives at a fixed offset in the metadata array.
+        // The write faults its backing page in on first use.
         let span_node = self.metadata_base.add(span_number);
         ptr::write(
             span_node.as_ptr(),

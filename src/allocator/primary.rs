@@ -9,7 +9,7 @@ use std::{
 
 use super::{
     class_window::ClassWindow,
-    heap::{get_heap, heap::HeapId},
+    heap::{get_heap, HeapId},
     large_allocator::LargeAllocator,
     size_classes::{SizeClass, SIZE_CLASS_COUNT},
     span::Span,
@@ -227,7 +227,11 @@ impl PrimaryAllocator {
 
     #[inline(always)]
     fn current_window(&self, size_class: SizeClass) -> &'static ClassWindow {
-        let address = self.current_windows[size_class.index()].load(Ordering::Acquire);
+        let address = self
+            .current_windows
+            .get(size_class.index())
+            .unwrap()
+            .load(Ordering::Acquire);
         // SAFETY: set at init and only ever replaced with a newer live window, never null.
         unsafe { &*(address as *const ClassWindow) }
     }
@@ -267,14 +271,18 @@ impl PrimaryAllocator {
 
         let window_base = reserve_aligned(ClassWindow::SIZE, ClassWindow::SIZE)?;
         let window = self.window_directory.mint(size_class, window_base)?;
-        self.current_windows[size_class.index()]
+        self.current_windows
+            .get(size_class.index())
+            .unwrap()
             .store(window as *const ClassWindow as usize, Ordering::Release);
         Some(window)
     }
 
     /// Hand an exiting heap's per-class `list` to the abandoned pool, emptying it.
     pub(super) unsafe fn abandon_list(&self, size_class: SizeClass, list: &mut LinkedList<Span>) {
-        self.abandoned[size_class.index()]
+        self.abandoned
+            .get(size_class.index())
+            .unwrap()
             .lock()
             .unwrap_unchecked()
             .prepend_adopt(list);
@@ -286,7 +294,10 @@ impl PrimaryAllocator {
         size_class: SizeClass,
         new_owner: HeapId,
     ) -> Option<NonNull<LinkedListNode<Span>>> {
-        let span_node = self.abandoned[size_class.index()]
+        let span_node = self
+            .abandoned
+            .get(size_class.index())
+            .unwrap()
             .lock()
             .unwrap_unchecked()
             .pop()?;
