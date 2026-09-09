@@ -15,6 +15,9 @@ use crate::{
 pub(super) struct ThreadClassHeap {
     partial_spans: LinkedList<Span>,
     full_spans: LinkedList<Span>,
+    /// The one hot reserve span, pages still resident.
+    empty_reserved_for_reuse: Option<NonNull<LinkedListNode<Span>>>,
+    // Holds only spans whose pages are discarded.
     empty_spans: LinkedList<Span>,
 }
 
@@ -23,6 +26,7 @@ impl ThreadClassHeap {
         Self {
             partial_spans: LinkedList::new(),
             full_spans: LinkedList::new(),
+            empty_reserved_for_reuse: None,
             empty_spans: LinkedList::new(),
         }
     }
@@ -80,8 +84,7 @@ impl ThreadClassHeap {
             if self.reclaim_remote_frees() {
                 continue;
             }
-            if !self.empty_spans.is_empty() {
-                self.reactivate_span();
+            if self.reactivate_span() {
                 continue;
             }
             if self.adopt_span(primary, size_class, owner) {
@@ -187,14 +190,27 @@ impl ThreadClassHeap {
         primary.abandon_list(size_class, &mut self.empty_spans);
     }
 
-    unsafe fn reactivate_span(&mut self) {
-        let span_node = self.empty_spans.pop().unwrap_unchecked();
+    /// The reserve is the hot path; everything in `empty_spans` re-faults on reactivation.
+    unsafe fn reactivate_span(&mut self) -> bool {
+        let Some(span_node) = self
+            .empty_reserved_for_reuse
+            .take()
+            .or_else(|| self.empty_spans.pop())
+        else {
+            return false;
+        };
         span_node.as_ref().value.reinitialize();
         self.partial_spans.push(span_node);
+        true
     }
 
+    /// The first empty span becomes the hot reserve; the previous reserve is demoted and its pages discarded.
     unsafe fn release_empty_span(&mut self, span_node: NonNull<LinkedListNode<Span>>) {
-        // TODO: madvise(MADV_DONTNEED) the data pages; reactivate_span must then re-mprotect.
-        self.empty_spans.push(span_node);
+        let Some(demoted) = self.empty_reserved_for_reuse.replace(span_node) else {
+            return;
+        };
+
+        demoted.as_ref().value.discard_data_pages();
+        self.empty_spans.push(demoted);
     }
 }

@@ -12,6 +12,7 @@ mod mremap;
 pub use mremap::{mremap, MreMapFlags};
 
 mod madvise;
+pub use madvise::madvise;
 
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]

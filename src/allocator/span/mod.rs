@@ -5,9 +5,13 @@ use std::{cell::UnsafeCell, ptr::NonNull, sync::atomic::Ordering};
 pub use occupancy::{BitmapWord, MAX_SLOTS_PER_SPAN};
 
 use super::size_classes::SizeClass;
-use crate::allocator::{
-    heap::heap::{AtomicHeapId, HeapId},
-    span::occupancy::{LocalOccupancy, RemoteOccupancy, SlotIndex},
+use crate::{
+    allocator::{
+        heap::heap::{AtomicHeapId, HeapId},
+        span::occupancy::{LocalOccupancy, RemoteOccupancy, SlotIndex},
+    },
+    libc::mem::madvise,
+    page_size::round_up_to_page_size,
 };
 
 // PERF: The remotes are separate because atomics are slow (10x), and I don't want to add that strain to the hotpath.
@@ -97,6 +101,17 @@ impl Span {
             .for_each(|(word_index, freed)| unsafe {
                 (*self.local.get()).release_slots_by_word(word_index, freed)
             });
+    }
+
+    /// MADV_DONTNEED the data pages. The RW mapping survives and re-faults zeroed; the metadata array is outside this range and untouched.
+    pub fn discard_data_pages(&self) {
+        unsafe {
+            madvise(
+                self.data_pointer.as_ptr().cast(),
+                round_up_to_page_size(self.size_class.span_length_in_bytes()),
+                libc::MADV_DONTNEED,
+            );
+        }
     }
 
     pub fn contains_pointer(&self, pointer: *const u8) -> bool {

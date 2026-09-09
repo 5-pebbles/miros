@@ -3,7 +3,7 @@ use std::ffi::{c_int, c_void};
 use crate::{libc::translate_syscall_result, signature_matches_libc, syscall, syscall::Syscall};
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn madvise(address: *mut c_void, length: usize, advice: c_int) -> c_int {
+pub unsafe extern "C" fn madvise(address: *mut c_void, length: usize, advice: c_int) -> c_int {
     signature_matches_libc!(libc::madvise(address, length, advice));
 
     let result = syscall!(Syscall::MAdvise, address, length, advice);
