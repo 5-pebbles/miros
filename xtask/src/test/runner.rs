@@ -256,7 +256,12 @@ struct Session {
 }
 
 impl Session {
-    fn launch(binary: &Path, case: &TestCase, scratch: &Path) -> Result<Self, Failure> {
+    fn launch(
+        binary: &Path,
+        case: &TestCase,
+        scratch: &Path,
+        interpreter: Option<&Path>,
+    ) -> Result<Self, Failure> {
         // stdin always rides the pty; NO-TTY moves stdout or stderr to a plain pipe.
         let inout = pty::open().map_err(Failure::Pty)?;
         let stdout_pipe = optional_pipe(case, Stream::Stdout)?;
@@ -277,7 +282,7 @@ impl Session {
             (None, None) => unreachable!("stderr is either a pipe or a pty"),
         };
 
-        let mut child = utils::spawn_child(binary, case, scratch, [
+        let mut child = utils::spawn_child(binary, case, scratch, interpreter, [
             inout.slave.as_raw_fd(),
             stdout_source,
             stderr_source,
@@ -554,14 +559,14 @@ impl TestRunner {
         Ok(Self { source, stem, case })
     }
 
-    pub fn run(&self) -> Result<(), RunError> {
+    pub fn run(&self, interpreter: Option<&Path>) -> Result<(), RunError> {
         let scratch = utils::prepare_scratch(&self.stem);
-        let result = self.run_in(&scratch);
+        let result = self.run_in(&scratch, interpreter);
         let _ = fs::remove_dir_all(&scratch);
         result
     }
 
-    fn run_in(&self, scratch: &Path) -> Result<(), RunError> {
+    fn run_in(&self, scratch: &Path, interpreter: Option<&Path>) -> Result<(), RunError> {
         // The source lives in examples/, so bin/ and fixtures/ sit beside it.
         let examples = self.source.parent().unwrap();
         let fixtures = examples.join("fixtures").join(&self.stem);
@@ -576,7 +581,7 @@ impl TestRunner {
                 stem: self.stem.clone(),
             }]));
         }
-        let mut session = Session::launch(&binary, &self.case, scratch)
+        let mut session = Session::launch(&binary, &self.case, scratch, interpreter)
             .map_err(|failure| RunError::without_capture(vec![failure]))?;
         if let Err(failures) = session.run_directives(&self.case.directives) {
             return Err(RunError::new(failures, &session));

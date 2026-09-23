@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 use crate::build;
 
@@ -76,7 +76,8 @@ const EXAMPLES: &[Example] = &[
     },
 ];
 
-pub fn run() {
+/// Build miros, compile the example programs against it, and return the libmiros.so path.
+pub fn run() -> PathBuf {
     let miros = build::run(None, None);
     let root = build::workspace_root();
     let interpreter = format!("-Wl,--dynamic-linker={}", miros.display());
@@ -109,4 +110,6 @@ pub fn run() {
         .status()
         .expect("failed to spawn cargo");
     assert!(status.success(), "building hello_world failed");
+
+    miros
 }

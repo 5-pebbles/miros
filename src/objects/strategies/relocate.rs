@@ -129,13 +129,10 @@ impl Stratagem for Relocate {
             return Ok(());
         }
 
-        #[cfg(feature = "lenient-undefined-symbols")]
-        {
+        if crate::start::config::lenient_undefined_symbols() {
             eprintln!("{}", MirosError::UndefinedSymbols(undefined_symbols));
             Ok(())
-        }
-        #[cfg(not(feature = "lenient-undefined-symbols"))]
-        {
+        } else {
             Err(MirosError::UndefinedSymbols(undefined_symbols))
         }
     }

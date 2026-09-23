@@ -3,7 +3,7 @@ use std::{
     os::fd::{AsRawFd, BorrowedFd},
 };
 
-use crate::{signature_matches_libc, syscall, syscall::Syscall};
+use crate::{libc::translate_syscall_result, signature_matches_libc, syscall, syscall::Syscall};
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn read(
@@ -17,10 +17,11 @@ unsafe extern "C" fn read(
         buffer_length_in_bytes
     ));
 
-    syscall!(
+    let result = syscall!(
         Syscall::Read,
         file_descriptor.as_raw_fd(),
         buffer_pointer,
         buffer_length_in_bytes
-    )
+    );
+    translate_syscall_result(result)
 }

@@ -20,7 +20,7 @@ mod runner;
 mod span;
 mod utils;
 
-pub fn run(filter: Option<String>) {
+pub fn run(filter: Option<String>, direct: bool) {
     let root = build::workspace_root();
 
     let status = Command::new("cargo")
@@ -30,7 +30,10 @@ pub fn run(filter: Option<String>) {
         .expect("failed to spawn cargo test");
     assert!(status.success(), "unit tests failed");
 
-    examples::run();
+    let miros = examples::run();
+    // `direct` swaps the launch mode from PT_INTERP to the miros CLI, exercising argv
+    // compaction and the auxv retarget against every example.
+    let interpreter = direct.then_some(miros.as_path());
     let mut sources: Vec<PathBuf> = fs::read_dir(root.join("examples"))
         .expect("read examples directory")
         .map(|entry| entry.expect("read directory entry").path())
@@ -73,7 +76,7 @@ pub fn run(filter: Option<String>) {
             }
         };
 
-        match runner.run() {
+        match runner.run(interpreter) {
             Ok(()) => {
                 passed += 1;
                 let ok_text = "OK".green().bold();

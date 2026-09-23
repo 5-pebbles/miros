@@ -30,6 +30,12 @@ impl Errno {
     pub const DEADLK: Self = Self(linux_raw_sys::errno::EDEADLK);
     // POSIX name; the kernel calls it EOPNOTSUPP.
     pub const NOTSUP: Self = Self(linux_raw_sys::errno::EOPNOTSUPP);
+    pub const NOENT: Self = Self(linux_raw_sys::errno::ENOENT);
+    pub const ACCES: Self = Self(linux_raw_sys::errno::EACCES);
+    pub const ISDIR: Self = Self(linux_raw_sys::errno::EISDIR);
+    pub const NOTDIR: Self = Self(linux_raw_sys::errno::ENOTDIR);
+    pub const LOOP: Self = Self(linux_raw_sys::errno::ELOOP);
+    pub const NAMETOOLONG: Self = Self(linux_raw_sys::errno::ENAMETOOLONG);
 
     pub fn into_raw(self) -> u32 {
         self.0
@@ -56,6 +62,12 @@ impl Display for Errno {
             Errno::INVAL => "Invalid argument",
             Errno::BADF => "Bad file descriptor",
             Errno::NOMEM => "Not enough space",
+            Errno::NOENT => "No such file or directory",
+            Errno::ACCES => "Permission denied",
+            Errno::ISDIR => "Is a directory",
+            Errno::NOTDIR => "Not a directory",
+            Errno::LOOP => "Too many levels of symbolic links",
+            Errno::NAMETOOLONG => "File name too long",
             ref unknown_errno => {
                 return write!(f, "Unknown error: {}", Into::<u32>::into(unknown_errno))
             }

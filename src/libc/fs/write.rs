@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::{signature_matches_libc, syscall, syscall::Syscall};
+use crate::{libc::translate_syscall_result, signature_matches_libc, syscall, syscall::Syscall};
 
 pub const STD_IN: i32 = 0;
 pub const STD_OUT: i32 = 1;
@@ -18,10 +18,11 @@ unsafe extern "C" fn write(
         buffer_length_in_bytes
     ));
 
-    syscall!(
+    let result = syscall!(
         Syscall::Write,
         file_descriptor,
         buffer_pointer,
         buffer_length_in_bytes
-    )
+    );
+    translate_syscall_result(result)
 }

@@ -6,7 +6,16 @@ ld.so and libc are versioned and deployed together. Neither starts alone. The tw
 
 ## Run a real program
 
-`cargo xtask demo` patches the interpreter path in a copy of a binary and runs it under Miros:
+Build miros, then run a binary under it by invoking the interpreter directly, exactly like `ld.so`:
+
+```bash
+cargo xtask build
+./target/x86_64-unknown-linux-gnu/release/libmiros.so path/to/binary [args...]
+```
+
+Arguments after the executable path belong to the program. `--help` and `--version` print miros's own interface. Miros loads the executable itself.
+
+`cargo xtask demo` patches a copy of the binary to use miros as its interpreter, then runs it:
 
 ```bash
 cargo xtask build
@@ -17,9 +26,11 @@ For example, my website [auxv.org](https://auxv.org), a Rocket + tokio + rusqlit
 
 ```bash
 cargo xtask demo ~/git/auxv-dot-org/target/release/auxv-dot-org \
-    --features lenient-undefined-symbols --dir ~/git/auxv-dot-org -- \
+    --dir ~/git/auxv-dot-org -- \
     --http-only --http-port 8080
 ```
+
+Patched into `PT_INTERP`, miros never sees a command line, so its settings come from environment variables: `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`. Invoked directly, it takes them as flags instead: `--lenient-undefined-symbols`.
 
 ## Status
 
@@ -35,7 +46,7 @@ The relocation pass collects every unresolved symbol and reports the full list:
 Miros [Error]: Found Undefined Symbols [`foo`, `bar`]
 ```
 
-Build with `--features lenient-undefined-symbols` to downgrade this to a warning. Unresolved symbols relocate to null, so a program only crashes if it actually calls one.
+Run miros with `--lenient-undefined-symbols` (or set `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`) to downgrade this to a warning. Unresolved symbols relocate to null, so a program only crashes if it actually calls one.
 
 ## Benchmarks
 

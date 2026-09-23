@@ -1,7 +1,10 @@
 use std::os::fd::RawFd;
 
 use crate::{
-    libc::errno::{set_errno, Errno},
+    libc::{
+        errno::{set_errno, Errno},
+        translate_syscall_result,
+    },
     signature_matches_libc, syscall,
     syscall::Syscall,
 };
@@ -16,5 +19,5 @@ unsafe extern "C" fn close(file_descriptor: RawFd) -> i32 {
     }
 
     let result = syscall!(Syscall::Close, file_descriptor);
-    result as i32
+    translate_syscall_result(result) as i32
 }
