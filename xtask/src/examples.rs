@@ -74,6 +74,10 @@ const EXAMPLES: &[Example] = &[
         stem: "malloc_grow",
         flags: &[],
     },
+    Example {
+        stem: "program_name",
+        flags: &[],
+    },
 ];
 
 /// Build miros, compile the example programs against it, and return the libmiros.so path.

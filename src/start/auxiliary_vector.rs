@@ -22,11 +22,13 @@ unsafe fn auxiliary_vector_items(
 
 /// Points Phdr/Phent/Phnum/Entry at an executable miros mapped itself (direct invocation).
 /// Base becomes null: the kernel never loaded a separate interpreter.
+/// Execfn names the executable too: the kernel's entry still points at miros, the binary it exec'd.
 pub unsafe fn retarget_executable(
     auxv_pointer: *mut AuxiliaryVectorItem,
     program_header_pointer: *const ProgramHeader,
     program_header_count: usize,
     entry: *const c_void,
+    executable_path: *const u8,
 ) {
     (0..)
         .map(|index| &mut *auxv_pointer.add(index))
@@ -39,6 +41,9 @@ pub unsafe fn retarget_executable(
             Ok(AuxiliaryVectorType::Phnum) => item.a_un.a_val = program_header_count,
             Ok(AuxiliaryVectorType::Entry) => item.a_un.a_ptr = entry as *mut c_void,
             Ok(AuxiliaryVectorType::Base) => item.a_un.a_val = 0,
+            Ok(AuxiliaryVectorType::Execfn) => {
+                item.a_un.a_ptr = executable_path as *mut c_void;
+            }
             _ => (),
         });
 }
@@ -63,8 +68,9 @@ pub enum AuxiliaryVectorType {
     PageSize = 6,
     Base = 7,
     Entry = 9,
-    Random = 25,
     ClkTck = 17,
+    Random = 25,
+    Execfn = 31,
 }
 
 /// A union resolved by the a_type field of the parent auxiliary vector item.

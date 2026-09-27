@@ -12,6 +12,7 @@ mod math;
 pub mod mem;
 mod net;
 pub mod process;
+pub mod program_name;
 mod random;
 mod sched;
 mod signal;

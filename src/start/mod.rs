@@ -10,7 +10,7 @@ use std::{
 use crate::{
     elf::{header::ElfHeader, program_header::ProgramHeader},
     io_macros::syscall_debug_assert,
-    libc::environ::set_environ_pointer,
+    libc::{environ::set_environ_pointer, program_name::set_program_name},
     objects::{
         object_data::ObjectData,
         object_data_graph::ObjectDataGraph,
@@ -134,6 +134,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     auxiliary_vector::set_auxiliary_vector(auxv_pointer);
     set_environ_pointer(env_pointer as *mut *mut u8);
+    set_program_name(arg_pointer.read());
     config::init_from_environment(env_pointer as *mut *mut u8, overrides);
 
     let miros_object_data = if direct_invocation {
@@ -192,6 +193,7 @@ unsafe fn load_direct_executable(
         executable.base.byte_add(header.e_phoff) as *const ProgramHeader,
         header.e_phnum as usize,
         entry,
+        path.as_ptr().cast(),
     );
     (executable, entry.addr())
 }
