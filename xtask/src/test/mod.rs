@@ -31,8 +31,8 @@ pub fn run(filter: Option<String>, direct: bool) {
     assert!(status.success(), "unit tests failed");
 
     let miros = examples::run();
-    // `direct` swaps the launch mode from PT_INTERP to the miros CLI, exercising argv
-    // compaction and the auxv retarget against every example.
+    // `direct` swaps the launch mode from PT_INTERP to the miros CLI.
+    // Every example then exercises argv compaction and the auxv retarget.
     let interpreter = direct.then_some(miros.as_path());
     let mut sources: Vec<PathBuf> = fs::read_dir(root.join("examples"))
         .expect("read examples directory")

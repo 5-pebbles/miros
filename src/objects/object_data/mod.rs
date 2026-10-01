@@ -157,7 +157,7 @@ impl ObjectData {
             -1,
             0,
         ) as *const c_void;
-        // Kernel mmap failures return -errno, which miros's mmap passes through unconverted; real mappings sit far below the sign bit.
+        // Kernel mmap failures return -errno, which miros's mmap passes through unconverted. Real mappings sit far below the sign bit.
         if (base.addr() as isize).is_negative() {
             return Err(MirosError::ElfReadError(
                 "failed to reserve address space".to_string(),

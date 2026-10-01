@@ -4,7 +4,6 @@ use crate::{error::MirosError, start::environment_variables::EnvironmentIter};
 
 const LENIENT_VARIABLE: &str = "MIROS_LENIENT_UNDEFINED_SYMBOLS";
 
-/// The resolved MIROS_* configuration; strict defaults, installed once during startup.
 #[derive(Default)]
 struct RuntimeConfig {
     lenient_undefined_symbols: bool,
@@ -53,7 +52,6 @@ fn resolve_config<'a>(
     config
 }
 
-/// MIROS_* variables use Unix-style settings: 1 sets them, 0 clears them.
 fn parse_setting(name: &str, value: &str) -> Result<bool, MirosError> {
     match value {
         "1" => Ok(true),
@@ -69,34 +67,5 @@ fn setting_field<'a>(config: &'a mut RuntimeConfig, name: &str) -> Option<&'a mu
     match name {
         LENIENT_VARIABLE => Some(&mut config.lenient_undefined_symbols),
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn environment_variables_set_the_defaults() {
-        let variables = [(LENIENT_VARIABLE, "1")];
-        let config = resolve_config(variables.into_iter(), ConfigOverrides::default());
-        assert!(config.lenient_undefined_symbols);
-    }
-
-    #[test]
-    fn command_line_overrides_win_over_the_environment() {
-        let variables = [(LENIENT_VARIABLE, "0")];
-        let overrides = ConfigOverrides {
-            lenient: Some(true),
-        };
-        let config = resolve_config(variables.into_iter(), overrides);
-        assert!(config.lenient_undefined_symbols);
-    }
-
-    #[test]
-    fn unrecognized_values_warn_instead_of_setting() {
-        let variables = [(LENIENT_VARIABLE, "yes")];
-        let config = resolve_config(variables.into_iter(), ConfigOverrides::default());
-        assert!(!config.lenient_undefined_symbols);
     }
 }

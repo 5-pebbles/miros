@@ -20,9 +20,7 @@ unsafe fn auxiliary_vector_items(
         .take_while(|item| item.a_type != AuxiliaryVectorType::Null as usize)
 }
 
-/// Points Phdr/Phent/Phnum/Entry at an executable miros mapped itself (direct invocation).
-/// Base becomes null: the kernel never loaded a separate interpreter.
-/// Execfn names the executable too: the kernel's entry still points at miros, the binary it exec'd.
+/// The kernel's auxv still describes miros, the binary it exec'd, so Entry and Execfn are retargeted here.
 pub unsafe fn retarget_executable(
     auxv_pointer: *mut AuxiliaryVectorItem,
     program_header_pointer: *const ProgramHeader,

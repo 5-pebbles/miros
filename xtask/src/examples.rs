@@ -80,7 +80,6 @@ const EXAMPLES: &[Example] = &[
     },
 ];
 
-/// Build miros, compile the example programs against it, and return the libmiros.so path.
 pub fn run() -> PathBuf {
     let miros = build::run(None, None);
     let root = build::workspace_root();
