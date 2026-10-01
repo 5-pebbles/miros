@@ -10,10 +10,11 @@ use crate::{
     elf::{header::ElfHeader, program_header::ProgramHeader},
     objects::object_data::ObjectData,
     start::{
-        arguments::Invocation,
+        arguments::{parse, usage},
         auxiliary_vector::{self, AuxiliaryVectorItem},
         config::ConfigOverrides,
     },
+    syscall::exit::exit,
 };
 
 pub struct ParseFlags;
@@ -74,8 +75,11 @@ impl DirectInvocation<ParseFlags> {
     }
 
     pub unsafe fn parse_flags(self) -> (DirectInvocation<CompactStack>, ConfigOverrides, usize) {
-        let (executable_index, overrides) =
-            Invocation::parse_or_exit(slice::from_raw_parts(self.arg_pointer, self.arg_count));
+        let arguments = slice::from_raw_parts(self.arg_pointer, self.arg_count);
+        let (executable_index, overrides) = parse(arguments).unwrap_or_else(|error| {
+            eprint!("{error}\n\n{}", usage());
+            exit(2);
+        });
         (self.transition(), overrides, executable_index)
     }
 }
@@ -112,11 +116,11 @@ impl DirectInvocation<LoadExecutable> {
         let path = CStr::from_ptr(self.arg_pointer.read().cast());
         let file = File::open(OsStr::from_bytes(path.to_bytes())).unwrap_or_else(|error| {
             eprintln!("miros: {}: {error}", path.to_string_lossy());
-            crate::syscall::exit::exit(1);
+            exit(1);
         });
         let executable = ObjectData::from_file(file).unwrap_or_else(|error| {
             eprintln!("{error}: {}", path.to_string_lossy());
-            crate::syscall::exit::exit(1);
+            exit(1);
         });
 
         // from_file validated a PT_LOAD at file offset 0 / vaddr 0, so the ELF header sits at `base`.

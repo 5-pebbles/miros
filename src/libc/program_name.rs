@@ -52,4 +52,3 @@ fn base_name(path: *const u8) -> *const u8 {
         None => path,
     }
 }
-
