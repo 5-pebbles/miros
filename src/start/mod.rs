@@ -1,14 +1,9 @@
 use std::{
     arch::naked_asm,
-    ffi::{CStr, OsStr},
-    fs::File,
-    os::unix::ffi::OsStrExt,
     ptr::{self, null, null_mut},
-    slice,
 };
 
 use crate::{
-    elf::{header::ElfHeader, program_header::ProgramHeader},
     io_macros::syscall_debug_assert,
     libc::{environ::set_environ_pointer, program_name::set_program_name},
     objects::{
@@ -22,10 +17,10 @@ use crate::{
         },
     },
     start::{
-        arguments::{CompactedStack, Invocation},
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
         bootstrap::Bootstrap,
         config::ConfigOverrides,
+        direct_invocation::DirectInvocation,
     },
 };
 
@@ -33,6 +28,7 @@ pub mod arguments;
 pub mod auxiliary_vector;
 pub mod bootstrap;
 pub mod config;
+pub mod direct_invocation;
 pub mod environment_variables;
 
 #[unsafe(naked)]
@@ -77,9 +73,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     debug_assert_eq!(stack_pointer.addr() & 0b1111, 0); // 16-byte aligned
 
     let mut arg_count = *stack_pointer;
-    let arg_pointer = stack_pointer.add(1).cast::<*const u8>();
+    let mut arg_pointer = stack_pointer.add(1).cast::<*const u8>();
 
-    debug_assert_eq!((*arg_pointer.add(arg_count)), null());
+    debug_assert_eq!(*arg_pointer.add(arg_count), null());
 
     let mut env_pointer = arg_pointer.add(arg_count + 1);
 
@@ -93,7 +89,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
 
-    // No AT_BASE: the kernel exec'd miros itself, so miros is the main executable and argv is its own.
+    // No AT_BASE means the kernel exec'd miros itself. Miros is the main executable and argv is its own.
     let direct_invocation = auxv_info.base.is_null();
 
     syscall_debug_assert!(auxv_info.page_size.is_power_of_two());
@@ -110,7 +106,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         Bootstrap::from_base(auxv_info.base).unwrap()
     };
 
-    // Relocation must precede everything below: panics, vtables, and TLS access all assume the GOT is patched.
+    // Relocation must precede everything below. Panics, vtables, and TLS access all assume the GOT is patched.
     let bootstrap = bootstrap.relocate();
     crate::page_size::set_page_size(auxv_info.page_size);
     bootstrap
@@ -118,18 +114,23 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
     crate::allocator::install_heap();
 
-    let overrides = if direct_invocation {
-        let (executable_index, overrides) =
-            Invocation::parse_or_exit(slice::from_raw_parts(arg_pointer, arg_count));
-
-        let compacted =
-            CompactedStack::compact(stack_pointer, env_pointer, auxv_pointer, executable_index);
-        arg_count = compacted.arg_count;
-        env_pointer = compacted.env_pointer;
-        auxv_pointer = compacted.auxv_pointer;
-        overrides
+    let (overrides, executable, entry_point) = if direct_invocation {
+        let (invocation, overrides, executable_index) =
+            DirectInvocation::new(stack_pointer).parse_flags();
+        let invocation = invocation.compact_stack(executable_index);
+        let (invocation, executable, entry) = invocation.load_executable();
+        let stack = invocation.retarget_auxv(&executable, entry);
+        arg_count = stack.arg_count;
+        arg_pointer = stack.arg_pointer;
+        env_pointer = stack.env_pointer;
+        auxv_pointer = stack.auxv_pointer;
+        (overrides, executable, entry.addr())
     } else {
-        ConfigOverrides::default()
+        (
+            ConfigOverrides::default(),
+            ObjectData::from_program_headers(program_header_table).unwrap(),
+            auxv_info.entry.addr(),
+        )
     };
 
     auxiliary_vector::set_auxiliary_vector(auxv_pointer);
@@ -143,14 +144,6 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         ObjectData::from_base(auxv_info.base).unwrap()
     };
 
-    let (executable, entry_point) = if direct_invocation {
-        load_direct_executable(arg_pointer, auxv_pointer)
-    } else {
-        (
-            ObjectData::from_program_headers(program_header_table).unwrap(),
-            auxv_info.entry.addr(),
-        )
-    };
     let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
 
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
@@ -168,32 +161,4 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     }
 
     entry_point
-}
-
-/// Loads the executable named by the (already compacted) argv[0] and retargets the auxv at it.
-unsafe fn load_direct_executable(
-    arg_pointer: *const *const u8,
-    auxv_pointer: *mut AuxiliaryVectorItem,
-) -> (ObjectData, usize) {
-    let path = CStr::from_ptr((*arg_pointer).cast());
-    let file = File::open(OsStr::from_bytes(path.to_bytes())).unwrap_or_else(|error| {
-        eprintln!("miros: {}: {error}", path.to_string_lossy());
-        crate::syscall::exit::exit(1);
-    });
-    let executable = ObjectData::from_file(file).unwrap_or_else(|error| {
-        eprintln!("{error}: {}", path.to_string_lossy());
-        crate::syscall::exit::exit(1);
-    });
-
-    // from_file validated a PT_LOAD at file offset 0 / vaddr 0, so the ELF header sits at `base`.
-    let header = &*(executable.base as *const ElfHeader);
-    let entry = executable.base.byte_add(header.e_entry);
-    auxiliary_vector::retarget_executable(
-        auxv_pointer,
-        executable.base.byte_add(header.e_phoff) as *const ProgramHeader,
-        header.e_phnum as usize,
-        entry,
-        path.as_ptr().cast(),
-    );
-    (executable, entry.addr())
 }
