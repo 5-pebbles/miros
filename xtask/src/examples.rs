@@ -1,4 +1,4 @@
-use std::{fs, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 use crate::build;
 
@@ -74,9 +74,13 @@ const EXAMPLES: &[Example] = &[
         stem: "malloc_grow",
         flags: &[],
     },
+    Example {
+        stem: "program_name",
+        flags: &[],
+    },
 ];
 
-pub fn run() {
+pub fn run() -> PathBuf {
     let miros = build::run(None, None);
     let root = build::workspace_root();
     let interpreter = format!("-Wl,--dynamic-linker={}", miros.display());
@@ -109,4 +113,6 @@ pub fn run() {
         .status()
         .expect("failed to spawn cargo");
     assert!(status.success(), "building hello_world failed");
+
+    miros
 }

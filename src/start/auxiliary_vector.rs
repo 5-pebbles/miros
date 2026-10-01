@@ -20,6 +20,32 @@ unsafe fn auxiliary_vector_items(
         .take_while(|item| item.a_type != AuxiliaryVectorType::Null as usize)
 }
 
+/// The kernel's auxv still describes miros, the binary it exec'd, so Entry and Execfn are retargeted here.
+pub unsafe fn retarget_executable(
+    auxv_pointer: *mut AuxiliaryVectorItem,
+    program_header_pointer: *const ProgramHeader,
+    program_header_count: usize,
+    entry: *const c_void,
+    executable_path: *const u8,
+) {
+    (0..)
+        .map(|index| &mut *auxv_pointer.add(index))
+        .take_while(|item| item.a_type != AuxiliaryVectorType::Null as usize)
+        .for_each(|item| match item.a_type() {
+            Ok(AuxiliaryVectorType::Phdr) => {
+                item.a_un.a_ptr = program_header_pointer as *mut c_void;
+            }
+            Ok(AuxiliaryVectorType::Phent) => item.a_un.a_val = size_of::<ProgramHeader>(),
+            Ok(AuxiliaryVectorType::Phnum) => item.a_un.a_val = program_header_count,
+            Ok(AuxiliaryVectorType::Entry) => item.a_un.a_ptr = entry as *mut c_void,
+            Ok(AuxiliaryVectorType::Base) => item.a_un.a_val = 0,
+            Ok(AuxiliaryVectorType::Execfn) => {
+                item.a_un.a_ptr = executable_path as *mut c_void;
+            }
+            _ => (),
+        });
+}
+
 pub unsafe fn get_auxiliary_value(requested_type: usize) -> Option<usize> {
     let auxv_pointer = AUXILIARY_VECTOR;
     if auxv_pointer.is_null() {
@@ -40,8 +66,9 @@ pub enum AuxiliaryVectorType {
     PageSize = 6,
     Base = 7,
     Entry = 9,
-    Random = 25,
     ClkTck = 17,
+    Random = 25,
+    Execfn = 31,
 }
 
 /// A union resolved by the a_type field of the parent auxiliary vector item.

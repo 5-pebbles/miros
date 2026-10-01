@@ -17,6 +17,9 @@ pub enum MirosError {
     MissingDynamicEntry(DynamicTag),
     DependencyNotFound(String),
     ElfReadError(String),
+    UnrecognizedOption(String),
+    UnrecognizedEnvironmentValue { name: String, value: String },
+    MissingExecutable,
     UndefinedSymbols(Vec<String>),
     SymbolIndexOutOfBounds(usize),
     TlsAllocationFailed,
@@ -25,10 +28,10 @@ pub enum MirosError {
 impl MirosError {
     pub fn level(&self) -> ErrorLevel {
         match self {
-            Self::UndefinedSymbols(_) if cfg!(feature = "lenient-undefined-symbols") => {
+            Self::UndefinedSymbols(_) if crate::start::config::lenient_undefined_symbols() => {
                 ErrorLevel::Warn
             }
-            Self::UndefinedSymbols(_) => ErrorLevel::Error,
+            Self::UnrecognizedEnvironmentValue { .. } => ErrorLevel::Warn,
             _ => ErrorLevel::Error,
         }
     }
@@ -39,6 +42,12 @@ impl fmt::Display for MirosError {
         let level = self.level();
         write!(f, "Miros [{level}]: ")?;
         match self {
+            Self::ElfReadError(message) => write!(f, "{message}"),
+            Self::UnrecognizedOption(option) => write!(f, "unrecognized option: {option}"),
+            Self::UnrecognizedEnvironmentValue { name, value } => {
+                write!(f, "ignoring unrecognized {name} value: {value}")
+            }
+            Self::MissingExecutable => write!(f, "missing EXECUTABLE operand"),
             Self::UndefinedSymbols(names) => {
                 let plural = (names.len() > 1).then_some("s").unwrap_or("");
                 let symbols = names.join("`, `");

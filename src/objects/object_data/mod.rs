@@ -19,7 +19,7 @@ pub use thread_local::{ThreadLocalAllocation, ThreadLocalData};
 use crate::{
     elf::{
         dynamic_array::DynamicArrayItem,
-        header::ElfHeader,
+        header::{ElfHeader, ET_DYN},
         program_header::{ProgramHeader, PT_DYNAMIC, PT_LOAD, PT_PHDR, PT_TLS},
         section::SectionIndex,
         symbol::Symbol,
@@ -104,28 +104,43 @@ impl ObjectData {
     pub unsafe fn from_file(mut file: File) -> Result<Self, MirosError> {
         // Read the ELF header from file:
         let mut header_from_file: ElfHeader = std::mem::zeroed();
-        let as_bytes = slice::from_raw_parts_mut(
+        let header_bytes = slice::from_raw_parts_mut(
             &mut header_from_file as *mut ElfHeader as *mut u8,
             size_of::<ElfHeader>(),
         );
-        file.read_exact(as_bytes)
+        file.read_exact(header_bytes)
             .map_err(|_| MirosError::ElfReadError("failed to read ELF header".to_string()))?;
+
+        if &header_from_file.e_ident[..4] != b"\x7fELF" || header_from_file.e_type != ET_DYN {
+            return Err(MirosError::ElfReadError(
+                "not a dynamic ELF object".to_string(),
+            ));
+        }
 
         // Read the program header table from file:
         let mut program_headers_from_file: Vec<ProgramHeader> =
             Vec::with_capacity(header_from_file.e_phnum as usize);
-        let as_bytes = slice::from_raw_parts_mut(
+        let table_bytes = slice::from_raw_parts_mut(
             program_headers_from_file.as_mut_ptr() as *mut u8,
             size_of::<ProgramHeader>() * header_from_file.e_phnum as usize,
         );
-        file.read_exact_at(as_bytes, header_from_file.e_phoff as u64)
+        file.read_exact_at(table_bytes, header_from_file.e_phoff as u64)
             .map_err(|_| {
                 MirosError::ElfReadError("failed to read program header table".to_string())
             })?;
         program_headers_from_file.set_len(header_from_file.e_phnum as usize);
-        debug_assert!(program_headers_from_file
-            .iter()
-            .any(|header| header.p_type == PT_LOAD));
+
+        // `from_base` reads the ELF header at `base`, so a PT_LOAD must pin file offset 0 at vaddr 0.
+        // The same check covers the LOAD-less case, whose bounds would underflow below.
+        if !program_headers_from_file.iter().any(|program_header| {
+            program_header.p_type == PT_LOAD
+                && program_header.p_offset == 0
+                && program_header.p_vaddr == 0
+        }) {
+            return Err(MirosError::ElfReadError(
+                "no PT_LOAD maps file offset 0 at vaddr 0".to_string(),
+            ));
+        }
 
         // Reserve a continuous region of memory:
         let (min_addr, max_addr) = calculate_virtual_address_bounds(&program_headers_from_file);
@@ -142,6 +157,12 @@ impl ObjectData {
             -1,
             0,
         ) as *const c_void;
+        // Kernel mmap failures return -errno, which miros's mmap passes through unconverted. Real mappings sit far below the sign bit.
+        if (base.addr() as isize).is_negative() {
+            return Err(MirosError::ElfReadError(
+                "failed to reserve address space".to_string(),
+            ));
+        }
 
         // Load all segments:
         program_headers_from_file

@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     io_macros::syscall_debug_assert,
-    libc::environ::set_environ_pointer,
+    libc::{environ::set_environ_pointer, program_name::set_program_name},
     objects::{
         object_data::ObjectData,
         object_data_graph::ObjectDataGraph,
@@ -19,11 +19,16 @@ use crate::{
     start::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
         bootstrap::Bootstrap,
+        config::ConfigOverrides,
+        direct_invocation::DirectInvocation,
     },
 };
 
+pub mod arguments;
 pub mod auxiliary_vector;
 pub mod bootstrap;
+pub mod config;
+pub mod direct_invocation;
 pub mod environment_variables;
 
 #[unsafe(naked)]
@@ -64,29 +69,29 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     // └-------------------┘    | Undefined      |      └---------------------------┘
     //                          └----------------┘
 
-    // Check that `stack_pointer` is where (and what) we expect it to be.
     debug_assert_ne!(stack_pointer, null_mut());
-    debug_assert_eq!(stack_pointer.addr() & 0b1111, 0); // 16-bit aligned
+    debug_assert_eq!(stack_pointer.addr() & 0b1111, 0); // 16-byte aligned
 
-    let arg_count = *stack_pointer;
-    let arg_pointer = stack_pointer.add(1).cast::<*const u8>();
+    let mut arg_count = *stack_pointer;
+    let mut arg_pointer = stack_pointer.add(1).cast::<*const u8>();
 
-    debug_assert_eq!((*arg_pointer.add(arg_count)), null()); // args are null-terminated
+    debug_assert_eq!(*arg_pointer.add(arg_count), null());
 
-    let env_pointer = arg_pointer.add(arg_count + 1);
+    let mut env_pointer = arg_pointer.add(arg_count + 1);
 
-    // Find the end of the environment variables + null-terminator + 1
-    // Auxilary Vector:
-    let auxv_pointer = (0..)
-        .map(|i| env_pointer.add(i))
-        .find(|&ptr| (*ptr).is_null())
-        .unwrap_unchecked() // SAFETY: I mean, it's an infinite loop, then segfaults before it's None...
+    let mut auxv_pointer = (0..)
+        .map(|index| env_pointer.add(index))
+        .find(|pointer| (**pointer).is_null())
+        // SAFETY: the env array is null-terminated, so the find always succeeds before running off the stack.
+        .unwrap_unchecked()
         .add(1)
         .cast::<AuxiliaryVectorItem>();
 
-    auxiliary_vector::set_auxiliary_vector(auxv_pointer);
-
     let auxv_info = AuxiliaryVectorInfo::new(auxv_pointer).unwrap();
+
+    // No AT_BASE means the kernel exec'd miros itself. Miros is the main executable and argv is its own.
+    let direct_invocation = auxv_info.base.is_null();
+
     syscall_debug_assert!(auxv_info.page_size.is_power_of_two());
     syscall_debug_assert!(auxv_info.base.addr() & (auxv_info.page_size - 1) == 0);
 
@@ -95,53 +100,65 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         auxv_info.program_header_count,
     );
 
-    // Relocate ourselves, initialize TLS, and call init functions:
-    let bootstrap = if auxv_info.base.is_null() {
+    let bootstrap = if direct_invocation {
         Bootstrap::from_program_headers(program_header_table).unwrap()
     } else {
         Bootstrap::from_base(auxv_info.base).unwrap()
     };
 
+    // Relocation must precede everything below. Panics, vtables, and TLS access all assume the GOT is patched.
     let bootstrap = bootstrap.relocate();
     crate::page_size::set_page_size(auxv_info.page_size);
     bootstrap
         .allocate_tls(auxv_info.pseudorandom_bytes)
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
-
     crate::allocator::install_heap();
 
-    set_environ_pointer(env_pointer as *mut *mut u8);
+    let (overrides, executable, entry_point) = if direct_invocation {
+        let (invocation, overrides, executable_index) =
+            DirectInvocation::new(stack_pointer).parse_flags();
+        let invocation = invocation.compact_stack(executable_index);
+        let (invocation, executable, entry) = invocation.load_executable();
+        let stack = invocation.retarget_auxv(&executable, entry);
+        arg_count = stack.arg_count;
+        arg_pointer = stack.arg_pointer;
+        env_pointer = stack.env_pointer;
+        auxv_pointer = stack.auxv_pointer;
+        (overrides, executable, entry.addr())
+    } else {
+        (
+            ConfigOverrides::default(),
+            ObjectData::from_program_headers(program_header_table).unwrap(),
+            auxv_info.entry.addr(),
+        )
+    };
 
-    let miros_object_data = if auxv_info.base.is_null() {
+    auxiliary_vector::set_auxiliary_vector(auxv_pointer);
+    set_environ_pointer(env_pointer as *mut *mut u8);
+    set_program_name(arg_pointer.read());
+    config::init_from_environment(env_pointer as *mut *mut u8, overrides);
+
+    let miros_object_data = if direct_invocation {
         ObjectData::from_program_headers(program_header_table).unwrap()
     } else {
         ObjectData::from_base(auxv_info.base).unwrap()
     };
 
-    let executable = if auxv_info.base.is_null() {
-        todo!()
-    } else {
-        ObjectData::from_program_headers(program_header_table).unwrap()
-    };
     let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
 
-    let load_dependencies = LoadDependencies;
-    let relocate = Relocate;
-    let bind_interposable_cells = BindInterposableCells;
-    let thread_local_storage = ThreadLocalStorage;
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
-    let executable_stratagems: &[&dyn Stratagem] = &[
-        &load_dependencies,
-        &relocate,
-        &bind_interposable_cells,
-        &thread_local_storage,
+    let stratagems: &[&dyn Stratagem] = &[
+        &LoadDependencies,
+        &Relocate,
+        &BindInterposableCells,
+        &ThreadLocalStorage,
         &init_array,
     ];
-    let executable_pipeline = ObjectPipeline::new(executable_stratagems);
+    let executable_pipeline = ObjectPipeline::new(stratagems);
     if let Err(error) = executable_pipeline.run_pipeline(&mut executable_and_dependencies) {
-        eprintln!("miros: {error:?}");
+        eprintln!("{error}");
         crate::syscall::exit::exit(1);
     }
 
-    auxv_info.entry.addr()
+    entry_point
 }

@@ -31,6 +31,9 @@ enum Xtask {
     Test {
         /// Only run tests whose name contains this substring
         filter: Option<String>,
+        /// Run each example through `libmiros.so <binary>` (direct invocation) instead of as its PT_INTERP
+        #[arg(long)]
+        direct: bool,
     },
 }
 
@@ -45,9 +48,11 @@ fn main() {
         Xtask::RegenerateAliases => {
             aliases::generate();
         }
-        Xtask::Examples => examples::run(),
+        Xtask::Examples => {
+            examples::run();
+        }
         Xtask::Demo(args) => demo::run(args),
         Xtask::Bench(args) => bench::run(args),
-        Xtask::Test { filter } => test::run(filter),
+        Xtask::Test { filter, direct } => test::run(filter, direct),
     }
 }

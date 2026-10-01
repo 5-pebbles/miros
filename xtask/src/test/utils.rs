@@ -51,9 +51,17 @@ pub fn spawn_child(
     binary: &Path,
     case: &TestCase,
     scratch: &Path,
+    interpreter: Option<&Path>,
     sources: [RawFd; 3],
 ) -> io::Result<Child> {
-    let mut command = Command::new(binary);
+    let mut command = match interpreter {
+        Some(miros) => {
+            let mut command = Command::new(miros);
+            command.arg(binary);
+            command
+        }
+        None => Command::new(binary),
+    };
     command
         .current_dir(scratch)
         .stdin(Stdio::null())

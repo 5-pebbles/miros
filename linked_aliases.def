@@ -5,3 +5,7 @@
 __environ: environ(weak), _environ(weak)
 
 __signgam: signgam(weak)
+
+__progname: program_invocation_short_name(weak)
+
+__progname_full: program_invocation_name(weak)
