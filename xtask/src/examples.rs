@@ -81,7 +81,10 @@ const EXAMPLES: &[Example] = &[
 ];
 
 pub fn run() -> PathBuf {
-    let miros = build::run(None, None);
+    let miros = build::run(build::BuildArgs {
+        features: None,
+        target_cpu: None,
+    });
     let root = build::workspace_root();
     let interpreter = format!("-Wl,--dynamic-linker={}", miros.display());
 
