@@ -71,6 +71,12 @@ pub(crate) unsafe fn run_exit_sequence() {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn _exit(code: i32) -> ! {
+    signature_matches_libc!(libc::_exit(code));
+    exit_syscall(code as usize);
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn exit(code: i32) -> ! {
     signature_matches_libc!(libc::exit(code));
     run_exit_sequence();

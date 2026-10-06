@@ -63,6 +63,14 @@ unsafe extern "C" fn strcpy(destination: *mut c_char, source: *const c_char) -> 
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn stpcpy(destination: *mut c_char, source: *const c_char) -> *mut c_char {
+    signature_matches_libc!(libc::stpcpy(destination, source));
+    let length = c_string_bytes(source).count();
+    ptr::copy_nonoverlapping(source.cast::<u8>(), destination.cast::<u8>(), length + 1);
+    destination.add(length)
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn strncpy(
     destination: *mut c_char,
     source: *const c_char,

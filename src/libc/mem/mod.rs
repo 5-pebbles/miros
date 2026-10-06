@@ -14,6 +14,11 @@ pub use mremap::{mremap, MreMapFlags};
 mod madvise;
 pub use madvise::madvise;
 
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn getpagesize() -> std::ffi::c_int {
+    crate::page_size::get_page_size() as std::ffi::c_int
+}
+
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]
 pub enum GrowthDirection {
