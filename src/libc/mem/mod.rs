@@ -171,6 +171,19 @@ unsafe extern "C" fn memmove(
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __memcpy_chk(
+    destination: *mut u8,
+    source: *const u8,
+    number_of_bytes_to_copy: usize,
+    destination_length: usize,
+) -> *mut u8 {
+    if number_of_bytes_to_copy > destination_length {
+        crate::libc::process::abort();
+    }
+    memcpy(destination, source, number_of_bytes_to_copy)
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn bcmp(
     left_pointer: *const u8,
     right_pointer: *const u8,

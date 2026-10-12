@@ -8,6 +8,7 @@ pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
 pub mod interposable;
+mod locale;
 mod math;
 pub mod mem;
 mod net;

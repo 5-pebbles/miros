@@ -44,7 +44,7 @@ unsafe extern "C" fn __stack_chk_fail() -> ! {
 }
 
 #[cfg_attr(not(test), no_mangle)]
-unsafe extern "C" fn abort() -> ! {
+pub(crate) unsafe extern "C" fn abort() -> ! {
     #[thread_local]
     static ABORT_IN_PROGRESS: Cell<bool> = const { Cell::new(false) };
 

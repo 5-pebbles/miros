@@ -142,6 +142,16 @@ unsafe extern "C" fn fileno(stream: *mut IoFile) -> i32 {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fflush_unlocked(stream: *mut IoFile) -> i32 {
+    if stream.is_null() {
+        flush_all_streams();
+        return 0;
+    }
+
+    (*stream).flush_buffer()
+}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn fflush(stream: *mut IoFile) -> i32 {
     signature_matches_libc!(libc::fflush(core::mem::transmute(stream)));
 

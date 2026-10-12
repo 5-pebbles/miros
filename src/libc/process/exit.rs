@@ -76,6 +76,10 @@ unsafe extern "C" fn _exit(code: i32) -> ! {
     exit_syscall(code as usize);
 }
 
+// `__cxa_atexit` handlers already run in `run_exit_sequence`; crt's finalizer call has nothing to do.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __cxa_finalize(_dso_handle: *mut c_void) {}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn exit(code: i32) -> ! {
     signature_matches_libc!(libc::exit(code));
