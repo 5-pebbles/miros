@@ -1,7 +1,4 @@
 use super::IoFile;
-use crate::{syscall, syscall::Syscall};
-
-const SEEK_CUR: i32 = 1;
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn clearerr_unlocked(stream: *mut IoFile) {
@@ -22,12 +19,7 @@ unsafe extern "C" fn __fpending(stream: *mut IoFile) -> usize {
 unsafe extern "C" fn __fpurge(stream: *mut IoFile) {
     let file = &mut *stream;
 
-    // Input is discarded by seeking back, so the bytes stay readable from the descriptor.
-    if !file.read_ptr.is_null() && !file.read_end.is_null() {
-        let unread = file.read_end.offset_from(file.read_ptr);
-        if unread > 0 {
-            syscall!(Syscall::LSeek, file.fileno, -unread, SEEK_CUR);
-        }
+    if !file.read_ptr.is_null() {
         file.read_ptr = file.read_end;
     }
 

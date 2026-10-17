@@ -3,7 +3,7 @@ use std::{
     ptr,
 };
 
-use super::{with_stream_lock, IoFile, BUFFER_ALIGNMENT, EOF, STREAM_LIST_HEAD};
+use super::{lock_stream_list, with_stream_lock, IoFile, BUFFER_ALIGNMENT, EOF, STREAM_LIST_HEAD};
 use crate::{
     libc::errno::{set_errno, Errno},
     signature_matches_libc, syscall,
@@ -12,6 +12,7 @@ use crate::{
 
 /// Unlinks a stream from the flush-all chain; flushing a closed stream would touch freed memory.
 unsafe fn detach_stream(stream: *mut IoFile) {
+    let _list_guard = lock_stream_list();
     let mut cursor = *(&raw const STREAM_LIST_HEAD);
     if cursor.is_null() {
         return;
