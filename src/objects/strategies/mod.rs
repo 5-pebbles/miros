@@ -4,6 +4,7 @@ pub mod bind_interposable_cells;
 pub mod init_array;
 pub mod load_dependencies;
 pub mod relocate;
+mod relr;
 pub mod thread_local_storage;
 
 pub trait Stratagem {

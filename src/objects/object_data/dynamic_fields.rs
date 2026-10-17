@@ -20,6 +20,7 @@ pub struct DynamicFields {
     pub symbol_table: SymbolTable,
     rela_slice: Option<*const [Rela]>,
     plt_rela_slice: Option<*const [Rela]>,
+    relr_slice: Option<*const [u64]>,
     preinit_array: Option<*const [InitArrayFunction]>,
     init_array: Option<*const [InitArrayFunction]>,
     pub hash_table: Option<HashTable>,
@@ -45,6 +46,9 @@ impl DynamicFields {
 
         let mut plt_rela_pointer: Option<*const Rela> = None;
         let mut plt_rela_count = 0;
+
+        let mut relr_pointer: Option<*const u64> = None;
+        let mut relr_count = 0;
 
         let mut preinit_array_pointer: Option<*const InitArrayFunction> = None;
         let mut preinit_array_size = 0;
@@ -94,6 +98,13 @@ impl DynamicFields {
             #[cfg(debug_assertions)]
             Ok(DynamicTag::PltRel) => {
                 syscall_assert!(item.d_un.d_val == DynamicTag::Rela as usize)
+            }
+
+            Ok(DynamicTag::Relr) => {
+                relr_pointer = Some(base.byte_add(item.d_un.d_ptr.addr()) as *const u64);
+            }
+            Ok(DynamicTag::RelrSz) => {
+                relr_count = item.d_un.d_val / size_of::<u64>();
             }
 
             Ok(DynamicTag::PreInitArray) => {
@@ -149,6 +160,7 @@ impl DynamicFields {
         let rela_slice = rela_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, rela_count));
         let plt_rela_slice =
             plt_rela_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, plt_rela_count));
+        let relr_slice = relr_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, relr_count));
 
         let preinit_array = preinit_array_pointer
             .map(|pointer| ptr::slice_from_raw_parts(pointer, preinit_array_size));
@@ -171,6 +183,7 @@ impl DynamicFields {
             symbol_table,
             rela_slice,
             plt_rela_slice,
+            relr_slice,
             preinit_array,
             init_array,
             hash_table,
@@ -207,6 +220,10 @@ impl DynamicFields {
 
     pub fn plt_rela_slice(&self) -> Option<&[Rela]> {
         unsafe { self.plt_rela_slice.map(|pointer| &*pointer) }
+    }
+
+    pub fn relr_slice(&self) -> Option<&[u64]> {
+        unsafe { self.relr_slice.map(|pointer| &*pointer) }
     }
 
     pub fn preinit_functions(&self) -> Option<&[InitArrayFunction]> {

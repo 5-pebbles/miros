@@ -1,5 +1,6 @@
 use std::{arch::asm, ptr};
 
+use super::relr;
 use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
     error::MirosError,
@@ -116,6 +117,8 @@ impl Stratagem for Relocate {
             .try_for_each(|object| {
                 let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
                 let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
+
+                unsafe { relr::apply(object) };
 
                 rela_entries
                     .iter()
