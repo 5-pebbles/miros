@@ -24,6 +24,7 @@ pub enum Syscall {
     GetPid = 39,
     Clone = 56,
     Exit = 60,
+    ExitGroup = 231,
     RtSigAction = 13,
     RtSigReturn = 15,
     SigAltStack = 131,

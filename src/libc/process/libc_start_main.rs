@@ -1,6 +1,6 @@
 use std::ffi::c_void;
 
-use crate::syscall::exit::exit;
+use crate::syscall::exit::exit_group;
 
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __libc_start_main(
@@ -25,5 +25,5 @@ unsafe extern "C" fn __libc_start_main(
         rtld_fini();
     }
 
-    exit(exit_code as usize);
+    exit_group(exit_code as usize);
 }
