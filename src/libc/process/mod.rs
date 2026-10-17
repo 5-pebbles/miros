@@ -1,3 +1,4 @@
+mod assert;
 pub mod clone;
 mod exit;
 mod libc_start_main;

@@ -52,3 +52,7 @@ fn base_name(path: *const u8) -> *const u8 {
         None => path,
     }
 }
+
+pub(crate) fn program_name() -> *const u8 {
+    unsafe { *PROGNAME.as_ptr() }
+}

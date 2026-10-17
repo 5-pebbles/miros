@@ -40,3 +40,29 @@ unsafe extern "C" fn fprintf(stream: *mut IoFile, format: *const i8, args: ...) 
 unsafe extern "C" fn vprintf(format: *const i8, args: VaList<'_>) -> i32 {
     vfprintf(stdout_ptr(), format, args)
 }
+
+// Fortified twins: miros's buffers are sized by construction, so the check flag is inert.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __printf_chk(_flag: core::ffi::c_int, format: *const i8, args: ...) -> i32 {
+    vfprintf(stdout_ptr(), format, args)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __fprintf_chk(
+    stream: *mut IoFile,
+    _flag: core::ffi::c_int,
+    format: *const i8,
+    args: ...
+) -> i32 {
+    vfprintf(stream, format, args)
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __vfprintf_chk(
+    stream: *mut IoFile,
+    _flag: core::ffi::c_int,
+    format: *const i8,
+    args: VaList<'_>,
+) -> i32 {
+    vfprintf(stream, format, args)
+}

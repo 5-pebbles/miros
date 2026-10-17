@@ -4,8 +4,10 @@ use bitbybit::bitfield;
 
 use crate::signature_matches_libc;
 
+mod close;
 mod file;
 mod file_lock;
+mod stream_control;
 mod stream_write;
 mod writer;
 
@@ -14,6 +16,7 @@ pub(crate) use writer::vfprintf;
 
 pub const EOF: i32 = -1;
 pub const BUFFER_SIZE: usize = 8192;
+pub const BUFFER_ALIGNMENT: usize = 16;
 
 /// glibc `_IO_FILE._flags`; miros interprets only these bits. `magic` (0xFBAD) fills the high half.
 #[bitfield(u32)]
@@ -114,6 +117,11 @@ static mut stderr: *mut IoFile = &raw mut STDERR_FILE;
 
 pub(crate) unsafe fn stdout_ptr() -> *mut IoFile {
     *(&raw const stdout)
+}
+
+/// Writes straight to `stderr`; it is unbuffered, so the bytes reach the descriptor before returning.
+pub(crate) unsafe fn write_stderr(bytes: &[u8]) {
+    with_stream_lock(*(&raw const stderr), |file| file.write_bytes(bytes));
 }
 
 /// The one place stdio locking lives; the `*_unlocked` API and inlined fast paths bypass it.

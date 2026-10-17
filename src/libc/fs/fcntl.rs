@@ -61,6 +61,7 @@ unsafe extern "C" fn fcntl(
     signature_matches_libc!(libc::fcntl(
         std::mem::transmute(file_descriptor),
         std::mem::transmute(command),
+        arguments,
     ));
 
     let argument: usize = command
@@ -80,6 +81,7 @@ unsafe extern "C" fn fcntl64(
     signature_matches_libc!(libc::fcntl(
         std::mem::transmute(file_descriptor),
         std::mem::transmute(command),
+        arguments,
     ));
 
     let argument: usize = command

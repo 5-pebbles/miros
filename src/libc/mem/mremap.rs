@@ -24,7 +24,8 @@ pub unsafe extern "C" fn mremap(
         old_address.cast(),
         old_size,
         new_size,
-        std::mem::transmute(flags)
+        std::mem::transmute(flags),
+        args,
     )
     .cast());
 
