@@ -23,9 +23,9 @@ pub(super) fn is_separator(argument: *mut c_char) -> bool {
 }
 
 /// Views the option array as a slice, or `None` if it is absent. The array ends at the first entry with a null name.
-pub(super) unsafe fn long_option_table(
+pub(super) unsafe fn long_option_table<'table>(
     options: *const libc::option,
-) -> Option<&'static [libc::option]> {
+) -> Option<&'table [libc::option]> {
     if options.is_null() {
         return None;
     }
