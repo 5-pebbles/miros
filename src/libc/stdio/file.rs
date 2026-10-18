@@ -5,7 +5,7 @@ use std::{
     ptr,
 };
 
-use super::{IoFile, BUFFER_SIZE, EOF};
+use super::{IoFile, BUFFER_ALIGNMENT, BUFFER_SIZE, EOF};
 use crate::{
     libc::{
         errno::{set_errno, Errno},
@@ -31,7 +31,7 @@ impl IoFile {
         }
 
         let size = optimal_buffer_size(file_descriptor);
-        let layout = alloc::Layout::from_size_align(size, 16).unwrap();
+        let layout = alloc::Layout::from_size_align(size, BUFFER_ALIGNMENT).unwrap();
         let buffer = alloc::alloc(layout);
         if buffer.is_null() {
             alloc::handle_alloc_error(layout);

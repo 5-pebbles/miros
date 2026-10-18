@@ -3,7 +3,19 @@ use std::{
     process::Command,
 };
 
+use clap::Args;
+
 pub const TARGET: &str = "x86_64-unknown-linux-gnu";
+
+#[derive(Args)]
+pub struct BuildArgs {
+    /// Cargo features to pass through (comma- or space-separated), like `cargo --features`.
+    #[arg(long)]
+    pub features: Option<String>,
+    /// CPU to target (e.g. `x86-64-v2`). Defaults to `native`.
+    #[arg(long)]
+    pub target_cpu: Option<String>,
+}
 
 /// The workspace root, `xtask`'s manifest lives one level under it, so this is invocation-independent.
 pub fn workspace_root() -> PathBuf {
@@ -14,11 +26,19 @@ pub fn workspace_root() -> PathBuf {
 }
 
 /// Build `libmiros.so` (release) and return its path.
-pub fn run(features: Option<&str>, target_cpu: Option<&str>) -> PathBuf {
+pub fn run(
+    BuildArgs {
+        features,
+        target_cpu,
+    }: BuildArgs,
+) -> PathBuf {
     let root = workspace_root();
     let aliases_version_script = crate::aliases::generate();
 
-    let target_cpu_flag = format!("-C target-cpu={}", target_cpu.unwrap_or("native"));
+    let target_cpu_flag = format!(
+        "-C target-cpu={}",
+        target_cpu.as_deref().unwrap_or("native")
+    );
     let mut cargo = Command::new("cargo");
     cargo.current_dir(&root).env(
         "RUSTFLAGS",
@@ -35,7 +55,7 @@ pub fn run(features: Option<&str>, target_cpu: Option<&str>) -> PathBuf {
         "--release",
     ]);
     if let Some(features) = features {
-        cargo.args(["--features", features]);
+        cargo.args(["--features", &features]);
     }
     cargo.args([
         "--",

@@ -1,11 +1,20 @@
-use std::{mem::offset_of, ptr};
+use std::{
+    mem::offset_of,
+    ptr,
+    sync::{Mutex, MutexGuard},
+};
 
 use bitbybit::bitfield;
 
-use crate::signature_matches_libc;
+use crate::{
+    libc::errno::{set_errno, Errno},
+    signature_matches_libc,
+};
 
+mod close;
 mod file;
 mod file_lock;
+mod stream_control;
 mod stream_write;
 mod writer;
 
@@ -14,6 +23,7 @@ pub(crate) use writer::vfprintf;
 
 pub const EOF: i32 = -1;
 pub const BUFFER_SIZE: usize = 8192;
+pub const BUFFER_ALIGNMENT: usize = 16;
 
 /// glibc `_IO_FILE._flags`; miros interprets only these bits. `magic` (0xFBAD) fills the high half.
 #[bitfield(u32)]
@@ -100,6 +110,15 @@ static mut STDERR_FILE: IoFile =
 
 static mut STREAM_LIST_HEAD: *mut IoFile = &raw mut STDOUT_FILE;
 
+/// Guards the flush-all chain. Taken only with no stream lock held, so the order is list then stream.
+static STREAM_LIST_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_stream_list() -> MutexGuard<'static, ()> {
+    STREAM_LIST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg_attr(not(test), no_mangle)]
 #[allow(non_upper_case_globals)]
 static mut stdin: *mut IoFile = &raw mut STDIN_FILE;
@@ -116,6 +135,11 @@ pub(crate) unsafe fn stdout_ptr() -> *mut IoFile {
     *(&raw const stdout)
 }
 
+/// Writes straight to `stderr`; it is unbuffered, so the bytes reach the descriptor before returning.
+pub(crate) unsafe fn write_stderr(bytes: &[u8]) {
+    with_stream_lock(*(&raw const stderr), |file| file.write_bytes(bytes));
+}
+
 /// The one place stdio locking lives; the `*_unlocked` API and inlined fast paths bypass it.
 pub(super) unsafe fn with_stream_lock<R>(
     stream: *mut IoFile,
@@ -128,11 +152,32 @@ pub(super) unsafe fn with_stream_lock<R>(
 }
 
 pub(crate) unsafe fn flush_all_streams() {
+    let _list_guard = lock_stream_list();
     let mut stream = *(&raw const STREAM_LIST_HEAD);
     while !stream.is_null() {
         with_stream_lock(stream, |file| unsafe { file.flush_buffer() });
         stream = (*stream).chain;
     }
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fileno(stream: *mut IoFile) -> i32 {
+    signature_matches_libc!(libc::fileno(core::mem::transmute(stream)));
+    if stream.is_null() || (*stream).flags.magic() != IO_MAGIC {
+        set_errno(Errno::BADF);
+        return -1;
+    }
+    (*stream).fileno
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn fflush_unlocked(stream: *mut IoFile) -> i32 {
+    if stream.is_null() {
+        flush_all_streams();
+        return 0;
+    }
+
+    (*stream).flush_buffer()
 }
 
 #[cfg_attr(not(test), no_mangle)]

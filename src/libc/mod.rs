@@ -7,7 +7,10 @@ mod dl;
 pub mod environ;
 // TODO: Add error handling for these things:
 mod fs;
+mod getopt;
+mod gettext;
 pub mod interposable;
+mod locale;
 mod math;
 pub mod mem;
 mod net;

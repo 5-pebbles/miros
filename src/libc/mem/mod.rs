@@ -14,6 +14,11 @@ pub use mremap::{mremap, MreMapFlags};
 mod madvise;
 pub use madvise::madvise;
 
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn getpagesize() -> std::ffi::c_int {
+    crate::page_size::get_page_size() as std::ffi::c_int
+}
+
 // Protection flags:
 #[bitenum(u2, exhaustive = true)]
 pub enum GrowthDirection {
@@ -163,6 +168,19 @@ unsafe extern "C" fn memmove(
         );
     }
     destination
+}
+
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __memcpy_chk(
+    destination: *mut u8,
+    source: *const u8,
+    number_of_bytes_to_copy: usize,
+    destination_length: usize,
+) -> *mut u8 {
+    if number_of_bytes_to_copy > destination_length {
+        crate::libc::process::abort();
+    }
+    memcpy(destination, source, number_of_bytes_to_copy)
 }
 
 #[cfg_attr(not(test), no_mangle)]

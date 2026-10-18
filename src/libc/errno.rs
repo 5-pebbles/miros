@@ -82,6 +82,24 @@ unsafe extern "C" fn __errno_location() -> *mut Errno {
     errno.as_ptr()
 }
 
+// FIXME: no message table; errors format as their numeric `Errno` Display.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn strerror_r(
+    errnum: Errno,
+    buffer: *mut u8,
+    length: usize,
+) -> *mut core::ffi::c_char {
+    if buffer.is_null() || length == 0 {
+        return c"Unknown error".as_ptr() as *mut core::ffi::c_char;
+    }
+
+    let mut cursor = std::io::Cursor::new(std::slice::from_raw_parts_mut(buffer, length));
+    if write!(cursor, "{errnum}\0").is_err() {
+        buffer.add(length - 1).write(0);
+    }
+    buffer as *mut core::ffi::c_char
+}
+
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __xpg_strerror_r(errnum: Errno, buffer: *mut u8, length: usize) -> i32 {
     signature_matches_libc!(libc::strerror_r(

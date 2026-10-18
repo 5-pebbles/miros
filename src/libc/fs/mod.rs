@@ -1,13 +1,18 @@
 mod close;
+mod copy_file_range;
 mod dir;
+mod fadvise;
 mod fcntl;
 pub mod fstat;
 mod getcwd;
+mod ioctl;
 pub mod isatty;
 mod lseek;
 mod open;
+mod pipe;
 mod pread;
 mod read;
+mod splice;
 mod statx;
 mod write;
 mod writev;

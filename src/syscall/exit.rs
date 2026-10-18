@@ -18,6 +18,18 @@ pub fn exit(code: usize) -> ! {
     }
 }
 
+#[inline(always)]
+pub fn exit_group(code: usize) -> ! {
+    unsafe {
+        asm!(
+            "syscall",
+            in("rax") Syscall::ExitGroup as usize,
+            in("rdi") code,
+            options(noreturn)
+        )
+    }
+}
+
 /// Unmap `[base, base + length)` then exit the thread, touching no stack between the two syscalls.
 pub unsafe fn munmap_and_exit(base: *mut u8, length: usize) -> ! {
     asm!(

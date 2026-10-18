@@ -1,8 +1,6 @@
 use std::{ffi::c_void, ptr, sync::Mutex};
 
-use crate::{
-    libc::stdio::flush_all_streams, signature_matches_libc, syscall::exit::exit as exit_syscall,
-};
+use crate::{libc::stdio::flush_all_streams, signature_matches_libc, syscall::exit::exit_group};
 
 enum HandlerKind {
     Plain(extern "C" fn()),
@@ -71,8 +69,18 @@ pub(crate) unsafe fn run_exit_sequence() {
 }
 
 #[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn _exit(code: i32) -> ! {
+    signature_matches_libc!(libc::_exit(code));
+    exit_group(code as usize);
+}
+
+// FIXME: the DSO handle is ignored; finalizers for dlclose'd objects never run.
+#[cfg_attr(not(test), no_mangle)]
+unsafe extern "C" fn __cxa_finalize(_dso_handle: *mut c_void) {}
+
+#[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn exit(code: i32) -> ! {
     signature_matches_libc!(libc::exit(code));
     run_exit_sequence();
-    exit_syscall(code as usize);
+    exit_group(code as usize);
 }

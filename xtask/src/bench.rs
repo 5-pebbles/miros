@@ -356,7 +356,10 @@ pub fn run(args: BenchArgs) {
     });
 
     log(log_color, "build", "miros (release)");
-    let miros = build::run(None, None);
+    let miros = build::run(build::BuildArgs {
+        features: None,
+        target_cpu: None,
+    });
 
     let sources = discover_benchmarks(&bench_dir, &args.names);
 
