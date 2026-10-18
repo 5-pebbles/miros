@@ -82,6 +82,7 @@ unsafe extern "C" fn __errno_location() -> *mut Errno {
     errno.as_ptr()
 }
 
+// FIXME: no message table; errors format as their numeric `Errno` Display.
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn strerror_r(
     errnum: Errno,

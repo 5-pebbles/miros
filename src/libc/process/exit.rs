@@ -74,7 +74,7 @@ unsafe extern "C" fn _exit(code: i32) -> ! {
     exit_group(code as usize);
 }
 
-// `__cxa_atexit` handlers already run in `run_exit_sequence`; crt's finalizer call has nothing to do.
+// FIXME: the DSO handle is ignored; finalizers for dlclose'd objects never run.
 #[cfg_attr(not(test), no_mangle)]
 unsafe extern "C" fn __cxa_finalize(_dso_handle: *mut c_void) {}
 
