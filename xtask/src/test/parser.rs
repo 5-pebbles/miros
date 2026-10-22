@@ -96,6 +96,7 @@ impl<'a> Parser<'a> {
             "INPUT" => Directive::Input(self.string()?),
             "EOF" => Directive::Eof,
             "SIGNAL" => Directive::Signal(self.signal()?),
+            "SHELL" => return self.add_setup(),
             "ARGS" => return self.set_args(span),
             "STATUS" => return self.set_status(span),
             "STDOUT" => return self.select_stream(Stream::Stdout),
@@ -110,6 +111,13 @@ impl<'a> Parser<'a> {
         };
         self.end_of_line()?;
         self.test_case.directives.push(directive);
+        Ok(())
+    }
+
+    fn add_setup(&mut self) -> Result<(), Diagnostic> {
+        let command = self.string()?;
+        self.end_of_line()?;
+        self.test_case.setup.push(command);
         Ok(())
     }
 
