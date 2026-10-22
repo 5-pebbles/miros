@@ -18,6 +18,14 @@ const EXAMPLES: &[Example] = &[
         flags: &["-lm"],
     },
     Example {
+        stem: "dlopen_sqrt",
+        flags: &[],
+    },
+    Example {
+        stem: "dlopen_plugin",
+        flags: &[],
+    },
+    Example {
         stem: "thread_local",
         flags: &[],
     },
