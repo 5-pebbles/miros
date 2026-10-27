@@ -1,4 +1,8 @@
-use std::ffi::c_void;
+use std::{
+    ffi::c_void,
+    ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 
 use indexmap::IndexMap;
 
@@ -13,6 +17,8 @@ pub struct ObjectDataGraph {
     pub(crate) dependencies: IndexMap<String, ObjectData>,
 }
 
+static GLOBAL_GRAPH: AtomicPtr<ObjectDataGraph> = AtomicPtr::new(ptr::null_mut());
+
 impl ObjectDataGraph {
     pub fn new(program: ObjectData, miros: ObjectData) -> Self {
         Self {
@@ -20,6 +26,19 @@ impl ObjectDataGraph {
             miros,
             dependencies: IndexMap::new(),
         }
+    }
+
+    // Lazy PLT resolution can outlive startup, so the graph is leaked at a stable address.
+    pub fn install_global(self) -> &'static mut Self {
+        let graph = Box::leak(Box::new(self));
+        GLOBAL_GRAPH.store(graph, Ordering::Release);
+        graph
+    }
+
+    pub fn global() -> &'static Self {
+        let graph = GLOBAL_GRAPH.load(Ordering::Acquire);
+        assert!(!graph.is_null(), "global object graph is not installed");
+        unsafe { &*graph }
     }
 
     pub fn iter_objects(&self) -> impl DoubleEndedIterator<Item = &ObjectData> {

@@ -144,7 +144,9 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         ObjectData::from_base(auxv_info.base).unwrap()
     };
 
-    let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
+    // GOT[1] stores ObjectData addresses, so the graph must have a stable address before relocation.
+    let executable_and_dependencies =
+        ObjectDataGraph::new(executable, miros_object_data).install_global();
 
     let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
     let stratagems: &[&dyn Stratagem] = &[
@@ -155,7 +157,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         &init_array,
     ];
     let executable_pipeline = ObjectPipeline::new(stratagems);
-    if let Err(error) = executable_pipeline.run_pipeline(&mut executable_and_dependencies) {
+    if let Err(error) = executable_pipeline.run_pipeline(executable_and_dependencies) {
         eprintln!("{error}");
         crate::syscall::exit::exit(1);
     }

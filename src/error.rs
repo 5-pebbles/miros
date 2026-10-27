@@ -18,6 +18,8 @@ pub enum MirosError {
     DependencyNotFound(String),
     ElfReadError(String),
     UnrecognizedOption(String),
+    MissingOptionValue(&'static str),
+    InvalidOptionValue { option: &'static str, value: String },
     UnrecognizedEnvironmentValue { name: String, value: String },
     MissingExecutable,
     UndefinedSymbols(Vec<String>),
@@ -44,6 +46,10 @@ impl fmt::Display for MirosError {
         match self {
             Self::ElfReadError(message) => write!(f, "{message}"),
             Self::UnrecognizedOption(option) => write!(f, "unrecognized option: {option}"),
+            Self::MissingOptionValue(option) => write!(f, "missing value for {option}"),
+            Self::InvalidOptionValue { option, value } => {
+                write!(f, "invalid value for {option}: {value}")
+            }
             Self::UnrecognizedEnvironmentValue { name, value } => {
                 write!(f, "ignoring unrecognized {name} value: {value}")
             }

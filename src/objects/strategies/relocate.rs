@@ -4,7 +4,11 @@ use super::relr;
 use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
     error::MirosError,
-    objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
+    objects::{
+        lazy_binding, object_data::ObjectData, object_data_graph::ObjectDataGraph,
+        strategies::Stratagem,
+    },
+    start::config,
 };
 
 pub struct Relocate;
@@ -16,6 +20,7 @@ impl Relocate {
         rela: Rela,
         object_data: &ObjectData,
         object_data_map: &ObjectDataGraph,
+        defer_jump_slot: bool,
         undefined_symbols: &mut Vec<String>,
     ) -> Result<(), MirosError> {
         let relocate_address = rela.r_offset.wrapping_add(object_data.base.addr());
@@ -50,6 +55,17 @@ impl Relocate {
                     options(nostack, preserves_flags),
                 );
             }
+            R_X86_64_JUMP_SLOT if defer_jump_slot => {
+                debug_assert_eq!(rela.r_addend, 0);
+                // The slot initially contains its PLT stub's link-time address.
+                asm!(
+                    "add qword ptr [{}], {}",
+                    in(reg) relocate_address,
+                    in(reg) object_data.base.addr(),
+                    options(nostack, preserves_flags),
+                );
+            }
+
             R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT => {
                 debug_assert_eq!(rela.r_addend, 0);
 
@@ -110,29 +126,51 @@ impl Relocate {
 
 impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
+        let lazy_binding_available = config::lazy_binding() && lazy_binding::initialize();
+
         let mut undefined_symbols = Vec::<String>::new();
         // Dependencies before the program: a COPY reloc reads its source object's relocated bytes.
         object_data_map
             .iter_objects_topological()
             .try_for_each(|object| {
+                let lazy_plt = lazy_binding_available
+                    && !object.dynamic_fields.bind_now
+                    && object.dynamic_fields.global_offset_table.is_some();
+                if lazy_plt {
+                    unsafe { lazy_binding::setup_global_offset_table(object) };
+                }
+
                 let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
                 let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
 
                 unsafe { relr::apply(object) };
 
-                rela_entries
-                    .iter()
-                    .chain(plt_rela_entries.iter())
-                    .try_for_each(|rela| unsafe {
-                        self.rela(*rela, object, object_data_map, &mut undefined_symbols)
-                    })
+                // JUMP_SLOT relocations live only in .rela.plt, so the lazy flag applies to that iterator alone.
+                rela_entries.iter().try_for_each(|rela| unsafe {
+                    self.rela(
+                        *rela,
+                        object,
+                        object_data_map,
+                        false,
+                        &mut undefined_symbols,
+                    )
+                })?;
+                plt_rela_entries.iter().try_for_each(|rela| unsafe {
+                    self.rela(
+                        *rela,
+                        object,
+                        object_data_map,
+                        lazy_plt,
+                        &mut undefined_symbols,
+                    )
+                })
             })?;
 
         if undefined_symbols.is_empty() {
             return Ok(());
         }
 
-        if crate::start::config::lenient_undefined_symbols() {
+        if config::lenient_undefined_symbols() {
             eprintln!("{}", MirosError::UndefinedSymbols(undefined_symbols));
             Ok(())
         } else {
