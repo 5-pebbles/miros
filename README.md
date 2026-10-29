@@ -30,7 +30,7 @@ cargo xtask demo ~/git/auxv-dot-org/target/release/auxv-dot-org \
     --http-only --http-port 8080
 ```
 
-Patched into `PT_INTERP`, miros never sees a command line, so its settings come from environment variables: `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`. Invoked directly, it takes them as flags instead: `--lenient-undefined-symbols`.
+Patched into `PT_INTERP`, miros never sees a command line, so its settings come from environment variables: `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`. Invoked directly, it takes them as options instead: `--undefined-symbols=lenient`.
 
 ## Status
 
@@ -46,7 +46,7 @@ The relocation pass collects every unresolved symbol and reports the full list:
 Miros [Error]: Found Undefined Symbols [`foo`, `bar`]
 ```
 
-Run miros with `--lenient-undefined-symbols` (or set `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`) to downgrade this to a warning. Unresolved symbols relocate to null, so a program only crashes if it actually calls one.
+Run miros with `--undefined-symbols=lenient` (or set `MIROS_LENIENT_UNDEFINED_SYMBOLS=1`) to downgrade this to a warning. Unresolved symbols relocate to null, so a program only crashes if it actually calls one.
 
 ## Benchmarks
 

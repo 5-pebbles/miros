@@ -1,106 +1,90 @@
-use std::{ffi::CStr, fmt::Write as _};
+use std::{
+    ffi::{CStr, OsString},
+    os::unix::ffi::OsStringExt,
+};
 
-use crate::{error::MirosError, start::config::ConfigOverrides, syscall::exit::exit};
+use clap::{Parser, ValueEnum};
 
-macro_rules! flags {
-    (
-        |$state:ident: $state_type:ty|
+use crate::start::config::ConfigOverrides;
 
-        $(
-            #[doc = $help:expr]
-            $variant:ident ($long_name:expr) { $($body:tt)* }
-        )+
-    ) => {
-        #[derive(Clone, Copy)]
-        enum Flag {
-            $(#[doc = $help] $variant,)+
-        }
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum UndefinedSymbols {
+    Strict,
+    Lenient,
+}
 
-        impl Flag {
-            const TABLE: &[Self] = &[$(Self::$variant),+];
+#[derive(Debug, Parser)]
+#[command(
+    name = "miros",
+    version,
+    about = "Run EXECUTABLE with miros as the dynamic linker."
+)]
+#[command(override_usage = "miros [OPTIONS] EXECUTABLE [ARGUMENTS...]")]
+#[command(args_override_self = true, after_help = ENVIRONMENT_HELP)]
+struct CommandLine {
+    /// Reject unresolved strong symbols, or warn and bind them to null.
+    #[arg(long, value_enum)]
+    undefined_symbols: Option<UndefinedSymbols>,
 
-            fn entry(self) -> (&'static str, &'static str) {
-                match self {
-                    $(Self::$variant => ($long_name, $help.trim()),)+
-                }
-            }
+    /// Executable and its arguments.
+    #[arg(required = true, trailing_var_arg = true, value_name = "EXECUTABLE")]
+    arguments: Vec<OsString>,
+}
 
-            fn from_long_name(bytes: &[u8]) -> Option<Self> {
-                Self::TABLE
-                    .iter()
-                    .copied()
-                    .find(|flag| flag.entry().0.as_bytes() == bytes)
-            }
+const ENVIRONMENT_HELP: &str =
+    "Environment:\n  MIROS_LENIENT_UNDEFINED_SYMBOLS   1 or 0. Command-line options win.";
 
-            fn apply(self, $state: $state_type) {
-                match self {
-                    $(Self::$variant => { $($body)* })+
-                }
-            }
-        }
+fn parse_from(arguments: Vec<OsString>) -> Result<(usize, ConfigOverrides), clap::Error> {
+    let argument_count = arguments.len();
+    let command_line = CommandLine::try_parse_from(arguments)?;
+    let executable_index = argument_count - command_line.arguments.len();
+    let overrides = ConfigOverrides {
+        lenient: command_line
+            .undefined_symbols
+            .map(|policy| matches!(policy, UndefinedSymbols::Lenient)),
     };
+    Ok((executable_index, overrides))
 }
 
-flags! {
-    |overrides: &mut ConfigOverrides|
-
-    /// Bind unresolved strong symbols to null with a warning instead of aborting
-    LenientUndefinedSymbols("--lenient-undefined-symbols") { overrides.lenient = Some(true); }
-    /// Abort load on unresolved strong symbols (the default); overrides MIROS_LENIENT_UNDEFINED_SYMBOLS
-    StrictUndefinedSymbols("--strict-undefined-symbols") { overrides.lenient = Some(false); }
-    /// Print this message
-    Help("--help") { print!("{}", usage()); exit(0); }
-    /// Print version information
-    Version("--version") { println!("miros {}", env!("CARGO_PKG_VERSION")); exit(0); }
-}
-
-pub unsafe fn parse(arguments: &[*const u8]) -> Result<(usize, ConfigOverrides), MirosError> {
-    let mut overrides = ConfigOverrides::default();
-
-    let mut index = 1;
-    while let Some(&argument) = arguments.get(index) {
-        let bytes = CStr::from_ptr(argument.cast()).to_bytes();
-        if bytes == b"--" {
-            index += 1;
-            break;
-        }
-        if !bytes.starts_with(b"--") {
-            break;
-        }
-
-        let flag = Flag::from_long_name(bytes).ok_or_else(|| {
-            MirosError::UnrecognizedOption(String::from_utf8_lossy(bytes).into_owned())
-        })?;
-        flag.apply(&mut overrides);
-        index += 1;
-    }
-
-    if arguments.get(index).is_none() {
-        return Err(MirosError::MissingExecutable);
-    }
-
-    Ok((index, overrides))
-}
-
-pub fn usage() -> String {
-    let longest_name = Flag::TABLE
+pub unsafe fn parse(arguments: &[*const u8]) -> (usize, ConfigOverrides) {
+    let arguments = arguments
         .iter()
-        .map(|flag| flag.entry().0.len())
-        .max()
-        .unwrap_or(0);
-
-    let mut usage = String::with_capacity(1024);
-    usage.push_str(USAGE_HEADER);
-    for flag in Flag::TABLE {
-        let (name, help) = flag.entry();
-        let _ = write!(usage, "      {name:<longest_name$}   {help}\n");
-    }
-    usage.push_str(USAGE_ENVIRONMENT);
-    usage
+        .map(|argument| OsString::from_vec(CStr::from_ptr(argument.cast()).to_bytes().to_vec()))
+        .collect();
+    parse_from(arguments).unwrap_or_else(|error| error.exit())
 }
 
-const USAGE_HEADER: &str =
-    "Usage: miros [OPTIONS] EXECUTABLE [ARGUMENTS...]\n\nRun EXECUTABLE with miros as the dynamic linker.\n\nOptions:\n";
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsString;
 
-const USAGE_ENVIRONMENT: &str =
-    "\nEnvironment:\n  MIROS_LENIENT_UNDEFINED_SYMBOLS   1 or 0; command-line flags win\n";
+    use super::{parse_from, ConfigOverrides};
+
+    fn parse_arguments(arguments: &[&str]) -> Result<(usize, ConfigOverrides), clap::Error> {
+        parse_from(arguments.iter().map(OsString::from).collect())
+    }
+
+    #[test]
+    fn maps_options_to_configuration_overrides() {
+        let (_, overrides) =
+            parse_arguments(&["miros", "--undefined-symbols=lenient", "program"]).unwrap();
+        assert_eq!(overrides.lenient, Some(true));
+
+        let (_, overrides) =
+            parse_arguments(&["miros", "--undefined-symbols=strict", "program"]).unwrap();
+        assert_eq!(overrides.lenient, Some(false));
+    }
+
+    #[test]
+    fn preserves_executable_argument_boundaries() {
+        let (index, overrides) =
+            parse_arguments(&["miros", "program", "--undefined-symbols=lenient"]).unwrap();
+        assert_eq!(index, 1);
+        assert_eq!(overrides, ConfigOverrides::default());
+
+        let (index, _) = parse_arguments(&["miros", "--", "--program"]).unwrap();
+        assert_eq!(index, 2);
+
+        assert!(parse_arguments(&["miros", "--unknown", "program"]).is_err());
+    }
+}

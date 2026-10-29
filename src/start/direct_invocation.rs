@@ -10,7 +10,7 @@ use crate::{
     elf::{header::ElfHeader, program_header::ProgramHeader},
     objects::object_data::ObjectData,
     start::{
-        arguments::{parse, usage},
+        arguments::parse,
         auxiliary_vector::{self, AuxiliaryVectorItem},
         config::ConfigOverrides,
     },
@@ -76,10 +76,7 @@ impl DirectInvocation<ParseFlags> {
 
     pub unsafe fn parse_flags(self) -> (DirectInvocation<CompactStack>, ConfigOverrides, usize) {
         let arguments = slice::from_raw_parts(self.arg_pointer, self.arg_count);
-        let (executable_index, overrides) = parse(arguments).unwrap_or_else(|error| {
-            eprint!("{error}\n\n{}", usage());
-            exit(2);
-        });
+        let (executable_index, overrides) = parse(arguments);
         (self.transition(), overrides, executable_index)
     }
 }
