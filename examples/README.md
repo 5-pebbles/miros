@@ -6,7 +6,7 @@ The examples demonstrate the capabilities of Miros, while also acting as e2e tes
 
 Each test documents its expected behavior in comment directives, which the runner (`cargo xtask test`) parses and executes. A directive is a `//` comment that starts its line. Inline `//` comments and block comments are ignored.
 
-Directives come in three kinds. `ARGS`, `STATUS`, and `NO-TTY` are file-scope: they may appear anywhere, and duplicates are an error. `STDOUT` and `STDERR` are order-sensitive: they retarget the output directives that follow them. The rest run sequentially.
+Directives come in three kinds. `ARGS`, `STATUS`, and `NO-TTY` are file-scope: they may appear anywhere, and duplicates are an error. `STDOUT` and `STDERR` are order-sensitive: they retarget the output directives that follow them. `SHELL` runs in file order after fixture staging, before the process launches. The rest run sequentially against the live process.
 
 ### Directives
 
@@ -17,6 +17,7 @@ Directives come in three kinds. `ARGS`, `STATUS`, and `NO-TTY` are file-scope: t
 | `EXPECT "s"` | At exit, assert `s` appears in the output not consumed by `WAIT-FOR`. The runner appends `\n` to `s`. |
 | `INPUT "s"` | Write `s` to stdin. |
 | `SIGNAL X` | Send signal `X` to the process. `X` is an integer (1-64) or a symbolic name (`SIGTERM`). |
+| `SHELL "s"` | Run `s` via `sh -c` in the scratch directory after fixture staging, before the process launches. A nonzero exit fails the test with the command's stderr. |
 | `STATUS X` | Assert the exit status. `X` is an exit code (0-255), or `SIGNAL Y` for death by signal. Defaults to `STATUS 0`. |
 | `STDERR` | Retarget `WAIT-FOR` and `EXPECT` to stderr for all following directives. |
 | `STDOUT` | Retarget `WAIT-FOR` and `EXPECT` back to stdout (the default). |
@@ -32,7 +33,7 @@ The process runs with stdin, stdout, and stderr attached to a pseudo-terminal. `
 ### Grammar
 
 ```
-directive := "//" ws (wait | expect | input | eof | signal | exit | stream | no-tty | args)
+directive := "//" ws (wait | expect | input | eof | signal | exit | stream | no-tty | args | shell)
 wait      := "WAIT-FOR" ws string
 expect    := "EXPECT"   ws string
 input     := "INPUT"    ws string
@@ -42,6 +43,7 @@ status    := "STATUS"   ws (int | "SIGNAL" ws (name | int))
 stream    := "STDOUT" | "STDERR"
 no-tty    := "NO-TTY"   ws ("STDOUT" | "STDERR")
 args      := "ARGS"     ws string
+shell     := "SHELL"    ws string
 string    := '"' (literal-char | escape)* '"'
 escape    := "\" ("n" | "t" | "r" | "\" | '"')
 name      := "SIG" [A-Z]+

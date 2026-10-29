@@ -8,7 +8,7 @@ use std::{
         unix::process::ExitStatusExt,
     },
     path::{Path, PathBuf},
-    process::ExitStatus,
+    process::{Command, ExitStatus},
     sync::{Arc, Condvar, Mutex, mpsc},
     thread,
     time::Instant,
@@ -26,18 +26,49 @@ pub enum Failure {
     Pty(io::Error),
     Pipe(io::Error),
     Spawn(io::Error),
-    BinaryMissing { stem: String },
+    ShellSpawn {
+        command: String,
+        error: io::Error,
+    },
+    ShellFailed {
+        command: String,
+        status: String,
+        stderr: String,
+    },
+    BinaryMissing {
+        stem: String,
+    },
     Fixture(io::Error),
     Wait(io::Error),
-    WaitTimeout { text: String, stream: Stream },
-    WaitEof { text: String, stream: Stream },
-    DrainTimeout { stream: Stream },
+    WaitTimeout {
+        text: String,
+        stream: Stream,
+    },
+    WaitEof {
+        text: String,
+        stream: Stream,
+    },
+    DrainTimeout {
+        stream: Stream,
+    },
     WriteFailed(io::Error),
-    SignalFailed { signal: i32, error: io::Error },
-    ExitMismatch { expected: String, actual: String },
+    SignalFailed {
+        signal: i32,
+        error: io::Error,
+    },
+    ExitMismatch {
+        expected: String,
+        actual: String,
+    },
     ExitTimeout,
-    ExpectMiss { text: String, stream: Stream },
-    UnclaimedOutput { stream: Stream, text: String },
+    ExpectMiss {
+        text: String,
+        stream: Stream,
+    },
+    UnclaimedOutput {
+        stream: Stream,
+        text: String,
+    },
 }
 
 impl fmt::Display for Failure {
@@ -46,6 +77,21 @@ impl fmt::Display for Failure {
             Self::Pty(error) => write!(formatter, "pty allocation failed: {error}"),
             Self::Pipe(error) => write!(formatter, "pipe creation failed: {error}"),
             Self::Spawn(error) => write!(formatter, "spawn failed: {error}"),
+            Self::ShellSpawn { command, error } => {
+                write!(
+                    formatter,
+                    "setup command {command:?} failed to spawn: {error}"
+                )
+            }
+            Self::ShellFailed {
+                command,
+                status,
+                stderr,
+            } => write!(
+                formatter,
+                "setup command {command:?} exited with {status}: {}",
+                stderr.trim()
+            ),
             Self::BinaryMissing { stem } => write!(
                 formatter,
                 "examples/bin/{stem} not found; add it to EXAMPLES in xtask/src/examples.rs"
@@ -528,6 +574,26 @@ fn lossy_with_note(bytes: &[u8]) -> String {
     with_truncation_note(String::from_utf8_lossy(shown).into_owned(), bytes.len())
 }
 
+fn run_setup(command: &str, scratch: &Path) -> Result<(), Failure> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(scratch)
+        .output()
+        .map_err(|error| Failure::ShellSpawn {
+            command: command.to_string(),
+            error,
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(Failure::ShellFailed {
+        command: command.to_string(),
+        status: describe_status(&output.status),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
 pub enum LoadError {
     Read(io::Error),
     Parse {
@@ -580,6 +646,10 @@ impl TestRunner {
             return Err(RunError::without_capture(vec![Failure::BinaryMissing {
                 stem: self.stem.clone(),
             }]));
+        }
+        for command in &self.case.setup {
+            run_setup(command, scratch)
+                .map_err(|failure| RunError::without_capture(vec![failure]))?;
         }
         let mut session = Session::launch(&binary, &self.case, scratch, interpreter)
             .map_err(|failure| RunError::without_capture(vec![failure]))?;
