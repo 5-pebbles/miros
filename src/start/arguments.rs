@@ -1,176 +1,113 @@
-use std::{ffi::CStr, fmt::Write as _};
+use std::{
+    ffi::{CStr, OsString},
+    os::unix::ffi::OsStringExt,
+};
 
-use crate::{error::MirosError, start::config::ConfigOverrides, syscall::exit::exit};
+use clap::{Parser, ValueEnum};
 
-macro_rules! flags {
-    (
-        |$state:ident: $state_type:ty, $value:ident|
+use crate::start::config::ConfigOverrides;
 
-        $(
-            #[doc = $help:expr]
-            $variant:ident ($long_name:expr) { $($body:tt)* }
-        )+
-    ) => {
-        #[derive(Clone, Copy)]
-        enum Flag {
-            $(#[doc = $help] $variant,)+
-        }
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum Binding {
+    Lazy,
+    Now,
+}
 
-        impl Flag {
-            const TABLE: &[Self] = &[$(Self::$variant),+];
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum UndefinedSymbols {
+    Strict,
+    Lenient,
+}
 
-            fn entry(self) -> (&'static str, &'static str) {
-                match self {
-                    $(Self::$variant => ($long_name, $help.trim()),)+
-                }
-            }
+#[derive(Debug, Parser)]
+#[command(
+    name = "miros",
+    version,
+    about = "Run EXECUTABLE with miros as the dynamic linker."
+)]
+#[command(override_usage = "miros [OPTIONS] EXECUTABLE [ARGUMENTS...]")]
+#[command(args_override_self = true, after_help = ENVIRONMENT_HELP)]
+struct CommandLine {
+    /// Resolve PLT symbols on first call or at load.
+    #[arg(long, value_enum)]
+    binding: Option<Binding>,
 
-            fn from_long_name(bytes: &[u8]) -> Option<Self> {
-                Self::TABLE
-                    .iter()
-                    .copied()
-                    .find(|flag| flag.entry().0.as_bytes() == bytes)
-            }
+    /// Reject unresolved strong symbols, or warn and bind them to null.
+    #[arg(long, value_enum)]
+    undefined_symbols: Option<UndefinedSymbols>,
 
-            fn apply(self, $state: $state_type, $value: Option<&[u8]>) -> Result<(), MirosError> {
-                match self {
-                    $(Self::$variant => { $($body)* })+
-                }
-            }
-        }
+    /// Executable and its arguments.
+    #[arg(required = true, trailing_var_arg = true, value_name = "EXECUTABLE")]
+    arguments: Vec<OsString>,
+}
+
+const ENVIRONMENT_HELP: &str = "Environment:\n  MIROS_LENIENT_UNDEFINED_SYMBOLS   1 or 0. Command-line options win.\n  MIROS_LAZY_BINDING                1 or 0 (default 1).\n  LD_BIND_NOW                       Nonempty except 0 disables lazy binding.";
+
+fn parse_from(arguments: Vec<OsString>) -> Result<(usize, ConfigOverrides), clap::Error> {
+    let argument_count = arguments.len();
+    let command_line = CommandLine::try_parse_from(arguments)?;
+    let executable_index = argument_count - command_line.arguments.len();
+    let overrides = ConfigOverrides {
+        lenient_undefined_symbols: command_line
+            .undefined_symbols
+            .map(|policy| matches!(policy, UndefinedSymbols::Lenient)),
+        lazy_binding: command_line
+            .binding
+            .map(|binding| matches!(binding, Binding::Lazy)),
     };
+    Ok((executable_index, overrides))
 }
 
-flags! {
-    |overrides: &mut ConfigOverrides, value|
-
-    /// Bind unresolved strong symbols to null with a warning instead of aborting.
-    LenientUndefinedSymbols("--lenient-undefined-symbols") {
-        overrides.lenient_undefined_symbols = Some(true);
-        Ok(())
-    }
-    /// Abort load on unresolved strong symbols (the default). Overrides MIROS_LENIENT_UNDEFINED_SYMBOLS.
-    StrictUndefinedSymbols("--strict-undefined-symbols") {
-        overrides.lenient_undefined_symbols = Some(false);
-        Ok(())
-    }
-    /// Resolve PLT symbols on first call or at load. Overrides environment settings.
-    Binding("--binding=lazy|now") {
-        let value = value.ok_or(MirosError::MissingOptionValue("--binding"))?;
-        overrides.lazy_binding = match value {
-            b"lazy" => Some(true),
-            b"now" => Some(false),
-            _ => {
-                return Err(MirosError::InvalidOptionValue {
-                    option: "--binding",
-                    value: String::from_utf8_lossy(value).into_owned(),
-                });
-            }
-        };
-        Ok(())
-    }
-    /// Print this message.
-    Help("--help") { print!("{}", usage()); exit(0); }
-    /// Print version information.
-    Version("--version") { println!("miros {}", env!("CARGO_PKG_VERSION")); exit(0); }
-}
-
-impl Flag {
-    fn from_argument(bytes: &[u8]) -> Option<(Self, Option<&[u8]>)> {
-        if bytes == b"--binding" {
-            return Some((Self::Binding, None));
-        }
-        if let Some(value) = bytes.strip_prefix(b"--binding=") {
-            return Some((Self::Binding, Some(value)));
-        }
-        Self::from_long_name(bytes).map(|flag| (flag, None))
-    }
-}
-
-pub unsafe fn parse(arguments: &[*const u8]) -> Result<(usize, ConfigOverrides), MirosError> {
-    let mut overrides = ConfigOverrides::default();
-
-    let mut index = 1;
-    while let Some(&argument) = arguments.get(index) {
-        let bytes = CStr::from_ptr(argument.cast()).to_bytes();
-        if bytes == b"--" {
-            index += 1;
-            break;
-        }
-        if !bytes.starts_with(b"--") {
-            break;
-        }
-
-        let (flag, value) = Flag::from_argument(bytes).ok_or_else(|| {
-            MirosError::UnrecognizedOption(String::from_utf8_lossy(bytes).into_owned())
-        })?;
-        flag.apply(&mut overrides, value)?;
-        index += 1;
-    }
-
-    if arguments.get(index).is_none() {
-        return Err(MirosError::MissingExecutable);
-    }
-
-    Ok((index, overrides))
-}
-
-pub fn usage() -> String {
-    let longest_name = Flag::TABLE
+pub unsafe fn parse(arguments: &[*const u8]) -> (usize, ConfigOverrides) {
+    let arguments = arguments
         .iter()
-        .map(|flag| flag.entry().0.len())
-        .max()
-        .unwrap_or(0);
-
-    let mut usage = String::with_capacity(1024);
-    usage.push_str(USAGE_HEADER);
-    for flag in Flag::TABLE {
-        let (name, help) = flag.entry();
-        let _ = write!(usage, "      {name:<longest_name$}   {help}\n");
-    }
-    usage.push_str(USAGE_ENVIRONMENT);
-    usage
+        .map(|argument| OsString::from_vec(CStr::from_ptr(argument.cast()).to_bytes().to_vec()))
+        .collect();
+    parse_from(arguments).unwrap_or_else(|error| error.exit())
 }
-
-const USAGE_HEADER: &str =
-    "Usage: miros [OPTIONS] EXECUTABLE [ARGUMENTS...]\n\nRun EXECUTABLE with miros as the dynamic linker.\n\nOptions:\n";
-
-const USAGE_ENVIRONMENT: &str =
-    "\nEnvironment:\n  MIROS_LENIENT_UNDEFINED_SYMBOLS   1 or 0. Command-line flags win.\n  MIROS_LAZY_BINDING                1 or 0 (default 1).\n  LD_BIND_NOW                       Nonempty except 0 disables lazy binding.\n";
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigOverrides, Flag};
-    use crate::error::MirosError;
+    use std::ffi::OsString;
 
-    fn overrides_for(argument: &[u8]) -> Result<ConfigOverrides, MirosError> {
-        let (flag, value) = Flag::from_argument(argument).unwrap();
-        let mut overrides = ConfigOverrides::default();
-        flag.apply(&mut overrides, value)?;
-        Ok(overrides)
+    use super::{parse_from, ConfigOverrides};
+
+    fn parse_arguments(arguments: &[&str]) -> Result<(usize, ConfigOverrides), clap::Error> {
+        parse_from(arguments.iter().map(OsString::from).collect())
     }
 
     #[test]
-    fn binding_accepts_lazy_and_now_values() {
-        assert_eq!(
-            overrides_for(b"--binding=lazy").unwrap().lazy_binding,
-            Some(true)
-        );
-        assert_eq!(
-            overrides_for(b"--binding=now").unwrap().lazy_binding,
-            Some(false)
-        );
+    fn maps_options_to_configuration_overrides() {
+        let (_, overrides) = parse_arguments(&[
+            "miros",
+            "--binding=now",
+            "--undefined-symbols=lenient",
+            "program",
+        ])
+        .unwrap();
+        assert_eq!(overrides.lazy_binding, Some(false));
+        assert_eq!(overrides.lenient_undefined_symbols, Some(true));
+
+        let (_, overrides) = parse_arguments(&[
+            "miros",
+            "--binding=lazy",
+            "--undefined-symbols=strict",
+            "program",
+        ])
+        .unwrap();
+        assert_eq!(overrides.lazy_binding, Some(true));
+        assert_eq!(overrides.lenient_undefined_symbols, Some(false));
     }
 
     #[test]
-    fn binding_rejects_missing_and_invalid_values() {
-        assert!(matches!(
-            overrides_for(b"--binding"),
-            Err(MirosError::MissingOptionValue("--binding"))
-        ));
-        assert!(matches!(
-            overrides_for(b"--binding=eventually"),
-            Err(MirosError::InvalidOptionValue { .. })
-        ));
+    fn preserves_executable_argument_boundaries() {
+        let (index, overrides) = parse_arguments(&["miros", "program", "--binding=now"]).unwrap();
+        assert_eq!(index, 1);
+        assert_eq!(overrides, ConfigOverrides::default());
+
+        let (index, _) = parse_arguments(&["miros", "--", "--program"]).unwrap();
+        assert_eq!(index, 2);
+
+        assert!(parse_arguments(&["miros", "--unknown", "program"]).is_err());
     }
 }

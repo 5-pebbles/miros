@@ -17,11 +17,7 @@ pub enum MirosError {
     MissingDynamicEntry(DynamicTag),
     DependencyNotFound(String),
     ElfReadError(String),
-    UnrecognizedOption(String),
-    MissingOptionValue(&'static str),
-    InvalidOptionValue { option: &'static str, value: String },
     UnrecognizedEnvironmentValue { name: String, value: String },
-    MissingExecutable,
     UndefinedSymbols(Vec<String>),
     SymbolIndexOutOfBounds(usize),
     TlsAllocationFailed,
@@ -45,15 +41,9 @@ impl fmt::Display for MirosError {
         write!(f, "Miros [{level}]: ")?;
         match self {
             Self::ElfReadError(message) => write!(f, "{message}"),
-            Self::UnrecognizedOption(option) => write!(f, "unrecognized option: {option}"),
-            Self::MissingOptionValue(option) => write!(f, "missing value for {option}"),
-            Self::InvalidOptionValue { option, value } => {
-                write!(f, "invalid value for {option}: {value}")
-            }
             Self::UnrecognizedEnvironmentValue { name, value } => {
                 write!(f, "ignoring unrecognized {name} value: {value}")
             }
-            Self::MissingExecutable => write!(f, "missing EXECUTABLE operand"),
             Self::UndefinedSymbols(names) => {
                 let plural = (names.len() > 1).then_some("s").unwrap_or("");
                 let symbols = names.join("`, `");
