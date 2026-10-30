@@ -1,7 +1,5 @@
 use std::io::{self, IsTerminal, Write};
 
-use clap::builder::StyledStr;
-
 use crate::{start::environment_variables::EnvironmentIter, syscall::exit::exit};
 
 #[derive(Default)]
@@ -27,39 +25,27 @@ impl ColorEnvironment {
     }
 
     fn enabled_for(self, is_terminal: bool) -> bool {
-        if self.no_color {
-            return false;
-        }
-        if self.clicolor_force {
-            return true;
-        }
-        is_terminal && self.terminal_supports_color
+        !self.no_color && (self.clicolor_force || (is_terminal && self.terminal_supports_color))
     }
 }
 
-fn write_rendered(output: &mut dyn Write, rendered: &StyledStr, colored: bool) {
-    if colored {
-        let _ = write!(output, "{}", rendered.ansi());
+pub(super) fn print_and_exit(error: clap::Error, environment_pointer: *mut *mut u8) -> ! {
+    let (is_terminal, mut output): (bool, Box<dyn Write>) = if error.use_stderr() {
+        (io::stderr().is_terminal(), Box::new(io::stderr()))
     } else {
-        let _ = write!(output, "{rendered}");
-    }
-}
-
-pub(super) unsafe fn print_and_exit(error: clap::Error, environment_pointer: *mut *mut u8) -> ! {
-    let use_stderr = error.use_stderr();
-    let is_terminal = if use_stderr {
-        io::stderr().is_terminal()
-    } else {
-        io::stdout().is_terminal()
+        (io::stdout().is_terminal(), Box::new(io::stdout()))
     };
+
+    let rendered = error.render();
     let colored = ColorEnvironment::from_variables(EnvironmentIter::new(environment_pointer))
         .enabled_for(is_terminal);
-    let rendered = error.render();
-    if use_stderr {
-        write_rendered(&mut io::stderr().lock(), &rendered, colored);
+    let as_ascii = if colored {
+        rendered.ansi().to_string()
     } else {
-        write_rendered(&mut io::stdout().lock(), &rendered, colored);
-    }
+        rendered.to_string()
+    };
+    let _ = write!(output, "{as_ascii}");
+
     exit(error.exit_code() as usize)
 }
 
