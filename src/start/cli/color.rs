@@ -8,9 +8,7 @@ use crate::{start::environment_variables::EnvironmentIter, syscall::exit::exit};
 struct ColorEnvironment {
     no_color: bool,
     clicolor_force: bool,
-    clicolor: Option<bool>,
     terminal_supports_color: bool,
-    continuous_integration: bool,
 }
 
 impl ColorEnvironment {
@@ -21,9 +19,7 @@ impl ColorEnvironment {
                 match name {
                     "NO_COLOR" => environment.no_color = !value.is_empty(),
                     "CLICOLOR_FORCE" => environment.clicolor_force = !value.is_empty(),
-                    "CLICOLOR" => environment.clicolor = Some(value != "0"),
                     "TERM" => environment.terminal_supports_color = value != "dumb",
-                    "CI" => environment.continuous_integration = true,
                     _ => {}
                 }
                 environment
@@ -37,13 +33,7 @@ impl ColorEnvironment {
         if self.clicolor_force {
             return true;
         }
-        if self.clicolor == Some(false) {
-            return false;
-        }
-        is_terminal
-            && (self.terminal_supports_color
-                || self.clicolor == Some(true)
-                || self.continuous_integration)
+        is_terminal && self.terminal_supports_color
     }
 }
 
@@ -84,20 +74,12 @@ mod tests {
             (&[("TERM", "xterm")][..], true, true),
             (&[("TERM", "xterm")][..], false, false),
             (&[("TERM", "dumb")][..], true, false),
-            (&[("CLICOLOR", "1")][..], true, true),
-            (&[("CI", "")][..], true, true),
             (&[("CLICOLOR_FORCE", "1")][..], false, true),
-            (
-                &[("CLICOLOR_FORCE", "1"), ("CLICOLOR", "0")][..],
-                false,
-                true,
-            ),
             (
                 &[("NO_COLOR", "1"), ("CLICOLOR_FORCE", "1")][..],
                 true,
                 false,
             ),
-            (&[("CLICOLOR", "0"), ("TERM", "xterm")][..], true, false),
         ] {
             let environment = ColorEnvironment::from_variables(variables.iter().copied());
             assert_eq!(
