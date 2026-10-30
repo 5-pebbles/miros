@@ -6,11 +6,11 @@ use std::{
     ptr, slice,
 };
 
+use super::parse;
 use crate::{
     elf::{header::ElfHeader, program_header::ProgramHeader},
     objects::object_data::ObjectData,
     start::{
-        arguments::parse,
         auxiliary_vector::{self, AuxiliaryVectorItem},
         config::ConfigOverrides,
     },
