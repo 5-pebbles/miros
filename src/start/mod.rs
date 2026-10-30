@@ -19,16 +19,15 @@ use crate::{
     start::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
         bootstrap::Bootstrap,
+        cli::direct_invocation::DirectInvocation,
         config::ConfigOverrides,
-        direct_invocation::DirectInvocation,
     },
 };
 
-pub mod arguments;
 pub mod auxiliary_vector;
 pub mod bootstrap;
+pub mod cli;
 pub mod config;
-pub mod direct_invocation;
 pub mod environment_variables;
 
 #[unsafe(naked)]
