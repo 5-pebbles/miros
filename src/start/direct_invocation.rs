@@ -76,7 +76,7 @@ impl DirectInvocation<ParseFlags> {
 
     pub unsafe fn parse_flags(self) -> (DirectInvocation<CompactStack>, ConfigOverrides, usize) {
         let arguments = slice::from_raw_parts(self.arg_pointer, self.arg_count);
-        let (executable_index, overrides) = parse(arguments);
+        let (executable_index, overrides) = parse(arguments, self.env_pointer as *mut *mut u8);
         (self.transition(), overrides, executable_index)
     }
 }
