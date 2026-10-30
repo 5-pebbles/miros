@@ -17,7 +17,7 @@ enum UndefinedSymbols {
 #[command(
     name = "miros",
     version,
-    about = "Run EXECUTABLE with miros as the dynamic linker."
+    about = "Run EXECUTABLE with miros as the runtime."
 )]
 #[command(override_usage = "miros [OPTIONS] EXECUTABLE [ARGUMENTS...]")]
 #[command(args_override_self = true, after_help = ENVIRONMENT_HELP)]
