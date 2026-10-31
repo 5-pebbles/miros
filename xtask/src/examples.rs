@@ -14,6 +14,10 @@ const EXAMPLES: &[Example] = &[
         flags: &["-lm"],
     },
     Example {
+        stem: "lazy_binding",
+        flags: &[],
+    },
+    Example {
         stem: "sqrt_with_libm",
         flags: &["-lm"],
     },

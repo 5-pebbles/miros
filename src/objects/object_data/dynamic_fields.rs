@@ -5,7 +5,9 @@ use super::{hash_tables::HashTable, path_resolver::PathResolver};
 use crate::io_macros::syscall_assert;
 use crate::{
     elf::{
-        dynamic_array::{DynamicArrayItem, DynamicArrayIter, DynamicFlags, DynamicTag},
+        dynamic_array::{
+            DynamicArrayItem, DynamicArrayIter, DynamicFlags, DynamicFlags1, DynamicTag,
+        },
         relocate::Rela,
         string_table::StringTable,
         symbol::{Symbol, SymbolTable},
@@ -28,6 +30,7 @@ pub struct DynamicFields {
     pub path_resolver: PathResolver,
     dependencies: Vec<*const str>,
     pub static_tls: bool,
+    pub bind_now: bool,
 }
 
 impl DynamicFields {
@@ -64,6 +67,7 @@ impl DynamicFields {
         let mut needed_libraries_string_table_offsets: Vec<usize> = Vec::new();
 
         let mut static_tls = false;
+        let mut bind_now = false;
 
         DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
             Ok(DynamicTag::PltGot) => {
@@ -140,6 +144,11 @@ impl DynamicFields {
             Ok(DynamicTag::Flags) => {
                 let flags = DynamicFlags::new_with_raw_value(item.d_un.d_val as u64);
                 static_tls |= flags.static_tls();
+                bind_now |= flags.bind_now();
+            }
+            Ok(DynamicTag::Flags1) => {
+                let flags = DynamicFlags1::new_with_raw_value(item.d_un.d_val as u64);
+                bind_now |= flags.now();
             }
 
             _ => (),
@@ -191,6 +200,7 @@ impl DynamicFields {
             path_resolver,
             dependencies,
             static_tls,
+            bind_now,
         })
     }
 
