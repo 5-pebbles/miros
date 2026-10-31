@@ -20,7 +20,7 @@ use crate::{
         auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
         bootstrap::Bootstrap,
         cli::direct_invocation::DirectInvocation,
-        config::ConfigOverrides,
+        config::RuntimeConfig,
     },
 };
 
@@ -113,8 +113,8 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         .init_array(arg_count, arg_pointer, env_pointer, auxv_pointer);
     crate::allocator::install_heap();
 
-    let (overrides, executable, entry_point) = if direct_invocation {
-        let (invocation, overrides, executable_index) =
+    let (runtime_config, executable, entry_point) = if direct_invocation {
+        let (invocation, runtime_config, executable_index) =
             DirectInvocation::new(stack_pointer).parse_flags();
         let invocation = invocation.compact_stack(executable_index);
         let (invocation, executable, entry) = invocation.load_executable();
@@ -123,10 +123,10 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
         arg_pointer = stack.arg_pointer;
         env_pointer = stack.env_pointer;
         auxv_pointer = stack.auxv_pointer;
-        (overrides, executable, entry.addr())
+        (runtime_config, executable, entry.addr())
     } else {
         (
-            ConfigOverrides::default(),
+            RuntimeConfig::from_environment(env_pointer as *mut *mut u8),
             ObjectData::from_program_headers(program_header_table).unwrap(),
             auxv_info.entry.addr(),
         )
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
     auxiliary_vector::set_auxiliary_vector(auxv_pointer);
     set_environ_pointer(env_pointer as *mut *mut u8);
     set_program_name(arg_pointer.read());
-    config::init_from_environment(env_pointer as *mut *mut u8, overrides);
+    RuntimeConfig::set(runtime_config);
 
     let miros_object_data = if direct_invocation {
         ObjectData::from_program_headers(program_header_table).unwrap()

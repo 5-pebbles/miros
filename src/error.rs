@@ -2,7 +2,13 @@ use std::fmt;
 
 use strum::Display;
 
-use crate::{elf::dynamic_array::DynamicTag, start::auxiliary_vector::AuxiliaryVectorType};
+use crate::{
+    elf::dynamic_array::DynamicTag,
+    start::{
+        auxiliary_vector::AuxiliaryVectorType,
+        config::{RuntimeConfig, UndefinedSymbolsPolicy},
+    },
+};
 
 #[derive(Display)]
 pub enum ErrorLevel {
@@ -26,7 +32,9 @@ pub enum MirosError {
 impl MirosError {
     pub fn level(&self) -> ErrorLevel {
         match self {
-            Self::UndefinedSymbols(_) if crate::start::config::lenient_undefined_symbols() => {
+            Self::UndefinedSymbols(_)
+                if RuntimeConfig::get().undefined_symbols == UndefinedSymbolsPolicy::Lenient =>
+            {
                 ErrorLevel::Warn
             }
             Self::UnrecognizedEnvironmentValue { .. } => ErrorLevel::Warn,

@@ -5,6 +5,7 @@ use crate::{
     elf::{relocate::Rela, symbol::SymbolBinding},
     error::MirosError,
     objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
+    start::config::{RuntimeConfig, UndefinedSymbolsPolicy},
 };
 
 pub struct Relocate;
@@ -132,7 +133,7 @@ impl Stratagem for Relocate {
             return Ok(());
         }
 
-        if crate::start::config::lenient_undefined_symbols() {
+        if RuntimeConfig::get().undefined_symbols == UndefinedSymbolsPolicy::Lenient {
             eprintln!("{}", MirosError::UndefinedSymbols(undefined_symbols));
             Ok(())
         } else {
