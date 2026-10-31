@@ -1,8 +1,10 @@
 use std::{arch::asm, ptr};
 
-use super::relr;
 use crate::{
-    elf::{relocate::Rela, symbol::SymbolBinding},
+    elf::{
+        relocate::{Rela, Relr},
+        symbol::SymbolBinding,
+    },
     error::MirosError,
     objects::{object_data::ObjectData, object_data_graph::ObjectDataGraph, strategies::Stratagem},
     start::config::{RuntimeConfig, UndefinedSymbolsPolicy},
@@ -11,6 +13,35 @@ use crate::{
 pub struct Relocate;
 
 impl Relocate {
+    /// Adds the load base to each selected word. Address entries also set the starting point for subsequent bitmap entries.
+    #[cfg(target_arch = "x86_64")]
+    unsafe fn relr(&self, object_data: &ObjectData) {
+        let Some(entries) = object_data.dynamic_fields.relr_slice() else {
+            return;
+        };
+
+        let base = object_data.base.addr();
+        let mut location: *mut usize = ptr::null_mut();
+
+        for &entry in entries {
+            match Relr::from(entry) {
+                Relr::Address(offset) => {
+                    location = (base + offset) as *mut usize;
+                    *location = (*location).wrapping_add(base);
+                    location = location.add(1);
+                }
+                Relr::Bitmap(bitmap) => {
+                    // Bitmap 0b101: [word 0 += base] [word 1] [word 2 += base].
+                    for bit in Relr::set_bits(bitmap) {
+                        let slot = location.add(bit);
+                        *slot = (*slot).wrapping_add(base);
+                    }
+                    location = location.add(Relr::BITMAP_WORD_COUNT);
+                }
+            }
+        }
+    }
+
     #[cfg(target_arch = "x86_64")]
     unsafe fn rela(
         &self,
@@ -113,21 +144,15 @@ impl Stratagem for Relocate {
     fn run(&self, object_data_map: &mut ObjectDataGraph) -> Result<(), MirosError> {
         let mut undefined_symbols = Vec::<String>::new();
         // Dependencies before the program: a COPY reloc reads its source object's relocated bytes.
-        object_data_map
-            .iter_objects_topological()
-            .try_for_each(|object| {
-                let rela_entries = object.dynamic_fields.rela_slice().unwrap_or(&[]);
-                let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or(&[]);
+        for object in object_data_map.iter_objects_topological() {
+            unsafe { self.relr(object) };
 
-                unsafe { relr::apply(object) };
-
-                rela_entries
-                    .iter()
-                    .chain(plt_rela_entries.iter())
-                    .try_for_each(|rela| unsafe {
-                        self.rela(*rela, object, object_data_map, &mut undefined_symbols)
-                    })
-            })?;
+            let rela_entries = object.dynamic_fields.rela_slice().unwrap_or_default();
+            let plt_rela_entries = object.dynamic_fields.plt_rela_slice().unwrap_or_default();
+            for rela in rela_entries.iter().chain(plt_rela_entries) {
+                unsafe { self.rela(*rela, object, object_data_map, &mut undefined_symbols) }?;
+            }
+        }
 
         if undefined_symbols.is_empty() {
             return Ok(());
