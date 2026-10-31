@@ -1,6 +1,6 @@
 use std::fmt;
 
-use strum::Display;
+use strum::{Display, EnumString};
 
 use crate::{
     elf::dynamic_array::DynamicTag,
@@ -9,6 +9,8 @@ use crate::{
         config::{RuntimeConfig, UndefinedSymbolsPolicy},
     },
 };
+
+pub type Result<T> = std::result::Result<T, MirosError>;
 
 #[derive(Display)]
 pub enum ErrorLevel {
@@ -25,6 +27,7 @@ pub enum MirosError {
     ElfReadError(String),
     UnrecognizedEnvironmentValue { name: String, value: String },
     UndefinedSymbols(Vec<String>),
+    MissingCpuFeature(MissingCpuFeature),
     SymbolIndexOutOfBounds(usize),
     TlsAllocationFailed,
 }
@@ -50,14 +53,23 @@ impl fmt::Display for MirosError {
         match self {
             Self::ElfReadError(message) => write!(f, "{message}"),
             Self::UnrecognizedEnvironmentValue { name, value } => {
-                write!(f, "ignoring unrecognized {name} value: {value}")
+                write!(f, "Ignoring unrecognized {name} value: {value}")
             }
             Self::UndefinedSymbols(names) => {
                 let plural = (names.len() > 1).then_some("s").unwrap_or("");
                 let symbols = names.join("`, `");
                 write!(f, "Found Undefined Symbol{plural} [`{symbols}`]")
             }
+            Self::MissingCpuFeature(feature) => write!(f, "Missing CPU Feature: `{feature}`"),
             other => write!(f, "{other:?}"),
         }
     }
+}
+
+#[derive(EnumString, Display, Debug)]
+pub enum MissingCpuFeature {
+    /// Pre Sandy Bridge, so ~2011-ish.
+    XSave,
+    /// This is probably the OS, not actually your CPU, but I don't really give a fuck.
+    Xcr0SseBitNotSet,
 }
