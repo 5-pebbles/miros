@@ -13,7 +13,7 @@ pub(crate) use self::heap::{abandon_heap, install_heap};
 use self::primary::PrimaryAllocator;
 use crate::{
     libc::mem::{MapFlags, ProtectionFlags},
-    objects::strategies::init_array::InitArrayFunction,
+    objects::strategies::init_and_fini_array::InitArrayFunction,
     start::auxiliary_vector::{AuxiliaryVectorInfo, AuxiliaryVectorItem},
 };
 

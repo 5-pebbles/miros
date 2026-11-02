@@ -11,7 +11,7 @@ use crate::{
         object_data_graph::ObjectDataGraph,
         object_pipeline::ObjectPipeline,
         strategies::{
-            bind_interposable_cells::BindInterposableCells, init_array::InitArray,
+            bind_interposable_cells::BindInterposableCells, init_and_fini_array::InitArray,
             load_dependencies::LoadDependencies, relocate::Relocate,
             thread_local_storage::ThreadLocalStorage, Stratagem,
         },
@@ -145,13 +145,13 @@ pub unsafe extern "C" fn relocate_and_calculate_jump_address(stack_pointer: *mut
 
     let mut executable_and_dependencies = ObjectDataGraph::new(executable, miros_object_data);
 
-    let init_array = InitArray::new(arg_count, arg_pointer, env_pointer, auxv_pointer);
+    let init_array = InitArray::install(arg_count, arg_pointer, env_pointer, auxv_pointer);
     let stratagems: &[&dyn Stratagem] = &[
         &LoadDependencies,
         &Relocate,
         &BindInterposableCells,
         &ThreadLocalStorage,
-        &init_array,
+        init_array,
     ];
     let executable_pipeline = ObjectPipeline::new(stratagems);
     if let Err(error) = executable_pipeline.run_pipeline(&mut executable_and_dependencies) {

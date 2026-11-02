@@ -21,7 +21,7 @@ use crate::{
         mem::{mmap, MapFlags, ProtectionFlags},
         process::getpid,
     },
-    objects::strategies::init_array::InitArrayFunction,
+    objects::strategies::init_and_fini_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
     tls::{
@@ -294,8 +294,8 @@ impl Bootstrap<InitArray> {
         auxv_pointer: *const AuxiliaryVectorItem,
     ) {
         let call_array = |functions: *const [InitArrayFunction]| {
-            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
-            // but these are unsafely read from raw ELF init_array data...
+            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system.
+            // It's wrong, these are unsafely read from raw ELF init_array data... So just shutting it up.
             #[allow(useless_ptr_null_checks)]
             (&*functions)
                 .iter()
