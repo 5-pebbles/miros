@@ -24,6 +24,7 @@ pub struct DynamicFields {
     plt_rela_slice: Option<*const [Rela]>,
     relr_slice: Option<*const [u64]>,
     preinit_array: Option<*const [InitArrayFunction]>,
+    init_function: Option<InitArrayFunction>,
     init_array: Option<*const [InitArrayFunction]>,
     fini_function: Option<extern "C" fn()>,
     fini_array: Option<*const [FiniArrayFunction]>,
@@ -61,6 +62,7 @@ impl DynamicFields {
         let mut init_array_pointer: Option<*const InitArrayFunction> = None;
         let mut init_array_size = 0;
 
+        let mut init_pointer: Option<*const c_void> = None;
         let mut fini_pointer: Option<*const c_void> = None;
         let mut fini_array_pointer: Option<*const FiniArrayFunction> = None;
         let mut fini_array_size = 0;
@@ -117,6 +119,9 @@ impl DynamicFields {
                 relr_count = item.d_un.d_val / size_of::<u64>();
             }
 
+            Ok(DynamicTag::Init) => {
+                init_pointer = Some(base.byte_add(item.d_un.d_ptr.addr()));
+            }
             Ok(DynamicTag::PreInitArray) => {
                 preinit_array_pointer =
                     Some(base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction);
@@ -192,6 +197,9 @@ impl DynamicFields {
             .map(|pointer| ptr::slice_from_raw_parts(pointer, preinit_array_size));
         let init_array =
             init_array_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, init_array_size));
+        let init_function = init_pointer
+            .filter(|pointer| !pointer.is_null())
+            .map(|pointer| std::mem::transmute(pointer));
         let fini_function = fini_pointer
             .filter(|pointer| !pointer.is_null())
             .map(|pointer| std::mem::transmute(pointer));
@@ -216,6 +224,7 @@ impl DynamicFields {
             plt_rela_slice,
             relr_slice,
             preinit_array,
+            init_function,
             init_array,
             fini_function,
             fini_array,
@@ -266,6 +275,10 @@ impl DynamicFields {
 
     pub fn init_functions(&self) -> Option<&[InitArrayFunction]> {
         unsafe { self.init_array.map(|pointer| &*pointer) }
+    }
+
+    pub fn init_function(&self) -> Option<InitArrayFunction> {
+        self.init_function
     }
 
     pub fn fini_functions(&self) -> Option<&[FiniArrayFunction]> {

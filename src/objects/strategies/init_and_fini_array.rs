@@ -61,6 +61,14 @@ impl InitArray {
     }
 
     pub fn run_init(&self, object: &ObjectData) {
+        if let Some(init_function) = object.dynamic_fields.init_function() {
+            init_function(
+                self.arg_count,
+                self.arg_pointer,
+                self.env_pointer,
+                self.auxv_pointer,
+            );
+        }
         if let Some(init_functions) = object.dynamic_fields.init_functions() {
             #[allow(useless_ptr_null_checks)]
             init_functions
