@@ -1,3 +1,4 @@
+// CFLAGS "-O2"
 #include <stdio.h>
 
 /* Built -O2: glibc inlines write_ptr at offset 40, hardcoded into .text. */

@@ -43,6 +43,7 @@ pub enum Directive {
 #[derive(Debug, Clone, Default)]
 pub struct TestCase {
     pub args: Option<String>,
+    pub cflags: Option<String>,
     pub directives: Vec<Directive>,
     /// Shell commands run in the scratch directory after fixture staging, before launch.
     pub setup: Vec<String>,

@@ -12,9 +12,9 @@ use crate::{build, examples};
 
 pub const DIRECTIVE_TIMEOUT: Duration = Duration::from_secs(10);
 
-mod diagnostic;
+pub(crate) mod diagnostic;
 mod directive;
-mod parser;
+pub(crate) mod parser;
 mod pty;
 mod runner;
 mod span;

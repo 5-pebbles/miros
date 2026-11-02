@@ -1,3 +1,4 @@
+// CFLAGS "-Wl,-init,init_function"
 #include <stdio.h>
 
 static void preinit(void) {

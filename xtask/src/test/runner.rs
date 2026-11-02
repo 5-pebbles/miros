@@ -94,7 +94,7 @@ impl fmt::Display for Failure {
             ),
             Self::BinaryMissing { stem } => write!(
                 formatter,
-                "examples/bin/{stem} not found; add it to EXAMPLES in xtask/src/examples.rs"
+                "examples/bin/{stem} not found; run `cargo xtask examples`"
             ),
             Self::Fixture(error) => write!(formatter, "fixture staging failed: {error}"),
             Self::Wait(error) => write!(formatter, "wait failed: {error}"),

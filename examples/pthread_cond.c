@@ -1,3 +1,4 @@
+// CFLAGS "-lpthread"
 #include <pthread.h>
 #include <stdio.h>
 

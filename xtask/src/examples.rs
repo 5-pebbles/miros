@@ -1,92 +1,6 @@
 use std::{fs, path::PathBuf, process::Command};
 
-use crate::build;
-
-/// A C example: source stem under `examples/`, plus its extra `gcc` flags (libs, builtins).
-struct Example {
-    stem: &'static str,
-    flags: &'static [&'static str],
-}
-
-const EXAMPLES: &[Example] = &[
-    Example {
-        stem: "print_deadbeef",
-        flags: &["-lm"],
-    },
-    Example {
-        stem: "lazy_binding",
-        flags: &[],
-    },
-    Example {
-        stem: "sqrt_with_libm",
-        flags: &["-lm"],
-    },
-    Example {
-        stem: "thread_local",
-        flags: &[],
-    },
-    Example {
-        stem: "init_order",
-        flags: &["-Wl,-init,init_function"],
-    },
-    Example {
-        stem: "pthread_basic",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "pthread_cond",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "thread_dtors",
-        flags: &["-fno-builtin", "-lpthread"],
-    },
-    Example {
-        stem: "pthread_sync",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "stdio_buffer",
-        flags: &[],
-    },
-    Example {
-        stem: "list_dir",
-        flags: &[],
-    },
-    Example {
-        stem: "fs_walk",
-        flags: &[],
-    },
-    Example {
-        stem: "putchar_unlocked_o2",
-        flags: &["-O2"],
-    },
-    Example {
-        // Integer address checks foil escape analysis, so this needs no protective flags.
-        stem: "signal_basic",
-        flags: &[],
-    },
-    Example {
-        stem: "signal_death",
-        flags: &[],
-    },
-    Example {
-        stem: "notty_check",
-        flags: &[],
-    },
-    Example {
-        stem: "input_eof",
-        flags: &[],
-    },
-    Example {
-        stem: "malloc_grow",
-        flags: &[],
-    },
-    Example {
-        stem: "program_name",
-        flags: &[],
-    },
-];
+use crate::{build, test::parser::Parser};
 
 pub fn run() -> PathBuf {
     let miros = build::run(build::BuildArgs {
@@ -99,17 +13,41 @@ pub fn run() -> PathBuf {
     let bin_dir = root.join("examples/bin");
     fs::create_dir_all(&bin_dir).expect("create examples/bin");
 
-    for example in EXAMPLES {
+    let mut sources: Vec<PathBuf> = fs::read_dir(root.join("examples"))
+        .expect("read examples directory")
+        .map(|entry| entry.expect("read directory entry").path())
+        .filter(|path| path.extension().is_some_and(|extension| extension == "c"))
+        .collect();
+    sources.sort();
+
+    for source in sources {
+        let stem = source
+            .file_stem()
+            .expect("c file has a stem")
+            .to_string_lossy()
+            .into_owned();
+        let source_code = fs::read_to_string(&source)
+            .unwrap_or_else(|error| panic!("reading {} failed: {error}", source.display()));
+        let case = Parser::new(&source_code)
+            .parse()
+            .unwrap_or_else(|diagnostics| {
+                for diagnostic in &diagnostics {
+                    diagnostic.emit(&source_code, &source);
+                }
+                panic!("parsing {} failed", source.display());
+            });
+        let cflags = case.cflags.unwrap_or_default();
+
         let status = Command::new("gcc")
             .current_dir(&root)
             .arg("-o")
-            .arg(bin_dir.join(example.stem))
-            .arg(format!("examples/{}.c", example.stem))
-            .args(example.flags)
+            .arg(bin_dir.join(stem))
+            .arg(&source)
+            .args(cflags.split_whitespace())
             .arg(&interpreter)
             .status()
             .expect("failed to spawn gcc");
-        assert!(status.success(), "compiling {} failed", example.stem);
+        assert!(status.success(), "compiling {} failed", source.display());
     }
 
     // The Rust example is its own cargo project.

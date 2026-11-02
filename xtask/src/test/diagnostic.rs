@@ -79,6 +79,8 @@ pub enum DiagKind {
     InvalidInteger,
     #[strum(to_string = "duplicate ARGS directive")]
     DuplicateArgs,
+    #[strum(to_string = "duplicate CFLAGS directive")]
+    DuplicateCflags,
     #[strum(to_string = "duplicate STATUS directive")]
     DuplicateStatus,
     #[strum(to_string = "duplicate NO-TTY directive for {0}")]

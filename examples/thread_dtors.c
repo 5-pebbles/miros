@@ -1,4 +1,5 @@
 /* LIFO drain, tls-before-key, key-nulled-before-dtor, re-arm capped at 4 rounds. */
+// CFLAGS "-fno-builtin -lpthread"
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
