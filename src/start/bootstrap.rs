@@ -176,8 +176,8 @@ impl Bootstrap<Relocate> {
             ))
         };
 
-        let init_function = (!init_function_pointer.is_null())
-            .then(|| std::mem::transmute(init_function_pointer));
+        let init_function =
+            (!init_function_pointer.is_null()).then(|| std::mem::transmute(init_function_pointer));
 
         Ok(Self {
             base,

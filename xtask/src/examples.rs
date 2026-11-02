@@ -26,6 +26,10 @@ const EXAMPLES: &[Example] = &[
         flags: &[],
     },
     Example {
+        stem: "init_order",
+        flags: &["-Wl,-init,init_function"],
+    },
+    Example {
         stem: "pthread_basic",
         flags: &["-lpthread"],
     },
