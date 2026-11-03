@@ -39,14 +39,3 @@ pub enum Directive {
     Eof,
     Signal(i32),
 }
-
-#[derive(Debug, Clone, Default)]
-pub struct TestCase {
-    pub args: Option<String>,
-    pub directives: Vec<Directive>,
-    /// Shell commands run in the scratch directory after fixture staging, before launch.
-    pub setup: Vec<String>,
-    pub status: Option<StatusExpectation>,
-    /// Indexed by `Stream::index()`; a set flag moves that stream to a pipe.
-    pub pipes: [bool; 2],
-}

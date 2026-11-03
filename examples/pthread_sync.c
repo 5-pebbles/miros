@@ -1,4 +1,5 @@
 /* Exercises the pthread synchronization gate with *static* initializers. */
+// CFLAGS "-lpthread"
 #define _GNU_SOURCE
 #include <pthread.h>
 #include <unistd.h>

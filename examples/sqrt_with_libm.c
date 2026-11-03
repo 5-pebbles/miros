@@ -1,3 +1,4 @@
+// CFLAGS "-lm"
 #include <math.h>
 #include <stdio.h>
 

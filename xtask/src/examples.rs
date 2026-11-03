@@ -1,107 +1,27 @@
 use std::{fs, path::PathBuf, process::Command};
 
-use crate::build;
+use crate::{
+    build,
+    test::case::{Error, TestCase},
+};
 
-/// A C example: source stem under `examples/`, plus its extra `gcc` flags (libs, builtins).
-struct Example {
-    stem: &'static str,
-    flags: &'static [&'static str],
-}
-
-const EXAMPLES: &[Example] = &[
-    Example {
-        stem: "print_deadbeef",
-        flags: &["-lm"],
-    },
-    Example {
-        stem: "sqrt_with_libm",
-        flags: &["-lm"],
-    },
-    Example {
-        stem: "thread_local",
-        flags: &[],
-    },
-    Example {
-        stem: "pthread_basic",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "pthread_cond",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "thread_dtors",
-        flags: &["-fno-builtin", "-lpthread"],
-    },
-    Example {
-        stem: "pthread_sync",
-        flags: &["-lpthread"],
-    },
-    Example {
-        stem: "stdio_buffer",
-        flags: &[],
-    },
-    Example {
-        stem: "list_dir",
-        flags: &[],
-    },
-    Example {
-        stem: "fs_walk",
-        flags: &[],
-    },
-    Example {
-        stem: "putchar_unlocked_o2",
-        flags: &["-O2"],
-    },
-    Example {
-        // Integer address checks foil escape analysis, so this needs no protective flags.
-        stem: "signal_basic",
-        flags: &[],
-    },
-    Example {
-        stem: "signal_death",
-        flags: &[],
-    },
-    Example {
-        stem: "notty_check",
-        flags: &[],
-    },
-    Example {
-        stem: "input_eof",
-        flags: &[],
-    },
-    Example {
-        stem: "malloc_grow",
-        flags: &[],
-    },
-    Example {
-        stem: "program_name",
-        flags: &[],
-    },
-];
-
-pub fn run() -> PathBuf {
+pub fn run() -> Result<(PathBuf, Vec<TestCase>), Error> {
     let miros = build::run(build::BuildArgs {
         features: None,
         target_cpu: None,
     });
     let root = build::workspace_root();
-    let interpreter = format!("-Wl,--dynamic-linker={}", miros.display());
 
     let bin_dir = root.join("examples/bin");
-    fs::create_dir_all(&bin_dir).expect("create examples/bin");
+    fs::create_dir_all(&bin_dir).map_err(|error| Error::Io {
+        action: "create directory",
+        path: bin_dir,
+        error,
+    })?;
 
-    for example in EXAMPLES {
-        let status = Command::new("gcc")
-            .current_dir(&root)
-            .arg("-o")
-            .arg(bin_dir.join(example.stem))
-            .arg(format!("examples/{}.c", example.stem))
-            .args(example.flags)
-            .arg(&interpreter)
-            .status()
-            .expect("failed to spawn gcc");
-        assert!(status.success(), "compiling {} failed", example.stem);
+    let cases = TestCase::discover(&root.join("examples"))?;
+    for case in &cases {
+        case.compile(&root, &miros)?;
     }
 
     // The Rust example is its own cargo project.
@@ -114,8 +34,17 @@ pub fn run() -> PathBuf {
             "examples/hello_world/Cargo.toml",
         ])
         .status()
-        .expect("failed to spawn cargo");
-    assert!(status.success(), "building hello_world failed");
+        .map_err(|error| Error::Io {
+            action: "spawn cargo in",
+            path: root.clone(),
+            error,
+        })?;
+    if !status.success() {
+        return Err(Error::CommandFailed {
+            command: "cargo build --release --manifest-path examples/hello_world/Cargo.toml".into(),
+            status,
+        });
+    }
 
-    miros
+    Ok((miros, cases))
 }

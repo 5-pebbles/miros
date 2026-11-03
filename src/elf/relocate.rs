@@ -33,6 +33,39 @@ impl Rela {
     }
 }
 
+pub enum Relr {
+    /// One relative relocation at this offset.
+    Address(usize),
+    /// Relative relocations selected from the words after the previous address.
+    Bitmap(u64),
+}
+
+impl Relr {
+    pub const BITMAP_WORD_COUNT: usize = u64::BITS as usize - 1;
+
+    pub fn set_bits(mut bitmap: u64) -> impl Iterator<Item = usize> {
+        std::iter::from_fn(move || {
+            if bitmap == 0 {
+                return None;
+            }
+
+            let bit = bitmap.trailing_zeros() as usize;
+            bitmap &= bitmap - 1;
+            Some(bit)
+        })
+    }
+}
+
+impl From<u64> for Relr {
+    fn from(entry: u64) -> Self {
+        if entry & 1 == 0 {
+            Self::Address(entry as usize)
+        } else {
+            Self::Bitmap(entry >> 1)
+        }
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 pub mod relocations {
     // Variables in relocation formulae:

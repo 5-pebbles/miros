@@ -1,6 +1,7 @@
 pub mod linked_list;
 pub mod metadata_allocator;
 pub mod mremap_allocator;
+pub mod xsave;
 
 pub fn round_up_to_boundary(address: usize, boundary: usize) -> usize {
     boundary * address.div_ceil(boundary)

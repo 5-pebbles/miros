@@ -12,9 +12,15 @@ pub struct DynamicFlags {
     #[bit(2, r)]
     text_rel: bool,
     #[bit(3, r)]
-    bind_now: bool,
+    pub bind_now: bool,
     #[bit(4, r)]
     pub static_tls: bool,
+}
+
+#[bitfield(u64)]
+pub struct DynamicFlags1 {
+    #[bit(0, r)]
+    pub now: bool,
 }
 
 #[derive(Debug, FromRepr, Clone, Copy, PartialEq, Eq)]

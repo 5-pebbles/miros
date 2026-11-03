@@ -42,7 +42,10 @@ fn main() {
             aliases::generate();
         }
         Xtask::Examples => {
-            examples::run();
+            if let Err(error) = examples::run() {
+                error.emit();
+                std::process::exit(1);
+            }
         }
         Xtask::Demo(args) => demo::run(args),
         Xtask::Run(args) => run::run(args),

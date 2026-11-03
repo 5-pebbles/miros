@@ -21,7 +21,7 @@ use crate::{
         mem::{mmap, MapFlags, ProtectionFlags},
         process::getpid,
     },
-    objects::strategies::init_array::InitArrayFunction,
+    objects::strategies::init_and_fini_array::InitArrayFunction,
     start::auxiliary_vector::AuxiliaryVectorItem,
     syscall::thread_pointer::set_thread_pointer,
     tls::{
@@ -44,6 +44,7 @@ pub struct Bootstrap<Stage> {
     rela_slice: *const [Rela],
     tls_program_header: Option<ProgramHeader>,
     preinit_array: Option<*const [InitArrayFunction]>,
+    init_function: Option<InitArrayFunction>,
     init_array: Option<*const [InitArrayFunction]>,
     _marker: PhantomData<Stage>,
 }
@@ -55,6 +56,7 @@ impl<Stage> Bootstrap<Stage> {
             rela_slice: self.rela_slice,
             tls_program_header: self.tls_program_header,
             preinit_array: self.preinit_array,
+            init_function: self.init_function,
             init_array: self.init_array,
             _marker: PhantomData,
         }
@@ -121,6 +123,7 @@ impl Bootstrap<Relocate> {
         let mut preinit_array_size = 0;
         let mut init_array_pointer: *const InitArrayFunction = ptr::null();
         let mut init_array_size = 0;
+        let mut init_function_pointer: *const c_void = ptr::null();
 
         DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
             Ok(DynamicTag::Rela) => {
@@ -132,6 +135,9 @@ impl Bootstrap<Relocate> {
             #[cfg(debug_assertions)]
             Ok(DynamicTag::RelaEnt) => {
                 syscall_assert!(item.d_un.d_val == size_of::<Rela>())
+            }
+            Ok(DynamicTag::Init) => {
+                init_function_pointer = base.byte_add(item.d_un.d_ptr.addr());
             }
             Ok(DynamicTag::PreInitArray) => {
                 preinit_array_pointer =
@@ -170,11 +176,15 @@ impl Bootstrap<Relocate> {
             ))
         };
 
+        let init_function =
+            (!init_function_pointer.is_null()).then(|| std::mem::transmute(init_function_pointer));
+
         Ok(Self {
             base,
             rela_slice,
             tls_program_header,
             preinit_array,
+            init_function,
             init_array,
             _marker: PhantomData,
         })
@@ -294,8 +304,8 @@ impl Bootstrap<InitArray> {
         auxv_pointer: *const AuxiliaryVectorItem,
     ) {
         let call_array = |functions: *const [InitArrayFunction]| {
-            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system,
-            // but these are unsafely read from raw ELF init_array data...
+            // SAFETY: The compiler thinks function pointers can't be null in Rust's type system.
+            // It's wrong, these are unsafely read from raw ELF init_array data... So just shutting it up.
             #[allow(useless_ptr_null_checks)]
             (&*functions)
                 .iter()
@@ -307,6 +317,9 @@ impl Bootstrap<InitArray> {
 
         if let Some(preinit_functions) = self.preinit_array {
             call_array(preinit_functions);
+        }
+        if let Some(init_function) = self.init_function {
+            init_function(arg_count, arg_pointer, env_pointer, auxv_pointer);
         }
         if let Some(init_functions) = self.init_array {
             call_array(init_functions);

@@ -5,13 +5,15 @@ use super::{hash_tables::HashTable, path_resolver::PathResolver};
 use crate::io_macros::syscall_assert;
 use crate::{
     elf::{
-        dynamic_array::{DynamicArrayItem, DynamicArrayIter, DynamicFlags, DynamicTag},
+        dynamic_array::{
+            DynamicArrayItem, DynamicArrayIter, DynamicFlags, DynamicFlags1, DynamicTag,
+        },
         relocate::Rela,
         string_table::StringTable,
         symbol::{Symbol, SymbolTable},
     },
     error::MirosError,
-    objects::strategies::init_array::InitArrayFunction,
+    objects::strategies::init_and_fini_array::{FiniArrayFunction, InitArrayFunction},
 };
 
 pub struct DynamicFields {
@@ -22,12 +24,16 @@ pub struct DynamicFields {
     plt_rela_slice: Option<*const [Rela]>,
     relr_slice: Option<*const [u64]>,
     preinit_array: Option<*const [InitArrayFunction]>,
+    init_function: Option<InitArrayFunction>,
     init_array: Option<*const [InitArrayFunction]>,
+    fini_function: Option<extern "C" fn()>,
+    fini_array: Option<*const [FiniArrayFunction]>,
     pub hash_table: Option<HashTable>,
     symbol_count: Option<usize>,
     pub path_resolver: PathResolver,
     dependencies: Vec<*const str>,
     pub static_tls: bool,
+    pub bind_now: bool,
 }
 
 impl DynamicFields {
@@ -56,6 +62,11 @@ impl DynamicFields {
         let mut init_array_pointer: Option<*const InitArrayFunction> = None;
         let mut init_array_size = 0;
 
+        let mut init_pointer: Option<*const c_void> = None;
+        let mut fini_pointer: Option<*const c_void> = None;
+        let mut fini_array_pointer: Option<*const FiniArrayFunction> = None;
+        let mut fini_array_size = 0;
+
         let mut hash_table: Option<HashTable> = None;
 
         let mut rpath_string_table_index: Option<usize> = None;
@@ -64,6 +75,7 @@ impl DynamicFields {
         let mut needed_libraries_string_table_offsets: Vec<usize> = Vec::new();
 
         let mut static_tls = false;
+        let mut bind_now = false;
 
         DynamicArrayIter::new(dynamic_array).for_each(|item| match item.d_tag() {
             Ok(DynamicTag::PltGot) => {
@@ -107,6 +119,9 @@ impl DynamicFields {
                 relr_count = item.d_un.d_val / size_of::<u64>();
             }
 
+            Ok(DynamicTag::Init) => {
+                init_pointer = Some(base.byte_add(item.d_un.d_ptr.addr()));
+            }
             Ok(DynamicTag::PreInitArray) => {
                 preinit_array_pointer =
                     Some(base.byte_add(item.d_un.d_ptr.addr()) as *const InitArrayFunction);
@@ -121,6 +136,17 @@ impl DynamicFields {
             }
             Ok(DynamicTag::InitArraySz) => {
                 init_array_size = item.d_un.d_val / size_of::<InitArrayFunction>();
+            }
+
+            Ok(DynamicTag::Fini) => {
+                fini_pointer = Some(base.byte_add(item.d_un.d_ptr.addr()));
+            }
+            Ok(DynamicTag::FiniArray) => {
+                fini_array_pointer =
+                    Some(base.byte_add(item.d_un.d_ptr.addr()) as *const FiniArrayFunction);
+            }
+            Ok(DynamicTag::FiniArraySz) => {
+                fini_array_size = item.d_un.d_val / size_of::<FiniArrayFunction>();
             }
 
             Ok(DynamicTag::Hash) => {
@@ -140,6 +166,11 @@ impl DynamicFields {
             Ok(DynamicTag::Flags) => {
                 let flags = DynamicFlags::new_with_raw_value(item.d_un.d_val as u64);
                 static_tls |= flags.static_tls();
+                bind_now |= flags.bind_now();
+            }
+            Ok(DynamicTag::Flags1) => {
+                let flags = DynamicFlags1::new_with_raw_value(item.d_un.d_val as u64);
+                bind_now |= flags.now();
             }
 
             _ => (),
@@ -166,6 +197,14 @@ impl DynamicFields {
             .map(|pointer| ptr::slice_from_raw_parts(pointer, preinit_array_size));
         let init_array =
             init_array_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, init_array_size));
+        let init_function = init_pointer
+            .filter(|pointer| !pointer.is_null())
+            .map(|pointer| std::mem::transmute(pointer));
+        let fini_function = fini_pointer
+            .filter(|pointer| !pointer.is_null())
+            .map(|pointer| std::mem::transmute(pointer));
+        let fini_array =
+            fini_array_pointer.map(|pointer| ptr::slice_from_raw_parts(pointer, fini_array_size));
 
         let path_resolver = runpath_string_table_index
             .map(|index| PathResolver::Runpath(string_table.get(index)))
@@ -185,12 +224,16 @@ impl DynamicFields {
             plt_rela_slice,
             relr_slice,
             preinit_array,
+            init_function,
             init_array,
+            fini_function,
+            fini_array,
             hash_table,
             symbol_count,
             path_resolver,
             dependencies,
             static_tls,
+            bind_now,
         })
     }
 
@@ -232,5 +275,17 @@ impl DynamicFields {
 
     pub fn init_functions(&self) -> Option<&[InitArrayFunction]> {
         unsafe { self.init_array.map(|pointer| &*pointer) }
+    }
+
+    pub fn init_function(&self) -> Option<InitArrayFunction> {
+        self.init_function
+    }
+
+    pub fn fini_functions(&self) -> Option<&[FiniArrayFunction]> {
+        unsafe { self.fini_array.map(|pointer| &*pointer) }
+    }
+
+    pub fn fini_function(&self) -> Option<extern "C" fn()> {
+        self.fini_function
     }
 }

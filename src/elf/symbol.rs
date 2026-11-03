@@ -16,6 +16,7 @@ pub enum SymbolType {
     File = 4,
     Common = 5,
     Tls = 6,
+    GnuIFunc = 10,
 }
 
 /// Symbol binding types extracted from the upper nibble of `st_info`.

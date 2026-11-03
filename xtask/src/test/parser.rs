@@ -1,6 +1,7 @@
 use super::{
+    case::TestCase,
     diagnostic::{DiagKind, Diagnostic},
-    directive::{Directive, StatusExpectation, Stream, TestCase},
+    directive::{Directive, StatusExpectation, Stream},
     span::Span,
 };
 
@@ -98,6 +99,7 @@ impl<'a> Parser<'a> {
             "SIGNAL" => Directive::Signal(self.signal()?),
             "SHELL" => return self.add_setup(),
             "ARGS" => return self.set_args(span),
+            "CFLAGS" => return self.set_cflags(span),
             "STATUS" => return self.set_status(span),
             "STDOUT" => return self.select_stream(Stream::Stdout),
             "STDERR" => return self.select_stream(Stream::Stderr),
@@ -129,6 +131,17 @@ impl<'a> Parser<'a> {
             });
         }
         self.test_case.args = Some(self.string()?);
+        self.end_of_line()
+    }
+
+    fn set_cflags(&mut self, span: Span) -> Result<(), Diagnostic> {
+        if self.test_case.cflags.is_some() {
+            return Err(Diagnostic {
+                span,
+                kind: DiagKind::DuplicateCflags,
+            });
+        }
+        self.test_case.cflags = Some(self.string()?);
         self.end_of_line()
     }
 

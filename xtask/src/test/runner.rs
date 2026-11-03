@@ -7,7 +7,7 @@ use std::{
         fd::{AsRawFd, OwnedFd},
         unix::process::ExitStatusExt,
     },
-    path::{Path, PathBuf},
+    path::Path,
     process::{Command, ExitStatus},
     sync::{Arc, Condvar, Mutex, mpsc},
     thread,
@@ -15,11 +15,11 @@ use std::{
 };
 
 use super::{
-    diagnostic::Diagnostic,
-    directive::{Directive, StatusExpectation, Stream, TestCase},
+    case::TestCase,
+    directive::{Directive, StatusExpectation, Stream},
     pty,
 };
-use crate::test::{DIRECTIVE_TIMEOUT, parser::Parser, utils};
+use crate::test::{DIRECTIVE_TIMEOUT, utils};
 
 #[derive(Debug)]
 pub enum Failure {
@@ -94,7 +94,7 @@ impl fmt::Display for Failure {
             ),
             Self::BinaryMissing { stem } => write!(
                 formatter,
-                "examples/bin/{stem} not found; add it to EXAMPLES in xtask/src/examples.rs"
+                "examples/bin/{stem} not found; run `cargo xtask examples`"
             ),
             Self::Fixture(error) => write!(formatter, "fixture staging failed: {error}"),
             Self::Wait(error) => write!(formatter, "wait failed: {error}"),
@@ -594,39 +594,17 @@ fn run_setup(command: &str, scratch: &Path) -> Result<(), Failure> {
     })
 }
 
-pub enum LoadError {
-    Read(io::Error),
-    Parse {
-        source_code: String,
-        diagnostics: Vec<Diagnostic>,
-    },
-}
-
 pub struct TestRunner {
-    source: PathBuf,
-    stem: String,
     case: TestCase,
 }
 
 impl TestRunner {
-    pub fn new(source: PathBuf) -> Result<Self, LoadError> {
-        let source_code = fs::read_to_string(&source).map_err(LoadError::Read)?;
-        let case = Parser::new(&source_code)
-            .parse()
-            .map_err(|diagnostics| LoadError::Parse {
-                source_code,
-                diagnostics,
-            })?;
-        let stem = source
-            .file_stem()
-            .expect("c file has a stem")
-            .to_string_lossy()
-            .into_owned();
-        Ok(Self { source, stem, case })
+    pub fn new(case: TestCase) -> Self {
+        Self { case }
     }
 
     pub fn run(&self, interpreter: Option<&Path>) -> Result<(), RunError> {
-        let scratch = utils::prepare_scratch(&self.stem);
+        let scratch = utils::prepare_scratch(&self.case.stem);
         let result = self.run_in(&scratch, interpreter);
         let _ = fs::remove_dir_all(&scratch);
         result
@@ -634,17 +612,17 @@ impl TestRunner {
 
     fn run_in(&self, scratch: &Path, interpreter: Option<&Path>) -> Result<(), RunError> {
         // The source lives in examples/, so bin/ and fixtures/ sit beside it.
-        let examples = self.source.parent().unwrap();
-        let fixtures = examples.join("fixtures").join(&self.stem);
+        let examples = self.case.source.parent().unwrap();
+        let fixtures = examples.join("fixtures").join(&self.case.stem);
         if fixtures.exists() {
             utils::copy_recursive(&fixtures, scratch)
                 .map_err(|error| RunError::without_capture(vec![Failure::Fixture(error)]))?;
         }
 
-        let binary = examples.join("bin").join(&self.stem);
+        let binary = examples.join("bin").join(&self.case.stem);
         if !binary.exists() {
             return Err(RunError::without_capture(vec![Failure::BinaryMissing {
-                stem: self.stem.clone(),
+                stem: self.case.stem.clone(),
             }]));
         }
         for command in &self.case.setup {

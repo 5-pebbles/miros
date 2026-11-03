@@ -1,10 +1,9 @@
 use crate::{error::MirosError, objects::object_data_graph::ObjectDataGraph};
 
 pub mod bind_interposable_cells;
-pub mod init_array;
+pub mod init_and_fini_array;
 pub mod load_dependencies;
 pub mod relocate;
-mod relr;
 pub mod thread_local_storage;
 
 pub trait Stratagem {
