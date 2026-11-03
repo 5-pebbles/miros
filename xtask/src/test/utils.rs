@@ -6,7 +6,7 @@ use std::{
     sync::mpsc,
 };
 
-use crate::test::{DIRECTIVE_TIMEOUT, directive::TestCase};
+use crate::test::{DIRECTIVE_TIMEOUT, case::TestCase};
 
 pub fn prepare_scratch(stem: &str) -> PathBuf {
     let scratch = std::env::temp_dir().join(format!("miros-test-{stem}-{}", std::process::id()));

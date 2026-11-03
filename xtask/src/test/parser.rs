@@ -1,6 +1,7 @@
 use super::{
+    case::TestCase,
     diagnostic::{DiagKind, Diagnostic},
-    directive::{Directive, StatusExpectation, Stream, TestCase},
+    directive::{Directive, StatusExpectation, Stream},
     span::Span,
 };
 
